@@ -61,6 +61,14 @@ async def load_or_create_session(
         )
         for item in session.cart
     ]
+    state.customer = CustomerDataState(
+        name=session.customer_name,
+        phone=session.phone,
+        address=session.address,
+        neighborhood=session.neighborhood,
+        payment_method=session.payment_method,
+        observations=session.observations,
+    )
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     return state
 
@@ -553,12 +561,21 @@ async def confirm_order(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    if session.address and session.neighborhood:
+        delivery = await services.calculate_delivery(session.address, session.neighborhood)
+        state.delivery_price_cop = delivery.delivery_price_cop
+    state.order_number = await services.create_confirmed_order(
+        ChatId(state.chat_id),
+        state.delivery_price_cop or 0,
+    )
     session.empty_cart()
     session.clear_selected_product()
+    session.clear_customer_data()
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
     state.current_step = ConversationState.MAIN_MENU
     state.cart = []
+    state.customer = CustomerDataState()
     state.subtotal_cop = 0
     state.total_cop = 0
     state.response_text = BotMessageFactory.confirmed()
@@ -572,10 +589,12 @@ async def cancel_order(
     session = await services.load_or_create_session(ChatId(state.chat_id))
     session.empty_cart()
     session.clear_selected_product()
+    session.clear_customer_data()
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
     state.current_step = ConversationState.MAIN_MENU
     state.cart = []
+    state.customer = CustomerDataState()
     state.response_text = BotMessageFactory.cancelled()
     return state
 
@@ -966,4 +985,12 @@ async def _persist_step(
         session.selected_product_code = ProductCode(state.selected_product_code)
     else:
         session.clear_selected_product()
+    session.update_customer_data(
+        customer_name=state.customer.name,
+        phone=state.customer.phone,
+        address=state.customer.address,
+        neighborhood=state.customer.neighborhood,
+        payment_method=state.customer.payment_method,
+        observations=state.customer.observations,
+    )
     await services.persist_step(session, state.current_step)

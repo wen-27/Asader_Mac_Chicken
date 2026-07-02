@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.logging import configure_logging
 from app.config.settings import get_settings
 from app.modules.catalog.api.routes import router as catalog_admin_router
+from app.modules.orders.api.admin_routes import router as orders_admin_router
 from app.modules.telegram.api.routes import router as telegram_router
 from app.shared.infrastructure.health import check_chromadb, check_postgres, check_redis
 
@@ -19,6 +21,18 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.app_debug,
+    )
+    allowed_origins = [
+        origin.strip()
+        for origin in settings.cors_allowed_origins.split(",")
+        if origin.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/health", tags=["system"])
@@ -46,6 +60,7 @@ def create_app() -> FastAPI:
 
     app.include_router(telegram_router)
     app.include_router(catalog_admin_router)
+    app.include_router(orders_admin_router)
 
     return app
 

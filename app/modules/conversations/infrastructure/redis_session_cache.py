@@ -63,6 +63,12 @@ def _session_to_dict(session: TelegramSession) -> dict[str, object]:
             session.selected_product_code.value if session.selected_product_code else None
         ),
         "cart": [cart_item_to_json(item) for item in session.cart],
+        "customer_name": session.customer_name,
+        "phone": session.phone,
+        "address": session.address,
+        "neighborhood": session.neighborhood,
+        "payment_method": session.payment_method,
+        "observations": session.observations,
     }
 
 
@@ -73,5 +79,10 @@ def _session_from_dict(data: dict[str, object]) -> TelegramSession:
         current_step=ConversationState(str(data["current_step"])),
         selected_product_code=ProductCode(str(selected)) if selected else None,
         cart=[cart_item_from_json(item) for item in data.get("cart", [])],
+        customer_name=data.get("customer_name") and str(data["customer_name"]),
+        phone=data.get("phone") and str(data["phone"]),
+        address=data.get("address") and str(data["address"]),
+        neighborhood=data.get("neighborhood") and str(data["neighborhood"]),
+        payment_method=data.get("payment_method") and str(data["payment_method"]),
+        observations=data.get("observations") and str(data["observations"]),
     )
-

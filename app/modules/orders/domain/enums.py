@@ -8,6 +8,9 @@ from enum import Enum
 class OrderStatus(str, Enum):
     PENDING = "PENDING"
     CONFIRMED = "CONFIRMED"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    PRINTED = "PRINTED"
     CANCELLED = "CANCELLED"
 
 
@@ -16,3 +19,4 @@ class PaymentMethod(str, Enum):
     NEQUI = "Nequi"
     BANCOLOMBIA_TRANSFER = "Transferencia Bancolombia"
     CASH = "Efectivo"
+    PENDING_CONFIRMATION = "Pendiente por confirmar"

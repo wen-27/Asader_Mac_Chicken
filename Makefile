@@ -36,7 +36,7 @@ local:
 
 # Expose localhost:8000 through a public HTTPS URL for Telegram webhooks.
 tunnel:
-	.local/bin/cloudflared tunnel --url http://localhost:8000
+	.local/bin/cloudflared tunnel --protocol http2 --url http://localhost:8000
 
 # Apply PostgreSQL schema migrations.
 migrate:

@@ -33,6 +33,7 @@ from app.modules.delivery.infrastructure.redis_delivery_cache import CachedDeliv
 from app.modules.delivery.infrastructure.sqlalchemy_delivery_zone_repository import (
     SqlAlchemyDeliveryZoneRepository,
 )
+from app.modules.orders.infrastructure.sqlalchemy_order_repository import SqlAlchemyOrderRepository
 from app.modules.telegram.api.schemas import TelegramUpdateSchema
 from app.modules.telegram.application.handle_update import HandleTelegramUpdateUseCase
 from app.modules.telegram.application.handle_update.use_case import TelegramInboundMessage
@@ -103,6 +104,7 @@ async def telegram_webhook(
             DefaultConversationGraphServices(
                 sessions=session_repository,
                 products=product_repository,
+                orders=SqlAlchemyOrderRepository(session),
                 delivery_calculator=delivery_calculator,
             )
         ),

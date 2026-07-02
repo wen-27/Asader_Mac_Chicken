@@ -9,13 +9,29 @@ from app.modules.cart.domain.cart_item import CartItem
 from app.modules.catalog.application.ports import ProductRepository
 from app.modules.catalog.domain.enums import ProductCategory
 from app.modules.catalog.domain.product import Product
+from app.modules.customers.domain.customer import Customer
 from app.modules.delivery.application.use_cases.calculate_delivery import CalculateDeliveryResult
+from app.modules.delivery.domain.delivery_zone import DeliveryZone
+from app.modules.orders.application.order_number import generate_order_number
+from app.modules.orders.application.ports import OrderRepository
+from app.modules.orders.domain.enums import OrderStatus, PaymentMethod
+from app.modules.orders.domain.order import Order
+from app.modules.orders.domain.order_item import OrderItem
 from app.modules.catalog.infrastructure.seeders.catalog_data import PRODUCT_SEEDS
 from app.modules.conversations.application.ports import TelegramSessionRepository
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.telegram_session import TelegramSession
 from app.shared.domain.money import MoneyCOP
-from app.shared.domain.value_object import ChatId, ProductCode, ProductName
+from app.shared.domain.value_object import (
+    Address,
+    ChatId,
+    CustomerName,
+    Neighborhood,
+    OrderId,
+    PhoneNumber,
+    ProductCode,
+    ProductName,
+)
 
 
 class ConversationGraphServices(Protocol):
@@ -35,6 +51,13 @@ class ConversationGraphServices(Protocol):
         ...
 
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
+        ...
+
+    async def create_confirmed_order(
+        self,
+        chat_id: ChatId,
+        delivery_price_cop: int,
+    ) -> str | None:
         ...
 
 
@@ -73,6 +96,7 @@ class SeedCatalogService:
 class DefaultConversationGraphServices:
     sessions: TelegramSessionRepository
     products: ProductRepository | None = None
+    orders: OrderRepository | None = None
     delivery_calculator: object | None = None
     seed_catalog: SeedCatalogService = SeedCatalogService()
 
@@ -108,6 +132,41 @@ class DefaultConversationGraphServices:
             return CalculateDeliveryResult(found=True, delivery_price_cop=0, pricing_source="not_configured")
         return await self.delivery_calculator.execute(address=address, neighborhood=neighborhood)
 
+    async def create_confirmed_order(
+        self,
+        chat_id: ChatId,
+        delivery_price_cop: int,
+    ) -> str | None:
+        if self.orders is None:
+            return None
+        session = await self.sessions.get_by_chat_id(chat_id)
+        if session is None or not session.cart:
+            return None
+        if not all([session.customer_name, session.phone, session.address, session.neighborhood]):
+            return None
+
+        payment_method = _payment_method_from_text(session.payment_method)
+        order = Order(
+            order_id=OrderId(generate_order_number(chat_id.value)),
+            customer=Customer(
+                name=CustomerName(session.customer_name or ""),
+                phone=PhoneNumber(session.phone or ""),
+                address=Address(session.address or ""),
+                neighborhood=Neighborhood(session.neighborhood or ""),
+                observations=session.observations or "Ninguna",
+            ),
+            items=[OrderItem.from_cart_item(item) for item in session.cart],
+            delivery_zone=DeliveryZone(
+                code="ORDER_DELIVERY_SNAPSHOT",
+                neighborhood=Neighborhood(session.neighborhood or ""),
+                delivery_price=MoneyCOP(delivery_price_cop),
+            ),
+            payment_method=payment_method,
+            status=OrderStatus.CONFIRMED,
+        )
+        saved = await self.orders.add(order, chat_id)
+        return saved.order_id.value
+
 
 def cart_item_from_product(product: Product, quantity: int) -> CartItem:
     return CartItem(
@@ -116,3 +175,21 @@ def cart_item_from_product(product: Product, quantity: int) -> CartItem:
         unit_price=product.price,
         quantity=quantity,
     )
+
+
+def _payment_method_from_text(value: str | None) -> PaymentMethod:
+    if not value:
+        return PaymentMethod.PENDING_CONFIRMATION
+    normalized = value.strip().lower()
+    for method in PaymentMethod:
+        if normalized == method.value.lower():
+            return method
+    if "nequi" in normalized:
+        return PaymentMethod.NEQUI
+    if "datafono" in normalized or "datáfono" in normalized:
+        return PaymentMethod.DATAPHONE
+    if "transferencia" in normalized or "bancolombia" in normalized:
+        return PaymentMethod.BANCOLOMBIA_TRANSFER
+    if "efectivo" in normalized:
+        return PaymentMethod.CASH
+    return PaymentMethod.PENDING_CONFIRMATION

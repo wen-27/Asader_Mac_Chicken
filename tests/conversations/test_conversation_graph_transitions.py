@@ -23,6 +23,7 @@ class FakeConversationServices:
     def __init__(self) -> None:
         self.session = TelegramSession(chat_id=ChatId(123))
         self.persisted_steps: list[ConversationState] = []
+        self.created_orders: list[str] = []
         self.products = {
             "GASEOSA": Product(
                 code=ProductCode("GASEOSA"),
@@ -74,6 +75,11 @@ class FakeConversationServices:
             distance_km=0.0,
             pricing_source="test",
         )
+
+    async def create_confirmed_order(self, chat_id: ChatId, delivery_price_cop: int) -> str | None:
+        order_number = f"TEST-{chat_id.value}-{len(self.created_orders) + 1}"
+        self.created_orders.append(order_number)
+        return order_number
 
 
 @pytest.mark.asyncio

@@ -45,6 +45,7 @@ class ConversationGraphState(BaseModel):
     delivery_price_cop: Optional[int] = None
     subtotal_cop: int = 0
     total_cop: int = 0
+    order_number: Optional[str] = None
     response_text: str = ""
     errors: List[str] = Field(default_factory=list)
     should_send_response: bool = True
