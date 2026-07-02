@@ -1,0 +1,969 @@
+"""LangGraph node implementations for the Telegram ordering conversation.
+
+This file is intentionally orchestration-heavy: it decides which step comes next,
+but it should not know SQLAlchemy models, Redis commands or Telegram HTTP calls.
+Those details stay behind ConversationGraphServices and application use cases.
+"""
+
+from __future__ import annotations
+
+import re
+
+from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
+from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
+from app.modules.conversations.application.graph_services import (
+    ConversationGraphServices,
+    cart_item_from_product,
+)
+from app.modules.conversations.domain.conversation_state import ConversationState
+from app.modules.conversations.domain.intent import ConversationIntent
+from app.modules.conversations.graph.message_factory import BotMessageFactory
+from app.modules.conversations.graph.state import (
+    CartLineState,
+    ConversationGraphState,
+    CustomerDataState,
+)
+from app.shared.domain.value_object import ChatId, ProductCode
+from app.shared.utils.text_normalizer import normalize_text
+
+
+async def receive_message(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return state
+
+
+async def normalize_message(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.normalized_text = normalize_text(state.raw_text)
+    return state
+
+
+async def load_or_create_session(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    state.current_step = session.current_step
+    state.selected_product_code = (
+        session.selected_product_code.value if session.selected_product_code else None
+    )
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    return state
+
+
+async def detect_intent(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    text = state.normalized_text
+    # Navigation and numbered menus are handled before natural-language parsing.
+    # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
+    if text in {"0", "volver", "atras", "atrás", "regresar"}:
+        state.intent = ConversationIntent.VOLVER
+        return state
+    if _detect_numbered_menu_intent(state):
+        return state
+    if state.current_step == ConversationState.POST_ADD:
+        # After adding an item, short commands such as "3" or "finalizar" should
+        # continue checkout instead of being interpreted as product quantities.
+        if text in {"agregar", "agregar mas", "agregar más", "seguir", "seguir comprando"}:
+            state.intent = ConversationIntent.VER_MENU
+            return state
+        if text in {"carrito", "ver carrito"}:
+            state.intent = ConversationIntent.MOSTRAR_CARRITO
+            return state
+        if text in {"finalizar", "finalizar pedido", "checkout"}:
+            state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+            return state
+    query = _classify_business_query(text)
+    if query is not None:
+        # Business questions such as prices, drink options and delivery costs are
+        # answered locally from catalog/zones. Out-of-scope prompts do not spend IA.
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = query[0]
+        state.query_value = query[1]
+        return state
+    if text in {"menu", "menú", "hola", "inicio", "empezar"}:
+        state.intent = ConversationIntent.MOSTRAR_MENU
+    elif text in {"ver menu", "ver menú", "1"}:
+        state.intent = ConversationIntent.VER_MENU
+    elif (
+        state.current_step == ConversationState.NATURAL_ORDER
+        or _looks_like_natural_order(text)
+        or parse_natural_order_rules(state.raw_text).items
+    ):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return state
+    elif "broaster" in text or "broasted" in text or "broster" in text:
+        state.intent = ConversationIntent.MENU_BROASTER
+    elif "asado" in text:
+        state.intent = ConversationIntent.MENU_ASADO
+    elif "bebida" in text or "gaseosa" in text:
+        state.intent = ConversationIntent.MENU_BEBIDAS
+    elif "adicional" in text or "papa" in text or "sopa" in text:
+        state.intent = ConversationIntent.MENU_ADICIONALES
+    elif "especial" in text or "lasagna" in text or "lasana" in text or "maduro" in text:
+        state.intent = ConversationIntent.MENU_ESPECIALES
+    elif text in {"carrito", "ver carrito"}:
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+    elif text in {"vaciar", "vaciar carrito"}:
+        state.intent = ConversationIntent.VACIAR_CARRITO
+    elif text in {"eliminar", "quitar", "eliminar producto"}:
+        state.intent = ConversationIntent.ELIMINAR_PRODUCTO
+    elif text in {"finalizar", "checkout", "resumen", "finalizar pedido"}:
+        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+    elif text in {"datos", "factura"}:
+        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+    elif text in {"confirmar", "si", "sí"}:
+        state.intent = ConversationIntent.CONFIRMAR_PEDIDO
+    elif text in {"cancelar", "no"}:
+        state.intent = ConversationIntent.CANCELAR
+    elif text in {"horarios", "horario"}:
+        state.intent = ConversationIntent.HORARIOS
+    elif state.current_step == ConversationState.ASK_QUANTITY and text.isdigit():
+        state.intent = ConversationIntent.AGREGAR_PRODUCTO
+        state.quantity = int(text)
+    elif state.current_step == ConversationState.ASK_CUSTOMER_DATA:
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+    else:
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+    return state
+
+
+async def route_intent(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return state
+
+
+async def show_main_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.current_step = ConversationState.MAIN_MENU
+    state.response_text = BotMessageFactory.main_menu()
+    await _persist_step(state, services)
+    return state
+
+
+async def show_product_categories(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.current_step = ConversationState.PRODUCT_CATEGORY
+    state.response_text = BotMessageFactory.product_categories()
+    await _persist_step(state, services)
+    return state
+
+
+async def show_asado_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return await _show_category(state, services, ProductCategory.POLLO_ASADO, ConversationState.SELECT_ASADO)
+
+
+async def show_broaster_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return await _show_category(
+        state,
+        services,
+        ProductCategory.POLLO_BROASTER,
+        ConversationState.SELECT_BROASTER,
+    )
+
+
+async def show_drinks_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return await _show_category(state, services, ProductCategory.BEBIDAS, ConversationState.SELECT_BEBIDA)
+
+
+async def show_addons_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return await _show_category(
+        state,
+        services,
+        ProductCategory.ADICIONALES,
+        ConversationState.SELECT_ADICIONAL,
+    )
+
+
+async def show_specials_menu(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    return await _show_category(
+        state,
+        services,
+        ProductCategory.ESPECIALES,
+        ConversationState.SELECT_ESPECIAL,
+    )
+
+
+async def select_product(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    product = await _find_numbered_product(state, services)
+    if product is None:
+        product = await services.find_product(state.normalized_text)
+    if product is None:
+        state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
+        state.response_text = BotMessageFactory.product_not_found()
+        return state
+    state.selected_product_code = product.code.value
+    state.selected_product_name = product.name.value
+    state.selected_unit_price_cop = product.price.amount
+    return state
+
+
+async def validate_product_availability(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    product_code = state.selected_product_code
+    if product_code is None:
+        return state
+    product = await services.find_product(product_code)
+    if product is None:
+        state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
+        state.response_text = BotMessageFactory.product_not_found()
+        return state
+    if not product.is_available or product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY:
+        state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+        state.response_text = BotMessageFactory.product_unavailable()
+    return state
+
+
+async def ask_quantity(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if state.selected_product_name is None or state.selected_unit_price_cop is None:
+        return await fallback_natural_language(state, services)
+    state.current_step = ConversationState.ASK_QUANTITY
+    state.response_text = BotMessageFactory.ask_quantity(
+        state.selected_product_name,
+        state.selected_unit_price_cop,
+    )
+    await _persist_step(state, services)
+    return state
+
+
+async def add_to_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if state.selected_product_code is None or state.quantity is None or state.quantity <= 0:
+        state.response_text = BotMessageFactory.invalid_quantity()
+        return state
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    product = await services.find_product(state.selected_product_code)
+    if product is None:
+        state.response_text = BotMessageFactory.product_not_found()
+        return state
+    item = cart_item_from_product(product, state.quantity)
+    session.add_cart_item(item)
+    session.clear_selected_product()
+    session.move_to(ConversationState.POST_ADD)
+    await services.persist_session(session)
+    line = CartLineState(
+        product_code=item.product_code.value,
+        product_name=item.product_name.value,
+        unit_price_cop=item.unit_price.amount,
+        quantity=item.quantity,
+        subtotal_cop=item.subtotal.amount,
+    )
+    state.cart.append(line)
+    state.subtotal_cop = sum(cart_line.subtotal_cop for cart_line in state.cart)
+    state.current_step = ConversationState.POST_ADD
+    state.response_text = BotMessageFactory.added_to_cart(line, state.subtotal_cop)
+    return state
+
+
+async def show_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.response_text = BotMessageFactory.cart(state.cart, state.subtotal_cop)
+    await _persist_step(state, services)
+    return state
+
+
+async def clear_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.empty_cart()
+    session.move_to(ConversationState.MAIN_MENU)
+    await services.persist_session(session)
+    state.cart = []
+    state.subtotal_cop = 0
+    state.current_step = ConversationState.MAIN_MENU
+    state.response_text = BotMessageFactory.clear_cart()
+    return state
+
+
+async def remove_last_item(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    removed = session.remove_last_cart_item()
+    await services.persist_session(session)
+    if state.cart:
+        state.cart.pop()
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.response_text = BotMessageFactory.remove_last_item(
+        removed.product_name.value if removed else None
+    )
+    return state
+
+
+async def prepare_checkout_summary(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.current_step = ConversationState.CHECKOUT_CONFIRM
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.response_text = BotMessageFactory.checkout_summary(state)
+    await _persist_step(state, services)
+    return state
+
+
+async def ask_customer_data(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if not state.cart:
+        state.current_step = ConversationState.PRODUCT_CATEGORY
+        state.response_text = BotMessageFactory.checkout_summary(state)
+        await _persist_step(state, services)
+        return state
+    state.current_step = ConversationState.ASK_CUSTOMER_DATA
+    state.response_text = BotMessageFactory.ask_customer_data()
+    await _persist_step(state, services)
+    return state
+
+
+async def extract_customer_data(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    # Copy nested Pydantic state before mutating it. LangGraph can reuse state
+    # objects between nodes, so direct nested mutation is easy to lose or leak.
+    customer = state.customer.model_copy(deep=True)
+    free_lines: list[str] = []
+    for line in state.raw_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if ":" not in line:
+            free_lines.append(line)
+            continue
+        key, value = line.split(":", 1)
+        key = normalize_text(key)
+        value = value.strip()
+        if key in {"nombre", "nombre completo", "cliente"}:
+            customer.name = value
+        elif key in {"telefono", "celular"}:
+            customer.phone = value
+        elif key in {"direccion", "dir"}:
+            customer.address = value
+        elif key in {"barrio", "sector"}:
+            customer.neighborhood = value
+        elif key in {"metodo de pago", "pago", "medio de pago", "forma de pago"}:
+            customer.payment_method = value
+        elif key in {
+            "observaciones",
+            "observacion",
+            "notas",
+            "nota",
+            "nota o especificacion",
+            "especificacion",
+        }:
+            customer.observations = value
+    if free_lines:
+        _extract_customer_data_from_free_lines(customer, free_lines)
+    state.customer = customer
+    return state
+
+
+async def validate_customer_data(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    missing: list[str] = []
+    if not state.customer.name:
+        missing.append("nombre completo")
+    if not state.customer.phone:
+        missing.append("telefono")
+    if not state.customer.address:
+        missing.append("direccion")
+    if not state.customer.neighborhood:
+        missing.append("barrio")
+    if not state.customer.payment_method:
+        state.customer.payment_method = "Pendiente por confirmar"
+    if missing:
+        state.errors = missing
+        state.response_text = BotMessageFactory.missing_customer_data(missing)
+    else:
+        state.current_step = ConversationState.CHECKOUT_REVIEW
+        await _persist_step(state, services)
+    return state
+
+
+def _extract_customer_data_from_free_lines(
+    customer: CustomerDataState,
+    lines: list[str],
+) -> None:
+    # Customers usually send checkout data as loose lines, not as a strict form.
+    # Detect strong signals first, then assign the remaining human text by order.
+    remaining: list[str] = []
+    for line in lines:
+        normalized = normalize_text(line)
+        if not customer.address and _looks_like_address(normalized):
+            customer.address = line
+        elif not customer.phone and _looks_like_phone(line):
+            customer.phone = line
+        elif not customer.payment_method and _looks_like_payment_method(normalized):
+            customer.payment_method = _normalize_payment_method(normalized, line)
+        else:
+            remaining.append(line)
+
+    if not customer.name and remaining:
+        customer.name = remaining.pop(0)
+    if not customer.neighborhood and remaining:
+        customer.neighborhood = remaining.pop(0)
+    if not customer.observations and remaining:
+        customer.observations = " ".join(remaining)
+
+
+def _looks_like_phone(text: str) -> bool:
+    if _looks_like_address(normalize_text(text)):
+        return False
+    digits = re.sub(r"\D", "", text)
+    return 7 <= len(digits) <= 10
+
+
+def _looks_like_address(normalized: str) -> bool:
+    address_markers = {
+        "cra",
+        "carrera",
+        "calle",
+        "cll",
+        "cl",
+        "avenida",
+        "av",
+        "transversal",
+        "tv",
+        "diagonal",
+        "dg",
+        "manzana",
+        "mz",
+        "casa",
+        "apto",
+        "apartamento",
+        "#",
+    }
+    tokens = set(normalized.replace("#", " # ").split())
+    return bool(tokens & address_markers) or ("#" in normalized and any(ch.isdigit() for ch in normalized))
+
+
+def _looks_like_payment_method(normalized: str) -> bool:
+    return any(
+        word in normalized
+        for word in [
+            "efectivo",
+            "datafono",
+            "datáfono",
+            "nequi",
+            "transferencia",
+            "bancolombia",
+        ]
+    )
+
+
+def _normalize_payment_method(normalized: str, original: str) -> str:
+    if "nequi" in normalized:
+        return "Nequi"
+    if "datafono" in normalized or "datáfono" in normalized:
+        return "Datafono"
+    if "transferencia" in normalized or "bancolombia" in normalized:
+        return "Transferencia Bancolombia"
+    if "efectivo" in normalized:
+        return "Efectivo"
+    return original
+
+
+async def calculate_delivery(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    # Delivery calculation may use manual zones or ORS distance behind the service.
+    # The graph only stores the resulting integer COP price in conversation state.
+    if state.customer.address and state.customer.neighborhood:
+        result = await services.calculate_delivery(
+            address=state.customer.address,
+            neighborhood=state.customer.neighborhood,
+        )
+        state.delivery_price_cop = result.delivery_price_cop
+    else:
+        state.delivery_price_cop = state.delivery_price_cop or 0
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.total_cop = state.subtotal_cop + state.delivery_price_cop
+    return state
+
+
+async def create_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.response_text = BotMessageFactory.order_created(state)
+    state.current_step = ConversationState.CHECKOUT_REVIEW
+    await _persist_step(state, services)
+    return state
+
+
+async def confirm_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.empty_cart()
+    session.clear_selected_product()
+    session.move_to(ConversationState.MAIN_MENU)
+    await services.persist_session(session)
+    state.current_step = ConversationState.MAIN_MENU
+    state.cart = []
+    state.subtotal_cop = 0
+    state.total_cop = 0
+    state.response_text = BotMessageFactory.confirmed()
+    return state
+
+
+async def cancel_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.empty_cart()
+    session.clear_selected_product()
+    session.move_to(ConversationState.MAIN_MENU)
+    await services.persist_session(session)
+    state.current_step = ConversationState.MAIN_MENU
+    state.cart = []
+    state.response_text = BotMessageFactory.cancelled()
+    return state
+
+
+async def send_telegram_response(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.should_send_response = bool(state.response_text)
+    return state
+
+
+async def fallback_natural_language(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if state.normalized_text not in {"2", "4", "pedido libre", "pedido libremente"}:
+        added_lines = await _add_natural_order_to_cart(state, services)
+        if added_lines:
+            state.current_step = ConversationState.POST_ADD
+            state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+            state.response_text = BotMessageFactory.natural_order_added(
+                added_lines,
+                state.subtotal_cop,
+            )
+            return state
+        if _looks_like_natural_order(state.normalized_text):
+            state.response_text = BotMessageFactory.unavailable_product_answer()
+            return state
+
+    state.current_step = ConversationState.NATURAL_ORDER
+    state.response_text = BotMessageFactory.natural_language_fallback()
+    await _persist_step(state, services)
+    return state
+
+
+async def show_schedules(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.response_text = BotMessageFactory.schedules()
+    return state
+
+
+async def answer_query(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if state.query_type == "category":
+        category = _category_from_query_value(state.query_value or "")
+        if category is not None:
+            products = await services.list_products_by_category(category)
+            state.response_text = BotMessageFactory.product_list_answer(category.value, products)
+            return state
+    if state.query_type == "price":
+        product = await _find_product_for_query(state.query_value or state.raw_text, services)
+        if product is not None:
+            state.response_text = BotMessageFactory.product_price_answer(product)
+            return state
+    if state.query_type == "delivery":
+        neighborhood = state.query_value or _extract_delivery_neighborhood(state.normalized_text)
+        if neighborhood:
+            result = await services.calculate_delivery(address="", neighborhood=neighborhood)
+            state.response_text = BotMessageFactory.delivery_price_answer(
+                neighborhood,
+                result.delivery_price_cop,
+            )
+            return state
+    state.response_text = BotMessageFactory.business_unknown_answer()
+    return state
+
+
+async def go_back(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    if state.current_step in {
+        ConversationState.SELECT_ASADO,
+        ConversationState.SELECT_BROASTER,
+        ConversationState.SELECT_BEBIDA,
+        ConversationState.SELECT_ADICIONAL,
+        ConversationState.SELECT_ESPECIAL,
+        ConversationState.ASK_QUANTITY,
+        ConversationState.POST_ADD,
+    }:
+        return await show_product_categories(state, services)
+    if state.current_step in {
+        ConversationState.ASK_CUSTOMER_DATA,
+        ConversationState.CHECKOUT_CONFIRM,
+        ConversationState.CHECKOUT_REVIEW,
+    }:
+        return await show_cart(state, services)
+    return await show_main_menu(state, services)
+
+
+async def _show_category(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    category: ProductCategory,
+    next_step: ConversationState,
+) -> ConversationGraphState:
+    products = await services.list_products_by_category(category)
+    state.current_step = next_step
+    state.response_text = BotMessageFactory.product_menu(category.value, products)
+    await _persist_step(state, services)
+    return state
+
+
+def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
+    text = state.normalized_text
+    if not text.isdigit():
+        return False
+
+    if state.current_step == ConversationState.MAIN_MENU:
+        main_menu_routes = {
+            "1": ConversationIntent.VER_MENU,
+            "2": ConversationIntent.LENGUAJE_NATURAL,
+            "3": ConversationIntent.MOSTRAR_CARRITO,
+            "4": ConversationIntent.HORARIOS,
+        }
+        state.intent = main_menu_routes.get(text, ConversationIntent.LENGUAJE_NATURAL)
+        return True
+
+    if state.current_step == ConversationState.PRODUCT_CATEGORY:
+        category_routes = {
+            "1": ConversationIntent.MENU_ASADO,
+            "2": ConversationIntent.MENU_BROASTER,
+            "3": ConversationIntent.MENU_BEBIDAS,
+            "4": ConversationIntent.MENU_ADICIONALES,
+            "5": ConversationIntent.MENU_ESPECIALES,
+            "6": ConversationIntent.PEDIR_DATOS_CLIENTE,
+        }
+        state.intent = category_routes.get(text, ConversationIntent.LENGUAJE_NATURAL)
+        return True
+
+    if state.current_step == ConversationState.POST_ADD:
+        post_add_routes = {
+            "1": ConversationIntent.VER_MENU,
+            "2": ConversationIntent.MOSTRAR_CARRITO,
+            "3": ConversationIntent.PEDIR_DATOS_CLIENTE,
+            "4": ConversationIntent.VACIAR_CARRITO,
+        }
+        state.intent = post_add_routes.get(text, ConversationIntent.LENGUAJE_NATURAL)
+        return True
+
+    if state.current_step == ConversationState.ASK_QUANTITY:
+        state.intent = ConversationIntent.AGREGAR_PRODUCTO
+        state.quantity = int(text)
+        return True
+
+    if state.current_step in {
+        ConversationState.SELECT_ASADO,
+        ConversationState.SELECT_BROASTER,
+        ConversationState.SELECT_BEBIDA,
+        ConversationState.SELECT_ADICIONAL,
+        ConversationState.SELECT_ESPECIAL,
+    }:
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return True
+
+    return False
+
+
+async def _add_natural_order_to_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> list[CartLineState]:
+    parsed = parse_natural_order_rules(state.raw_text)
+    if not parsed.items:
+        return []
+
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    added_lines: list[CartLineState] = []
+    for item in parsed.items:
+        product = await services.find_product(item.code)
+        if product is None:
+            continue
+        if not product.is_available or product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY:
+            continue
+        cart_item = cart_item_from_product(product, item.quantity)
+        session.add_cart_item(cart_item)
+        line = CartLineState(
+            product_code=cart_item.product_code.value,
+            product_name=cart_item.product_name.value,
+            unit_price_cop=cart_item.unit_price.amount,
+            quantity=cart_item.quantity,
+            subtotal_cop=cart_item.subtotal.amount,
+        )
+        state.cart.append(line)
+        added_lines.append(line)
+
+    if not added_lines:
+        return []
+    session.clear_selected_product()
+    session.move_to(ConversationState.POST_ADD)
+    await services.persist_session(session)
+    return added_lines
+
+
+def _looks_like_natural_order(text: str) -> bool:
+    return any(
+        phrase in text
+        for phrase in [
+            "quiero",
+            "necesito",
+            "dame",
+            "me das",
+            "me da",
+            "me regala",
+            "me regalas",
+            "me puede regalar",
+            "me puedes regalar",
+            "regalame",
+            "regálame",
+            "me vende",
+            "me vendes",
+            "agrega",
+            "agregar",
+            "pideme",
+            "pídeme",
+            "pedido",
+            "tambien",
+            "también",
+        ]
+    )
+
+
+def _classify_business_query(text: str) -> tuple[str, str] | None:
+    if _is_out_of_scope_query(text):
+        return ("unknown", text)
+    short_product_reference = _short_product_reference(text)
+    if short_product_reference:
+        return ("price", short_product_reference)
+    if not _looks_like_question(text):
+        return None
+    if any(word in text for word in ["domicilio", "envio", "envío", "llevar", "lleva"]):
+        neighborhood = _extract_delivery_neighborhood(text)
+        return ("delivery", neighborhood or text)
+    if any(word in text for word in ["vale", "valor", "precio", "cuanto cuesta", "cuánto cuesta"]):
+        if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
+            return ("category", "bebidas")
+        return ("price", text)
+    if any(word in text for word in ["tienes", "tiene", "hay", "venden", "manejan"]):
+        if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
+            return ("category", "bebidas")
+        if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
+            return ("category", "adicionales")
+        if any(word in text for word in ["asado", "pollo asado"]):
+            return ("category", "asado")
+        if any(word in text for word in ["broaster", "broasted", "broster"]):
+            return ("category", "broaster")
+        if any(word in text for word in ["especial", "especiales", "lasagna", "maduro"]):
+            return ("category", "especiales")
+    return None
+
+
+def _short_product_reference(text: str) -> str:
+    cleaned = text.strip(" ¿?.,!¡")
+    if cleaned in {"la 1.5", "1.5", "1,5", "litro y medio", "litro medio"}:
+        return "gaseosa litro y medio"
+    if cleaned in {"agua", "aguita", "botella de agua"}:
+        return "agua botella"
+    if cleaned in {"personal", "la personal", "400", "400 ml"}:
+        return "personal 400"
+    if cleaned in {"lata", "la lata"}:
+        return "lata gaseosa"
+    return ""
+
+
+def _looks_like_question(text: str) -> bool:
+    return any(
+        word in text
+        for word in [
+            "que",
+            "qué",
+            "cuanto",
+            "cuánto",
+            "cual",
+            "cuál",
+            "tienes",
+            "tiene",
+            "hay",
+            "vale",
+            "precio",
+            "valor",
+            "domicilio",
+        ]
+    )
+
+
+def _is_out_of_scope_query(text: str) -> bool:
+    return any(
+        phrase in text
+        for phrase in [
+            "hola mundo",
+            "python",
+            "javascript",
+            "programa",
+            "codigo",
+            "código",
+            "receta",
+            "tarea",
+            "chiste",
+        ]
+    )
+
+
+def _extract_delivery_neighborhood(text: str) -> str:
+    patterns = [
+        r"(?:domicilio|envio|envío|llevar|lleva)(?:\s+para|\s+a|\s+hasta|\s+en)?\s+(.+)",
+        r"(?:para|a|hasta|en)\s+(.+?)\s+(?:cuanto|cuánto|vale|cuesta)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = match.group(1).strip(" ?.,")
+            value = re.sub(r"\b(cuanto|cuánto|vale|cuesta|es|el|la|un|una)\b", "", value).strip()
+            if value:
+                return value
+    return ""
+
+
+def _category_from_query_value(value: str) -> ProductCategory | None:
+    mapping = {
+        "bebidas": ProductCategory.BEBIDAS,
+        "adicionales": ProductCategory.ADICIONALES,
+        "asado": ProductCategory.POLLO_ASADO,
+        "broaster": ProductCategory.POLLO_BROASTER,
+        "especiales": ProductCategory.ESPECIALES,
+    }
+    return mapping.get(value)
+
+
+async def _find_product_for_query(
+    text: str,
+    services: ConversationGraphServices,
+):
+    parsed = parse_natural_order_rules(text)
+    for item in parsed.items:
+        product = await services.find_product(item.code)
+        if product is not None:
+            return product
+    normalized = normalize_text(text)
+    for removable in [
+        "cuanto vale",
+        "cuánto vale",
+        "cuanto cuesta",
+        "cuánto cuesta",
+        "precio de",
+        "valor de",
+        "que vale",
+        "qué vale",
+        "vale",
+    ]:
+        normalized = normalized.replace(removable, " ")
+    return await services.find_product(normalized.strip())
+
+
+async def _find_numbered_product(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+):
+    if not state.normalized_text.isdigit():
+        return None
+    category_by_step = {
+        ConversationState.SELECT_ASADO: ProductCategory.POLLO_ASADO,
+        ConversationState.SELECT_BROASTER: ProductCategory.POLLO_BROASTER,
+        ConversationState.SELECT_BEBIDA: ProductCategory.BEBIDAS,
+        ConversationState.SELECT_ADICIONAL: ProductCategory.ADICIONALES,
+        ConversationState.SELECT_ESPECIAL: ProductCategory.ESPECIALES,
+    }
+    category = category_by_step.get(state.current_step)
+    if category is None:
+        return None
+    index = int(state.normalized_text) - 1
+    products = await services.list_products_by_category(category)
+    if index < 0 or index >= len(products):
+        return None
+    return products[index]
+
+
+async def _persist_step(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    if state.selected_product_code:
+        session.selected_product_code = ProductCode(state.selected_product_code)
+    else:
+        session.clear_selected_product()
+    await services.persist_step(session, state.current_step)

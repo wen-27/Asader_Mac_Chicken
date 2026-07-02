@@ -1,0 +1,249 @@
+"""Deterministic natural-language parser for common restaurant orders.
+
+Keep the most common ASADERO phrases here before involving Gemini. This module
+is deliberately simple: it maps human aliases to catalog codes and extracts
+small integer quantities without ever inventing products.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from app.modules.ai.application.schemas import NaturalLanguageOrderParse, ParsedOrderItem
+from app.shared.utils.text_normalizer import normalize_text
+
+
+@dataclass(frozen=True)
+class NaturalProductRule:
+    code: str
+    product_terms: tuple[str, ...]
+    size_terms: tuple[str, ...] = ()
+    exclusions: tuple[str, ...] = ()
+
+
+NUMBER_WORDS = {
+    "un": 1,
+    "una": 1,
+    "uno": 1,
+    "dos": 2,
+    "tres": 3,
+    "cuatro": 4,
+    "cinco": 5,
+    "seis": 6,
+    "siete": 7,
+    "ocho": 8,
+    "nueve": 9,
+    "diez": 10,
+}
+
+
+PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
+    # Specific sizes must appear before generic products. For example, "medio
+    # pollo" should become ASADO_MEDIO, not ASADO_ENTERO or a generic pollo.
+    NaturalProductRule(
+        "ASADO_34",
+        ("pollo", "pollos", "asado"),
+        ("3/4", "3 4", "tres cuartos", "tres cuarto"),
+        ("broaster", "broasted", "broster"),
+    ),
+    NaturalProductRule(
+        "ASADO_MEDIO",
+        ("pollo", "pollos", "asado"),
+        ("1/2", "1 2", "medio", "medios", "media", "mitad"),
+        ("broaster", "broasted", "broster"),
+    ),
+    NaturalProductRule(
+        "ASADO_CUARTO",
+        ("pollo", "pollos", "asado"),
+        ("1/4", "1 4", "cuarto", "cuartos"),
+        ("broaster", "broasted", "broster", "tres cuartos", "3/4"),
+    ),
+    NaturalProductRule(
+        "ASADO_ENTERO",
+        ("pollo", "pollos", "asado"),
+        ("entero", "completo", "uno", "un"),
+        ("broaster", "broasted", "broster", "medio", "cuarto", "3/4", "1/2", "1/4"),
+    ),
+    NaturalProductRule(
+        "BROASTER_34",
+        ("broaster", "broasted", "broster"),
+        ("3/4", "3 4", "tres cuartos", "tres cuarto"),
+    ),
+    NaturalProductRule(
+        "BROASTER_MEDIO",
+        ("broaster", "broasted", "broster"),
+        ("1/2", "1 2", "medio", "medios", "media", "mitad"),
+    ),
+    NaturalProductRule(
+        "BROASTER_CUARTO",
+        ("broaster", "broasted", "broster"),
+        ("1/4", "1 4", "cuarto", "cuartos"),
+        ("tres cuartos", "3/4"),
+    ),
+    NaturalProductRule(
+        "BROASTER_ENTERO",
+        ("broaster", "broasted", "broster"),
+        ("entero", "completo", "uno", "un"),
+        ("medio", "cuarto", "3/4", "1/2", "1/4"),
+    ),
+    NaturalProductRule(
+        "LITRO_MEDIO",
+        ("coca", "cocas", "cocacola", "coca cola", "coca colas", "gaseosa", "gaseosas", "bebida"),
+        ("1.5", "1,5", "1 5", "litro y medio", "litro medio", "litroymedio"),
+    ),
+    NaturalProductRule(
+        "TRES_LITROS",
+        ("coca", "cocas", "cocacola", "coca cola", "coca colas", "gaseosa", "gaseosas", "bebida"),
+        ("3 litros", "tres litros", "3l"),
+    ),
+    NaturalProductRule(
+        "LATA_GASEOSA",
+        ("lata", "gaseosa en lata", "gaseosas en lata", "coca lata", "cocacola lata"),
+    ),
+    NaturalProductRule(
+        "PERSONAL_400",
+        ("personal", "400", "400ml", "400 ml"),
+        ("gaseosa", "coca", "cocacola", "coca cola"),
+    ),
+    NaturalProductRule(
+        "GASEOSA",
+        ("gaseosa", "gaseosas", "coca", "cocas", "cocacola", "coca cola", "coca colas"),
+        exclusions=("1.5", "1,5", "litro y medio", "3 litros", "tres litros", "lata", "400"),
+    ),
+    NaturalProductRule(
+        "PAPA_FRANCESA",
+        (
+            "papa francesa",
+            "papas francesas",
+            "papa",
+            "papas",
+            "porcion de francesa",
+            "porcion de francesas",
+            "porción de francesa",
+            "porción de francesas",
+            "papa frita",
+            "papas fritas",
+            "fritas",
+            "adicional de papas",
+            "adicional de papas fritas",
+        ),
+    ),
+    NaturalProductRule("PAPA_SALADA", ("papa salada", "papas saladas", "papa cocida")),
+    NaturalProductRule("BOTELLA_VIDRIO", ("botella vidrio", "botella de vidrio", "envase vidrio")),
+    NaturalProductRule("ICOPOR", ("icopor", "icopores", "caja icopor", "cajas icopor")),
+    NaturalProductRule(
+        "ADICIONAL_SALSAS",
+        ("adicional de salsas", "salsas", "salsa", "extra salsas", "extra salsa"),
+    ),
+    NaturalProductRule("SOPA_ADICIONAL", ("sopa", "sopita", "sopa adicional")),
+    NaturalProductRule("ICOPOR_SOPA", ("icopor sopa", "icopor para sopa", "vaso sopa")),
+    NaturalProductRule("LASAGNA_MIXTA", ("lasagna", "lasana", "lasaña")),
+    NaturalProductRule("MADURO_QUESO", ("maduro", "maduro con queso", "platano maduro")),
+    NaturalProductRule("AGUA_BOTELLA", ("agua", "agua botella", "botella de agua")),
+    NaturalProductRule("JUGO_LUBY", ("jugo luby", "luby")),
+    NaturalProductRule("GATORADE", ("gatorade",)),
+    NaturalProductRule(
+        "JUGO_HIT_LITRO_TETRA",
+        ("jugo hit", "hit litro", "hit litro tetra", "jugo hit litro tetra"),
+    ),
+    NaturalProductRule("COLA_POLA", ("cola y pola", "cola pola", "colapola")),
+    NaturalProductRule("CLUB_COLOMBIA", ("club colombia", "club")),
+    NaturalProductRule("PILSEN_BOTELLA", ("pilsen", "pilsen botella")),
+    NaturalProductRule("CERVEZA_MILLER_LATA", ("miller", "miller lata", "cerveza miller")),
+    NaturalProductRule("CERVEZA_LATA", ("cerveza lata", "cerveza en lata", "lata de cerveza")),
+    NaturalProductRule("ALOHA_VASO", ("aloha vaso", "vaso aloha")),
+    NaturalProductRule("BOCATO_CONO", ("bocato", "bocato cono", "cono bocato")),
+    NaturalProductRule("ARTESANAL", ("artesanal", "helado artesanal")),
+    NaturalProductRule("PLATILLO_JUMBO", ("platillo jumbo",)),
+    NaturalProductRule("PLATILLO", ("platillo",), exclusions=("jumbo",)),
+    NaturalProductRule("PALETA_DRACULA", ("paleta dracula", "dracula")),
+    NaturalProductRule("CHOCOCONO", ("chococono", "choco cono")),
+    NaturalProductRule("ALOHA_LIMON", ("aloha limon", "aloha limón")),
+    NaturalProductRule("PALETA_JET", ("paleta jet", "jet")),
+    NaturalProductRule("CASERO", ("casero", "helado casero")),
+    NaturalProductRule("MINI_POLET", ("mini polet",)),
+    NaturalProductRule("POLET", ("polet",), exclusions=("mini polet",)),
+)
+
+
+def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
+    normalized = _normalize_for_matching(message)
+    items: list[ParsedOrderItem] = []
+    matched_codes: set[str] = set()
+
+    for rule in PRODUCT_RULES:
+        # Only one line per product code is emitted, even if the user repeats
+        # several synonyms in the same message.
+        if rule.code in matched_codes:
+            continue
+        if _matches_rule(normalized, rule):
+            items.append(
+                ParsedOrderItem(
+                    code=rule.code,
+                    quantity=_quantity_before_product(normalized, rule),
+                )
+            )
+            matched_codes.add(rule.code)
+
+    wants_checkout = any(
+        term in normalized
+        for term in ("finalizar", "confirmar pedido", "terminar pedido", "checkout")
+    )
+    confidence = 0.92 if items else 0.0
+    return NaturalLanguageOrderParse(
+        intent="order_items" if items else "unknown",
+        items=items,
+        wantsCheckout=wants_checkout,
+        confidence=confidence,
+        notes=["rule_based_parser"] if items else [],
+    )
+
+
+def _normalize_for_matching(message: str) -> str:
+    # Normalize punctuation and Spanish fraction symbols while preserving values
+    # such as 1.5 because drink sizes depend on them.
+    normalized = normalize_text(message)
+    normalized = normalized.replace("½", " 1/2 ").replace("¼", " 1/4 ").replace("¾", " 3/4 ")
+    normalized = re.sub(r"(?<=\d),(?=\d)", ".", normalized)
+    normalized = re.sub(r"(?<=\d)\s*/\s*(?=\d)", "/", normalized)
+    normalized = re.sub(r"(?<=\d)\.(?=\d)", ".", normalized)
+    normalized = normalized.replace("-", " ")
+    normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
+    if any(_contains_term(text, exclusion) for exclusion in rule.exclusions):
+        return False
+    if not any(_contains_term(text, term) for term in rule.product_terms):
+        return False
+    if not rule.size_terms:
+        return True
+    return any(_contains_term(text, term) for term in rule.size_terms)
+
+
+def _contains_term(text: str, term: str) -> bool:
+    normalized_term = _normalize_for_matching(term)
+    if not normalized_term:
+        return False
+    return re.search(rf"(^|\s){re.escape(normalized_term)}(\s|$)", text) is not None
+
+
+def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
+    # Quantities are interpreted as units before the matched product phrase:
+    # "dos papas" => quantity 2, while "medio pollo" remains one ASADO_MEDIO.
+    positions = [
+        text.find(_normalize_for_matching(term))
+        for term in rule.product_terms + rule.size_terms
+        if text.find(_normalize_for_matching(term)) >= 0
+    ]
+    product_position = min(positions) if positions else 0
+    prefix = text[:product_position].strip()
+    tokens = prefix.split()
+    if not tokens:
+        return 1
+    last = tokens[-1]
+    if last.isdigit():
+        return max(1, int(last))
+    return NUMBER_WORDS.get(last, 1)

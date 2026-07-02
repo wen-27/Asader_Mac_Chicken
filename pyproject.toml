@@ -1,0 +1,29 @@
+[project]
+# Packaging metadata only. Runtime dependencies live in requirements.txt so
+# Python 3.9.6 local installs use one dependency source.
+name = "asadero-mc-bot-backend"
+version = "0.1.0"
+description = "Backend FastAPI para el bot de pedidos de ASADERO MC CHICKEN EXPRESS."
+readme = "README.md"
+requires-python = ">=3.9,<3.10"
+
+[build-system]
+requires = ["setuptools>=70.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+# Tests use pytest-asyncio auto mode because most application boundaries are async.
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+# Only application packages are installed. Alembic/scripts/tests stay as local
+# project tooling and are invoked directly from the repository.
+include = ["app*"]
+exclude = ["alembic*", "scripts*", "tests*"]
+
+[tool.ruff]
+# Keep formatting compatible with Python 3.9.6.
+line-length = 100
+target-version = "py39"
