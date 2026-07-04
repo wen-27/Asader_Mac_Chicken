@@ -13,7 +13,7 @@ settings = get_settings()
 
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.app_debug,
+    echo=False,
     pool_pre_ping=True,
 )
 
@@ -27,4 +27,3 @@ AsyncSessionFactory = async_sessionmaker(
 async def get_async_session() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionFactory() as session:
         yield session
-

@@ -77,7 +77,7 @@ class WhatsAppWebhookPayload(BaseModel):
         for entry in self.entry:
             for change in entry.changes:
                 contacts_by_phone = {
-                    contact.wa_id: contact.profile.name
+                    contact.wa_id: contact.profile.name if contact.profile else None
                     for contact in change.value.contacts or []
                     if contact.wa_id
                 }
