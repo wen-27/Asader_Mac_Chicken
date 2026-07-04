@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.config.settings import Settings, get_settings
-from app.modules.telegram.infrastructure.telegram_http_client import TelegramHttpClient
+from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
 from app.shared.domain.value_object import ChatId
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -34,5 +34,18 @@ async def send_internal_message(
     settings: Annotated[Settings, Depends(get_settings)],
     _: Annotated[None, Depends(validate_internal_api_key)],
 ) -> dict[str, object]:
-    await TelegramHttpClient(settings).send_text_message(ChatId(int(payload.chat_id)), payload.body)
+    await WhatsAppCloudClient(settings).send_text_message(
+        ChatId(_phone_to_chat_id(payload.chat_id)),
+        payload.body,
+    )
     return {"ok": True}
+
+
+def _phone_to_chat_id(value: str) -> int:
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if not digits:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="chatId must contain a WhatsApp phone number",
+        )
+    return int(digits)

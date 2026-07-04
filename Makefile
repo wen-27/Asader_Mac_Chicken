@@ -34,7 +34,7 @@ dev:
 local:
 	. .venv/bin/activate && python -m scripts.local_dev
 
-# Expose localhost:8000 through a public HTTPS URL for Telegram webhooks.
+# Expose localhost:8000 through a public HTTPS URL for WhatsApp webhooks.
 tunnel:
 	.local/bin/cloudflared tunnel --url http://localhost:8000
 
@@ -59,8 +59,6 @@ health:
 reindex:
 	curl -X POST http://localhost:8000/admin/catalog/reindex-vector-store
 
-# Register the Telegram webhook using PUBLIC_WEBHOOK_URL from the shell.
+# Verify the WhatsApp webhook using PUBLIC_WEBHOOK_URL and WHATSAPP_VERIFY_TOKEN.
 webhook:
-	curl -X POST "https://api.telegram.org/bot$${TELEGRAM_BOT_TOKEN}/setWebhook" \
-		-d "url=$${PUBLIC_WEBHOOK_URL}/webhooks/telegram" \
-		-d "secret_token=$${TELEGRAM_WEBHOOK_SECRET}"
+	curl "$${PUBLIC_WEBHOOK_URL}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=$${WHATSAPP_VERIFY_TOKEN}&hub.challenge=test"

@@ -43,9 +43,14 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8001
 
-    # Telegram credentials must never be hardcoded in adapters or tests.
+    # Telegram is kept as a legacy/local development channel. WhatsApp Cloud API
+    # is the production entry point for restaurant customers.
     telegram_bot_token: str = Field(default="", repr=False)
     telegram_webhook_secret: str = Field(default="", repr=False)
+    whatsapp_access_token: str = Field(default="", repr=False)
+    whatsapp_phone_number_id: str = Field(default="", repr=False)
+    whatsapp_verify_token: str = Field(default="", repr=False)
+    whatsapp_graph_api_version: str = "v23.0"
 
     # Gemini is the configured LLM path. Deterministic rules run first to avoid
     # spending credits on common menu/order messages.

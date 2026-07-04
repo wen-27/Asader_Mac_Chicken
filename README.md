@@ -1,6 +1,6 @@
 # ASADERO MC Bot Backend
 
-Backend FastAPI del bot de pedidos por Telegram de **ASADERO MC CHICKEN EXPRESS**.
+Backend FastAPI del bot de pedidos por WhatsApp Cloud API de **ASADERO MC CHICKEN EXPRESS**.
 
 Este proyecto corre **sin Docker**. Usa PostgreSQL como fuente de verdad, Redis para cache/idempotencia/locks, ChromaDB para busqueda semantica del catalogo y Gemini para lenguaje natural cuando las reglas locales no alcanzan.
 
@@ -36,8 +36,10 @@ REDIS_URL=redis://localhost:6379/0
 CHROMA_HOST=localhost
 CHROMA_PORT=8001
 
-TELEGRAM_BOT_TOKEN=token_del_bot
-TELEGRAM_WEBHOOK_SECRET=un_secreto_largo
+WHATSAPP_ACCESS_TOKEN=token_permanente_o_temporal_de_meta
+WHATSAPP_PHONE_NUMBER_ID=id_del_numero_de_whatsapp
+WHATSAPP_VERIFY_TOKEN=un_secreto_largo_para_validar_el_webhook
+WHATSAPP_GRAPH_API_VERSION=v23.0
 
 LLM_PROVIDER=gemini
 GEMINI_MODEL=gemini-2.0-flash-lite
@@ -56,7 +58,7 @@ No subas `.env` a git.
 - Python 3.9.6
 - Postgres.app
 - Redis local en `.local/bin/redis-server`
-- cloudflared en `.local/bin/cloudflared` si vas a probar Telegram con webhook
+- cloudflared en `.local/bin/cloudflared` si vas a probar WhatsApp con webhook local
 
 ### 2. Crear entorno e instalar dependencias
 
@@ -121,7 +123,7 @@ En Windows se recomienda levantar los servicios en terminales separadas.
 - Python 3.9.6
 - PostgreSQL para Windows
 - Redis compatible para Windows, por ejemplo Memurai o Redis en WSL
-- cloudflared para Windows si vas a probar Telegram con webhook
+- cloudflared para Windows si vas a probar WhatsApp con webhook
 
 PostgreSQL debe quedar escuchando en `localhost:5433` o debes ajustar el puerto en `DATABASE_URL`.
 
@@ -215,9 +217,9 @@ Abre Swagger:
 http://localhost:8000/docs
 ```
 
-## Configurar Telegram Con Tunel
+## Configurar WhatsApp Cloud API Con Tunel
 
-Telegram necesita una URL publica HTTPS para llamar el webhook.
+Meta necesita una URL publica HTTPS para validar y llamar el webhook de WhatsApp.
 
 ### Opcion Recomendada: cloudflared
 
@@ -239,35 +241,18 @@ El comando imprime una URL parecida a:
 https://algo.trycloudflare.com
 ```
 
-Configura el webhook:
+En Meta Developers, configura:
 
-Mac:
-
-```bash
-source .venv/bin/activate
-export TELEGRAM_BOT_TOKEN="tu_token"
-export TELEGRAM_WEBHOOK_SECRET="tu_secreto"
-curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -d "url=https://TU_URL_PUBLICA/webhooks/telegram" \
-  -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
-```
-
-Windows PowerShell:
-
-```powershell
-$env:TELEGRAM_BOT_TOKEN="tu_token"
-$env:TELEGRAM_WEBHOOK_SECRET="tu_secreto"
-curl -X POST "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/setWebhook" `
-  -d "url=https://TU_URL_PUBLICA/webhooks/telegram" `
-  -d "secret_token=$env:TELEGRAM_WEBHOOK_SECRET"
-```
+- Callback URL: `https://TU_URL_PUBLICA/webhooks/whatsapp`
+- Verify token: el mismo valor de `WHATSAPP_VERIFY_TOKEN`
+- Campo suscrito: `messages`
 
 ### Opcion VS Code
 
 Puedes usar port forwarding de VS Code solo si te entrega una URL publica HTTPS estable. Esa URL debe apuntar al puerto `8000` y se usa igual:
 
 ```text
-https://TU_URL_PUBLICA/webhooks/telegram
+https://TU_URL_PUBLICA/webhooks/whatsapp
 ```
 
 ## Comandos Utiles
@@ -296,16 +281,16 @@ Reindexar catalogo semantico:
 curl -X POST http://localhost:8000/admin/catalog/reindex-vector-store
 ```
 
-Verificar webhook actual:
+Verificar validacion del webhook:
 
 ```bash
-curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+curl "https://TU_URL_PUBLICA/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${WHATSAPP_VERIFY_TOKEN}&hub.challenge=test"
 ```
 
 En Windows PowerShell:
 
 ```powershell
-curl "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/getWebhookInfo"
+curl "https://TU_URL_PUBLICA/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=$env:WHATSAPP_VERIFY_TOKEN&hub.challenge=test"
 ```
 
 ## Flujo Diario Recomendado
@@ -324,7 +309,7 @@ Windows:
 3. Terminal 1: `chroma run --host localhost --port 8001 --path .\.chroma`
 4. Terminal 2: `python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
 5. Terminal 3: `cloudflared tunnel --url http://localhost:8000`
-6. Si cambio la URL del tunel, vuelve a ejecutar `setWebhook`.
+6. Si cambia la URL del tunel, actualiza el Callback URL en Meta Developers.
 
 ## Si Algo No Responde
 
@@ -333,13 +318,13 @@ Windows:
 3. Revisa que Redis este en `localhost:6379`.
 4. Revisa que Chroma este en `localhost:8001`.
 5. Revisa que `DATABASE_URL` apunte a la base real.
-6. Revisa el webhook:
+6. Revisa la validacion del webhook:
 
 ```bash
-curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+curl "https://TU_URL_PUBLICA/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${WHATSAPP_VERIFY_TOKEN}&hub.challenge=test"
 ```
 
-7. Si cambiaste codigo y Telegram sigue igual, reinicia FastAPI.
+7. Si cambiaste codigo y WhatsApp sigue igual, reinicia FastAPI.
 
 ## Notas De Produccion
 
