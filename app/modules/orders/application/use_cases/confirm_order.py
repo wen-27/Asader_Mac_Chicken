@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
+from app.config.settings import get_settings
 from app.modules.conversations.application.ports import TelegramSessionRepository
+from app.modules.orders.infrastructure.admin_backend_order_client import AdminBackendOrderClient
 from app.modules.orders.application.ports import OrderRepository
 from app.modules.orders.application.use_cases.results import CheckoutStatus, OrderResult
 from app.shared.domain.value_object import ChatId, OrderId
+
+logger = logging.getLogger(__name__)
 
 
 class ConfirmOrder:
@@ -24,4 +30,8 @@ class ConfirmOrder:
             session.empty_cart()
             session.clear_selected_product()
             await self._sessions.save(session)
+        try:
+            await AdminBackendOrderClient(get_settings()).sync_confirmed_order(order, chat_id)
+        except Exception as exc:
+            logger.exception("failed to sync confirmed order with admin backend: %s", exc)
         return OrderResult(status=CheckoutStatus.OK, order=order)

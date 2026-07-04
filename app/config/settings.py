@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     openrouteservice_api_key: str = Field(default="", repr=False)
     openrouteservice_base_url: str = "https://api.openrouteservice.org"
 
+    admin_backend_base_url: str = "http://localhost:3000/api/v1/internal"
+    internal_api_key: str = Field(default="", repr=False)
+
     log_level: str = "INFO"
 
     @property

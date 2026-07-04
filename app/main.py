@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.config.logging import configure_logging
 from app.config.settings import get_settings
 from app.modules.catalog.api.routes import router as catalog_admin_router
+from app.modules.internal.routes import router as internal_router
 from app.modules.telegram.api.routes import router as telegram_router
 from app.shared.infrastructure.health import check_chromadb, check_postgres, check_redis
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
 
     app.include_router(telegram_router)
     app.include_router(catalog_admin_router)
+    app.include_router(internal_router)
 
     return app
 
