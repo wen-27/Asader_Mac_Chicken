@@ -441,6 +441,10 @@ async def validate_customer_data(
         missing.append("metodo de pago")
     if missing:
         state.errors = missing
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        _copy_checkout_state_to_session(state, session)
+        session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+        await services.persist_session(session)
         state.response_text = BotMessageFactory.missing_customer_data(missing)
     else:
         state.current_step = ConversationState.CHECKOUT_REVIEW

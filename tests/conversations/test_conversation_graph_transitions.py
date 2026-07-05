@@ -503,6 +503,45 @@ async def test_customer_data_accepts_free_line_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_customer_data_keeps_partial_fields_when_one_field_is_missing() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    first_state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Angel David Pinzon\n3153327502\nTransversal 23 #52A-21\nEfectivo",
+    )
+
+    first_state = await nodes.load_or_create_session(first_state, services)
+    first_state = await nodes.extract_customer_data(first_state, services)
+    first_state = await nodes.validate_customer_data(first_state, services)
+
+    assert first_state.errors == ["barrio"]
+    assert services.session.customer_name == "Angel David Pinzon"
+    assert services.session.customer_phone == "3153327502"
+    assert services.session.customer_address == "Transversal 23 #52A-21"
+    assert services.session.payment_method == "Efectivo"
+
+    second_state = ConversationGraphState(
+        chat_id=123,
+        raw_text="San Antonio del Carrizal, Giron",
+    )
+
+    second_state = await nodes.load_or_create_session(second_state, services)
+    second_state = await nodes.extract_customer_data(second_state, services)
+    second_state = await nodes.validate_customer_data(second_state, services)
+
+    assert not second_state.errors
+    assert second_state.current_step == ConversationState.CHECKOUT_REVIEW
+    assert second_state.customer.name == "Angel David Pinzon"
+    assert second_state.customer.phone == "3153327502"
+    assert second_state.customer.address == "Transversal 23 #52A-21"
+    assert second_state.customer.neighborhood == "San Antonio del Carrizal, Giron"
+    assert second_state.customer.payment_method == "Efectivo"
+
+
+@pytest.mark.asyncio
 async def test_customer_data_does_not_confuse_address_with_phone() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(
