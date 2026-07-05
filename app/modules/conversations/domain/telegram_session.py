@@ -16,6 +16,12 @@ class TelegramSession:
     current_step: ConversationState = ConversationState.MAIN_MENU
     selected_product_code: ProductCode | None = None
     cart: list[CartItem] = field(default_factory=list)
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    customer_address: str | None = None
+    customer_neighborhood: str | None = None
+    payment_method: str | None = None
+    observations: str | None = None
 
     def move_to(self, step: ConversationState) -> None:
         self.current_step = step
@@ -45,4 +51,3 @@ class TelegramSession:
         for item in self.cart:
             total += item.subtotal
         return total
-

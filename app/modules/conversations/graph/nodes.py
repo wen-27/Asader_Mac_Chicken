@@ -8,10 +8,17 @@ Those details stay behind ConversationGraphServices and application use cases.
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
-from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
+from app.modules.catalog.domain.enums import ProductCategory
+from app.modules.catalog.domain.product import Product
+from app.modules.catalog.domain.specifications import ProductAvailabilitySpecification
 from app.modules.conversations.application.graph_services import (
+    AdminOrderCustomerPayload,
+    AdminOrderItemPayload,
+    AdminOrderPayload,
     ConversationGraphServices,
     cart_item_from_product,
 )
@@ -62,6 +69,7 @@ async def load_or_create_session(
         for item in session.cart
     ]
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    _copy_checkout_session_to_state(session, state)
     return state
 
 
@@ -76,6 +84,10 @@ async def detect_intent(
         state.intent = ConversationIntent.VOLVER
         return state
     if _detect_numbered_menu_intent(state):
+        return state
+    natural_menu_intent = _detect_natural_menu_intent(text)
+    if natural_menu_intent is not None:
+        state.intent = natural_menu_intent
         return state
     if state.current_step == ConversationState.POST_ADD:
         # After adding an item, short commands such as "3" or "finalizar" should
@@ -250,7 +262,7 @@ async def validate_product_availability(
         state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
         state.response_text = BotMessageFactory.product_not_found()
         return state
-    if not product.is_available or product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY:
+    if not _is_product_available(product):
         state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
         state.response_text = BotMessageFactory.product_unavailable()
     return state
@@ -519,6 +531,68 @@ def _normalize_payment_method(normalized: str, original: str) -> str:
     return original
 
 
+def _copy_checkout_state_to_session(
+    state: ConversationGraphState,
+    session,
+) -> None:
+    session.customer_name = state.customer.name
+    session.customer_phone = state.customer.phone
+    session.customer_address = state.customer.address
+    session.customer_neighborhood = state.customer.neighborhood
+    session.payment_method = state.customer.payment_method
+    session.observations = state.customer.observations
+
+
+def _copy_checkout_session_to_state(
+    session,
+    state: ConversationGraphState,
+) -> None:
+    state.customer.name = state.customer.name or session.customer_name
+    state.customer.phone = state.customer.phone or session.customer_phone
+    state.customer.address = state.customer.address or session.customer_address
+    state.customer.neighborhood = state.customer.neighborhood or session.customer_neighborhood
+    state.customer.payment_method = state.customer.payment_method or session.payment_method
+    state.customer.observations = state.customer.observations or session.observations
+
+
+def _clear_checkout_session(session) -> None:
+    session.customer_name = None
+    session.customer_phone = None
+    session.customer_address = None
+    session.customer_neighborhood = None
+    session.payment_method = None
+    session.observations = None
+
+
+def _admin_order_payload_from_state(state: ConversationGraphState) -> AdminOrderPayload:
+    return AdminOrderPayload(
+        external_bot_id=f"whatsapp-{state.chat_id}-{datetime.now(ZoneInfo('UTC')).isoformat()}",
+        chat_id=str(state.chat_id),
+        customer=AdminOrderCustomerPayload(
+            full_name=state.customer.name or "Cliente WhatsApp",
+            phone=state.customer.phone or str(state.chat_id),
+            address=" - ".join(
+                part
+                for part in [state.customer.address, state.customer.neighborhood]
+                if part
+            )
+            or "Sin direccion",
+        ),
+        payment_method=state.customer.payment_method or "Pendiente por confirmar",
+        observations=state.customer.observations,
+        delivery_fee_cop=state.delivery_price_cop or 0,
+        items=[
+            AdminOrderItemPayload(
+                product_code=item.product_code,
+                product_name=item.product_name,
+                quantity=item.quantity,
+                unit_price_cop=item.unit_price_cop,
+            )
+            for item in state.cart
+        ],
+    )
+
+
 async def calculate_delivery(
     state: ConversationGraphState,
     services: ConversationGraphServices,
@@ -544,7 +618,10 @@ async def create_order(
 ) -> ConversationGraphState:
     state.response_text = BotMessageFactory.order_created(state)
     state.current_step = ConversationState.CHECKOUT_REVIEW
-    await _persist_step(state, services)
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_state_to_session(state, session)
+    session.move_to(state.current_step)
+    await services.persist_session(session)
     return state
 
 
@@ -553,8 +630,18 @@ async def confirm_order(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_session_to_state(session, state)
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    if state.customer.address and state.customer.neighborhood:
+        delivery = await services.calculate_delivery(
+            address=state.customer.address,
+            neighborhood=state.customer.neighborhood,
+        )
+        state.delivery_price_cop = delivery.delivery_price_cop
+    await services.sync_confirmed_order(_admin_order_payload_from_state(state))
     session.empty_cart()
     session.clear_selected_product()
+    _clear_checkout_session(session)
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
     state.current_step = ConversationState.MAIN_MENU
@@ -603,7 +690,9 @@ async def fallback_natural_language(
             )
             return state
         if _looks_like_natural_order(state.normalized_text):
+            state.current_step = ConversationState.PRODUCT_CATEGORY
             state.response_text = BotMessageFactory.unavailable_product_answer()
+            await _persist_step(state, services)
             return state
 
     state.current_step = ConversationState.NATURAL_ORDER
@@ -753,7 +842,7 @@ async def _add_natural_order_to_cart(
         product = await services.find_product(item.code)
         if product is None:
             continue
-        if not product.is_available or product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY:
+        if not _is_product_available(product):
             continue
         cart_item = cart_item_from_product(product, item.quantity)
         session.add_cart_item(cart_item)
@@ -801,6 +890,77 @@ def _looks_like_natural_order(text: str) -> bool:
             "también",
         ]
     )
+
+
+def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
+    if _is_main_menu_request(text):
+        return ConversationIntent.MOSTRAR_MENU
+    if _contains_any(text, ("finalizar", "finalizar pedido", "terminar pedido", "checkout")):
+        return ConversationIntent.PEDIR_DATOS_CLIENTE
+    if _contains_any(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+        return ConversationIntent.MOSTRAR_CARRITO
+    if _contains_any(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
+        return ConversationIntent.VACIAR_CARRITO
+    if _contains_any(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
+        return ConversationIntent.ELIMINAR_PRODUCTO
+    if _contains_any(text, ("horario", "horarios", "a que hora", "a qué hora")):
+        return ConversationIntent.HORARIOS
+    if _contains_any(text, ("pedir escribiendo", "pedido libre", "escribir pedido")):
+        return ConversationIntent.LENGUAJE_NATURAL
+    if _is_category_request(text, ("pollo asado", "menu asado", "menú asado", "asado")):
+        return ConversationIntent.MENU_ASADO
+    if _is_category_request(text, ("broaster", "broasted", "broster")):
+        return ConversationIntent.MENU_BROASTER
+    if _is_category_request(text, ("bebida", "bebidas", "gaseosa", "gaseosas")):
+        return ConversationIntent.MENU_BEBIDAS
+    if _is_category_request(text, ("adicional", "adicionales", "papa", "papas", "sopa")):
+        return ConversationIntent.MENU_ADICIONALES
+    if _is_category_request(text, ("especial", "especiales", "platos especiales")):
+        return ConversationIntent.MENU_ESPECIALES
+    if _is_menu_request(text):
+        return ConversationIntent.VER_MENU
+    return None
+
+
+def _is_main_menu_request(text: str) -> bool:
+    return text in {"hola", "inicio", "empezar"} or _contains_any(
+        text,
+        (
+            "hola buenas",
+            "buenas",
+            "menu principal",
+            "menú principal",
+            "menu inicial",
+            "menú inicial",
+            "menu de inicio",
+            "menú de inicio",
+            "inicio",
+        ),
+    )
+
+
+def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def _is_category_request(text: str, category_terms: tuple[str, ...]) -> bool:
+    action_terms = ("menu", "menú", "ver", "mostrar", "opciones", "categoria", "categoría")
+    return _contains_any(text, action_terms) and _contains_any(text, category_terms)
+
+
+def _business_today() -> date:
+    return datetime.now(ZoneInfo("America/Bogota")).date()
+
+
+def _is_product_available(product: Product, business_date: date | None = None) -> bool:
+    availability = ProductAvailabilitySpecification(is_holiday=lambda _: False)
+    return availability.is_satisfied_by(product, business_date or _business_today())
+
+
+def _is_menu_request(text: str) -> bool:
+    if text in {"menu", "menú"}:
+        return False
+    return "menu" in text or "menú" in text
 
 
 def _classify_business_query(text: str) -> tuple[str, str] | None:

@@ -255,7 +255,8 @@ class BotMessageFactory:
         return (
             "Gracias por preguntar. Por ahora no cuento con informacion de ese producto "
             "en el catalogo del asadero. Puedo ayudarte con pollo asado, broaster, bebidas, "
-            "adicionales, especiales y domicilios."
+            "adicionales, especiales y domicilios.\n\n"
+            "Escribe menu para ver las opciones o dime otro producto del asadero."
         )
 
     @classmethod

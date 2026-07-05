@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
-from app.modules.catalog.domain.enums import ProductCategory
+from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
 from app.modules.catalog.domain.product import Product
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.intent import ConversationIntent
 from app.modules.conversations.domain.telegram_session import TelegramSession
-from app.modules.conversations.application.graph_services import cart_item_from_product
+from app.modules.conversations.application.graph_services import AdminOrderPayload, cart_item_from_product
 from app.modules.conversations.graph.graph import build_conversation_graph
 from app.modules.conversations.graph import nodes
 from app.modules.conversations.graph.router import route_after_customer_validation, route_after_intent
@@ -23,6 +25,7 @@ class FakeConversationServices:
     def __init__(self) -> None:
         self.session = TelegramSession(chat_id=ChatId(123))
         self.persisted_steps: list[ConversationState] = []
+        self.synced_orders: list[AdminOrderPayload] = []
         self.products = {
             "GASEOSA": Product(
                 code=ProductCode("GASEOSA"),
@@ -74,6 +77,9 @@ class FakeConversationServices:
             distance_km=0.0,
             pricing_source="test",
         )
+
+    async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
+        self.synced_orders.append(payload)
 
 
 @pytest.mark.asyncio
@@ -648,13 +654,111 @@ async def test_out_of_scope_question_is_rejected_without_cart() -> None:
 @pytest.mark.asyncio
 async def test_unknown_asadero_product_gets_polite_catalog_answer() -> None:
     services = FakeConversationServices()
-    graph = build_conversation_graph(services)
     state = ConversationGraphState(chat_id=123, raw_text="Necesito un pescado frito")
 
-    result = await graph.ainvoke(state)
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    result = await nodes.fallback_natural_language(state, services)
 
-    assert "no cuento con informacion de ese producto" in result["response_text"].lower()
+    assert "no cuento con informacion de ese producto" in result.response_text.lower()
+    assert result.current_step == ConversationState.PRODUCT_CATEGORY
     assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+async def test_weekend_special_natural_order_adds_lasagna_to_cart(monkeypatch) -> None:
+    monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 4))
+    services = FakeConversationServices()
+    services.products["LASAGNA_MIXTA"] = Product(
+        code=ProductCode("LASAGNA_MIXTA"),
+        name=ProductName("Lasagna Mixta"),
+        category=ProductCategory.ESPECIALES,
+        price=MoneyCOP(20000),
+        restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+    )
+    state = ConversationGraphState(chat_id=123, raw_text="quiero una lasaaña")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    result = await nodes.fallback_natural_language(state, services)
+
+    assert result.current_step == ConversationState.POST_ADD
+    assert "1 x Lasagna Mixta" in result.response_text
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+async def test_weekday_special_natural_order_stays_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 1))
+    services = FakeConversationServices()
+    services.products["LASAGNA_MIXTA"] = Product(
+        code=ProductCode("LASAGNA_MIXTA"),
+        name=ProductName("Lasagna Mixta"),
+        category=ProductCategory.ESPECIALES,
+        price=MoneyCOP(20000),
+        restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+    )
+    state = ConversationGraphState(chat_id=123, raw_text="quiero una lasaña")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    result = await nodes.fallback_natural_language(state, services)
+
+    assert "no cuento con informacion de ese producto" in result.response_text.lower()
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+async def test_menu_request_recovers_after_unknown_natural_order() -> None:
+    services = FakeConversationServices()
+
+    first_state = ConversationGraphState(chat_id=123, raw_text="quiero un producto que no existe")
+    first_state = await nodes.normalize_message(first_state, services)
+    first_state = await nodes.load_or_create_session(first_state, services)
+    first_state = await nodes.detect_intent(first_state, services)
+    first_result = await nodes.fallback_natural_language(first_state, services)
+
+    second_state = ConversationGraphState(chat_id=123, raw_text="quiero ver el menu")
+    second_state = await nodes.normalize_message(second_state, services)
+    second_state = await nodes.load_or_create_session(second_state, services)
+    second_state = await nodes.detect_intent(second_state, services)
+    assert route_after_intent(second_state) == "show_product_categories"
+    second_result = await nodes.show_product_categories(second_state, services)
+
+    assert first_result.current_step == ConversationState.PRODUCT_CATEGORY
+    assert "Elige una categoria" in second_result.response_text
+    assert second_result.current_step == ConversationState.PRODUCT_CATEGORY
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_route"),
+    [
+        ("quiero ver el menu principal", "show_main_menu"),
+        ("hola buenas", "show_main_menu"),
+        ("quiero pedir por menu", "show_product_categories"),
+        ("quiero pedir escribiendo", "fallback_natural_language"),
+        ("quiero ver carrito", "show_cart"),
+        ("quiero ver horarios", "show_schedules"),
+        ("quiero finalizar pedido", "ask_customer_data"),
+        ("quiero ver platos especiales", "show_specials_menu"),
+    ],
+)
+async def test_main_menu_options_work_as_natural_language(
+    message: str,
+    expected_route: str,
+) -> None:
+    services = FakeConversationServices()
+    state = ConversationGraphState(chat_id=123, raw_text=message)
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert route_after_intent(state) == expected_route
 
 
 @pytest.mark.asyncio
@@ -791,3 +895,32 @@ async def test_confirm_order_clears_cart() -> None:
     assert state.current_step == ConversationState.MAIN_MENU
     assert state.cart == []
     assert services.session.cart == []
+    assert len(services.synced_orders) == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_order_syncs_persisted_checkout_to_admin_backend() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 2))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.payment_method = "Efectivo"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    state = ConversationGraphState(chat_id=123, raw_text="si")
+
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.confirm_order(state, services)
+
+    assert state.current_step == ConversationState.MAIN_MENU
+    assert len(services.synced_orders) == 1
+    synced = services.synced_orders[0]
+    assert synced.customer.full_name == "Angel David"
+    assert synced.customer.phone == "3153327502"
+    assert synced.customer.address == "Transversal 23 #52a-21 - Bosquesitos"
+    assert synced.payment_method == "Efectivo"
+    assert synced.delivery_fee_cop == 2000
+    assert [(item.product_code, item.quantity) for item in synced.items] == [("ASADO_MEDIO", 2)]
+    assert services.session.customer_name is None

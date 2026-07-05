@@ -210,7 +210,12 @@ def _normalize_for_matching(message: str) -> str:
     normalized = re.sub(r"(?<=\d)\.(?=\d)", ".", normalized)
     normalized = normalized.replace("-", " ")
     normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
+    normalized = _collapse_repeated_vowels(normalized)
     return " ".join(normalized.split())
+
+
+def _collapse_repeated_vowels(text: str) -> str:
+    return re.sub(r"([aeiou])\1+", r"\1", text)
 
 
 def _matches_rule(text: str, rule: NaturalProductRule) -> bool:

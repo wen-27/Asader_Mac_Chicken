@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.config.settings import get_settings
 from app.modules.cart.domain.cart_item import CartItem
 from app.modules.catalog.application.ports import ProductRepository
 from app.modules.catalog.domain.enums import ProductCategory
@@ -14,6 +15,12 @@ from app.modules.catalog.infrastructure.seeders.catalog_data import PRODUCT_SEED
 from app.modules.conversations.application.ports import TelegramSessionRepository
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.telegram_session import TelegramSession
+from app.modules.orders.infrastructure.admin_backend_order_client import (
+    AdminOrderCustomerPayload,
+    AdminOrderItemPayload,
+    AdminOrderPayload,
+    AdminBackendOrderClient,
+)
 from app.shared.domain.money import MoneyCOP
 from app.shared.domain.value_object import ChatId, ProductCode, ProductName
 
@@ -35,6 +42,9 @@ class ConversationGraphServices(Protocol):
         ...
 
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
+        ...
+
+    async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
         ...
 
 
@@ -107,6 +117,9 @@ class DefaultConversationGraphServices:
         if self.delivery_calculator is None:
             return CalculateDeliveryResult(found=True, delivery_price_cop=0, pricing_source="not_configured")
         return await self.delivery_calculator.execute(address=address, neighborhood=neighborhood)
+
+    async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
+        await AdminBackendOrderClient(get_settings()).sync_order_payload(payload)
 
 
 def cart_item_from_product(product: Product, quantity: int) -> CartItem:

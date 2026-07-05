@@ -150,6 +150,12 @@ def test_rule_based_parser_understands_generic_papas_as_francesa() -> None:
     ]
 
 
+def test_rule_based_parser_tolerates_repeated_vowel_typo() -> None:
+    parsed = parse_natural_order_rules("quiero una lasaaña")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("LASAGNA_MIXTA", 1)]
+
+
 @pytest.mark.asyncio
 async def test_semantic_search_recovers_misspelled_product() -> None:
     parser = FakeParser(
