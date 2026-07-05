@@ -240,6 +240,13 @@ class BotMessageFactory:
         return "✅ Pedido confirmado. Gracias por tu compra."
 
     @classmethod
+    def order_confirmation_failed(cls) -> str:
+        return (
+            "No pude registrar tu pedido en este momento. No perdi tu carrito ni tus datos. "
+            "Por favor intenta confirmar de nuevo en unos segundos."
+        )
+
+    @classmethod
     def cancelled(cls) -> str:
         return "Listo, cancele el pedido actual. Cuando quieras empezamos de nuevo."
 

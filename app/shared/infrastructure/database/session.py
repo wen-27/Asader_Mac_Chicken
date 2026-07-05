@@ -15,6 +15,7 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
+    connect_args={"server_settings": {"search_path": settings.bot_database_schema}},
 )
 
 AsyncSessionFactory = async_sessionmaker(

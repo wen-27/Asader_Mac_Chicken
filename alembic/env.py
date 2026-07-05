@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -31,6 +31,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table_schema=settings.bot_database_schema,
     )
 
     with context.begin_transaction():
@@ -38,7 +39,13 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{settings.bot_database_schema}"'))
+    connection.execute(text(f'SET search_path TO "{settings.bot_database_schema}"'))
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        version_table_schema=settings.bot_database_schema,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
@@ -65,4 +72,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

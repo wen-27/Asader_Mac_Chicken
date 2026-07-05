@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://wen@localhost:5433/asadero_mc",
         repr=False,
     )
+    bot_database_schema: str = "bot"
     redis_url: str = "redis://localhost:6379/0"
     chroma_host: str = "localhost"
     chroma_port: int = 8001
@@ -71,6 +73,13 @@ class Settings(BaseSettings):
     internal_api_key: str = Field(default="", repr=False)
 
     log_level: str = "INFO"
+
+    @field_validator("bot_database_schema")
+    @classmethod
+    def validate_database_schema(cls, value: str) -> str:
+        if not value.replace("_", "").isalnum() or value[0].isdigit():
+            raise ValueError("bot_database_schema must be a simple PostgreSQL identifier")
+        return value
 
     @property
     def resolved_google_api_key(self) -> str:

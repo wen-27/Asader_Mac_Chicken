@@ -438,7 +438,7 @@ async def validate_customer_data(
     if not state.customer.neighborhood:
         missing.append("barrio")
     if not state.customer.payment_method:
-        state.customer.payment_method = "Pendiente por confirmar"
+        missing.append("metodo de pago")
     if missing:
         state.errors = missing
         state.response_text = BotMessageFactory.missing_customer_data(missing)
@@ -569,16 +569,16 @@ def _admin_order_payload_from_state(state: ConversationGraphState) -> AdminOrder
         external_bot_id=f"whatsapp-{state.chat_id}-{datetime.now(ZoneInfo('UTC')).isoformat()}",
         chat_id=str(state.chat_id),
         customer=AdminOrderCustomerPayload(
-            full_name=state.customer.name or "Cliente WhatsApp",
-            phone=state.customer.phone or str(state.chat_id),
+            full_name=state.customer.name or "",
+            phone=state.customer.phone or "",
             address=" - ".join(
                 part
                 for part in [state.customer.address, state.customer.neighborhood]
                 if part
             )
-            or "Sin direccion",
+            or "",
         ),
-        payment_method=state.customer.payment_method or "Pendiente por confirmar",
+        payment_method=state.customer.payment_method or "",
         observations=state.customer.observations,
         delivery_fee_cop=state.delivery_price_cop or 0,
         items=[
@@ -631,14 +631,37 @@ async def confirm_order(
 ) -> ConversationGraphState:
     session = await services.load_or_create_session(ChatId(state.chat_id))
     _copy_checkout_session_to_state(session, state)
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    missing = _missing_checkout_fields(state)
+    if missing:
+        state.errors = missing
+        state.current_step = ConversationState.ASK_CUSTOMER_DATA
+        state.response_text = BotMessageFactory.missing_customer_data(missing)
+        await _persist_step(state, services)
+        return state
     if state.customer.address and state.customer.neighborhood:
         delivery = await services.calculate_delivery(
             address=state.customer.address,
             neighborhood=state.customer.neighborhood,
         )
         state.delivery_price_cop = delivery.delivery_price_cop
-    await services.sync_confirmed_order(_admin_order_payload_from_state(state))
+    try:
+        await services.sync_confirmed_order(_admin_order_payload_from_state(state))
+    except Exception:
+        state.current_step = ConversationState.CHECKOUT_REVIEW
+        state.response_text = BotMessageFactory.order_confirmation_failed()
+        await _persist_step(state, services)
+        return state
     session.empty_cart()
     session.clear_selected_product()
     _clear_checkout_session(session)
@@ -650,6 +673,23 @@ async def confirm_order(
     state.total_cop = 0
     state.response_text = BotMessageFactory.confirmed()
     return state
+
+
+def _missing_checkout_fields(state: ConversationGraphState) -> list[str]:
+    missing: list[str] = []
+    if not state.cart:
+        missing.append("productos")
+    if not state.customer.name:
+        missing.append("nombre completo")
+    if not state.customer.phone:
+        missing.append("telefono")
+    if not state.customer.address:
+        missing.append("direccion")
+    if not state.customer.neighborhood:
+        missing.append("barrio")
+    if not state.customer.payment_method:
+        missing.append("metodo de pago")
+    return missing
 
 
 async def cancel_order(

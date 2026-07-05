@@ -26,6 +26,7 @@ class FakeConversationServices:
         self.session = TelegramSession(chat_id=ChatId(123))
         self.persisted_steps: list[ConversationState] = []
         self.synced_orders: list[AdminOrderPayload] = []
+        self.fail_sync = False
         self.products = {
             "GASEOSA": Product(
                 code=ProductCode("GASEOSA"),
@@ -79,6 +80,8 @@ class FakeConversationServices:
         )
 
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
+        if self.fail_sync:
+            raise RuntimeError("admin backend unavailable")
         self.synced_orders.append(payload)
 
 
@@ -474,7 +477,7 @@ async def test_customer_data_accepts_free_line_message() -> None:
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
     state = ConversationGraphState(
         chat_id=123,
-        raw_text="Wendy\n3022873946\nCra 28a#195-33\nLagos 2\nNinguna",
+        raw_text="Wendy\n3022873946\nCra 28a#195-33\nLagos 2\nEfectivo\nNinguna",
         cart=[
             CartLineState(
                 product_code="ASADO_MEDIO",
@@ -495,7 +498,7 @@ async def test_customer_data_accepts_free_line_message() -> None:
     assert state.customer.address == "Cra 28a#195-33"
     assert state.customer.neighborhood == "Lagos 2"
     assert state.customer.observations == "Ninguna"
-    assert state.customer.payment_method == "Pendiente por confirmar"
+    assert state.customer.payment_method == "Efectivo"
     assert state.current_step == ConversationState.CHECKOUT_REVIEW
 
 
@@ -875,6 +878,11 @@ async def test_confirm_order_clears_cart() -> None:
     services = FakeConversationServices()
     product = services.products["ASADO_MEDIO"]
     services.session.add_cart_item(cart_item_from_product(product, 2))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.payment_method = "Efectivo"
     services.session.move_to(ConversationState.CHECKOUT_REVIEW)
     state = ConversationGraphState(
         chat_id=123,
@@ -896,6 +904,50 @@ async def test_confirm_order_clears_cart() -> None:
     assert state.cart == []
     assert services.session.cart == []
     assert len(services.synced_orders) == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_order_requires_payment_method() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    state = ConversationGraphState(chat_id=123, raw_text="si")
+
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.confirm_order(state, services)
+
+    assert state.current_step == ConversationState.ASK_CUSTOMER_DATA
+    assert state.errors == ["metodo de pago"]
+    assert services.session.cart
+    assert services.synced_orders == []
+
+
+@pytest.mark.asyncio
+async def test_confirm_order_keeps_cart_when_admin_sync_fails() -> None:
+    services = FakeConversationServices()
+    services.fail_sync = True
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.payment_method = "Efectivo"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    state = ConversationGraphState(chat_id=123, raw_text="si")
+
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.confirm_order(state, services)
+
+    assert state.current_step == ConversationState.CHECKOUT_REVIEW
+    assert "No pude registrar tu pedido" in state.response_text
+    assert services.session.cart
+    assert services.synced_orders == []
 
 
 @pytest.mark.asyncio
