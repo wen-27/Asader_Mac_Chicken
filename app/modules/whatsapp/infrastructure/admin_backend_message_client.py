@@ -42,3 +42,43 @@ class AdminBackendMessageClient:
                 headers={"X-Internal-Api-Key": self._api_key},
             )
             response.raise_for_status()
+
+    async def record_bot_message(
+        self,
+        *,
+        chat_id: str,
+        body: str,
+        external_message_id: str | None = None,
+    ) -> None:
+        if not self._api_key:
+            logger.warning("internal api key is not configured; skipping bot message sync")
+            return
+
+        payload = {
+            "chatId": chat_id,
+            "body": body,
+            "externalMessageId": external_message_id,
+        }
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{self._base_url}/messages/outgoing-bot",
+                json=payload,
+                headers={"X-Internal-Api-Key": self._api_key},
+            )
+            response.raise_for_status()
+
+    async def get_conversation_control(self, *, chat_id: str) -> dict[str, object]:
+        if not self._api_key:
+            return {"aiActive": True}
+
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(
+                f"{self._base_url}/conversations/{chat_id}/control",
+                headers={"X-Internal-Api-Key": self._api_key},
+            )
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict) and isinstance(data.get("data"), dict):
+                return data["data"]
+        return {"aiActive": True}

@@ -83,7 +83,6 @@ class AdminBackendOrderClient:
                 "address": payload.customer.address,
             },
             "paymentMethod": payload.payment_method,
-            "observations": payload.observations,
             "deliveryFeeCop": payload.delivery_fee_cop,
             "items": [
                 {
@@ -91,11 +90,15 @@ class AdminBackendOrderClient:
                     "productName": item.product_name,
                     "quantity": item.quantity,
                     "unitPriceCop": item.unit_price_cop,
-                    "notes": item.notes,
                 }
                 for item in payload.items
             ],
         }
+        if payload.observations:
+            request_body["observations"] = payload.observations
+        for index, item in enumerate(payload.items):
+            if item.notes:
+                request_body["items"][index]["notes"] = item.notes
 
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(

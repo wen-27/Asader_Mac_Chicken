@@ -38,6 +38,7 @@ class ConversationGraphState(BaseModel):
     intent: Optional[ConversationIntent] = None
     selected_product_code: Optional[str] = None
     selected_product_name: Optional[str] = None
+    selected_chicken_part: Optional[str] = None
     selected_unit_price_cop: Optional[int] = None
     quantity: Optional[int] = None
     cart: List[CartLineState] = Field(default_factory=list)

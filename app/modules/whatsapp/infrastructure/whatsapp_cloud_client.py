@@ -28,33 +28,22 @@ class WhatsAppCloudClient:
         self._client = client
 
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": str(chat_id.value),
-            "type": "text",
-            "text": {"body": text},
-        }
+        payload = _confirmation_buttons_payload(chat_id, text)
+        if payload is None:
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": str(chat_id.value),
+                "type": "text",
+                "text": {"body": text},
+            }
+        response_data = await self._send_payload(payload)
+        return _sent_message(chat_id, text, response_data)
+
+    async def _send_payload(self, payload: dict[str, object]) -> dict[str, object]:
         if self._client is None:
             async with httpx.AsyncClient(timeout=10) as client:
-                response_data = await self._send(client, payload)
-        else:
-            response_data = await self._send(self._client, payload)
-
-        messages = response_data.get("messages", [])
-        external_id = ""
-        if isinstance(messages, list) and messages:
-            first_message = messages[0]
-            if isinstance(first_message, dict):
-                external_id = str(first_message.get("id", ""))
-
-        return TelegramMessage(
-            chat_id=chat_id,
-            message_id=_numeric_message_id(external_id),
-            update_id=0,
-            text_raw=text,
-            text_normalized=normalize_text(text),
-            received_at=datetime.now(timezone.utc),
-        )
+                return await self._send(client, payload)
+        return await self._send(self._client, payload)
 
     async def _send(self, client: httpx.AsyncClient, payload: dict[str, object]) -> dict[str, object]:
         response = await client.post(
@@ -83,6 +72,56 @@ class WhatsAppCloudClient:
             raise InvalidValueError(message) from exc
         return response.json()
 
+
+def _confirmation_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "Responde SI para confirmar o NO para cancelar." not in text:
+        return None
+    body = text.replace(
+        "\n\nResponde SI para confirmar o NO para cancelar.",
+        "",
+    )
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": body},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "confirm_order_yes", "title": "Si, confirmar"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "confirm_order_no", "title": "No, cancelar"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _sent_message(
+    chat_id: ChatId,
+    text: str,
+    response_data: dict[str, object],
+) -> TelegramMessage:
+    messages = response_data.get("messages", [])
+    external_id = ""
+    if isinstance(messages, list) and messages:
+        first_message = messages[0]
+        if isinstance(first_message, dict):
+            external_id = str(first_message.get("id", ""))
+    return TelegramMessage(
+        chat_id=chat_id,
+        message_id=_numeric_message_id(external_id),
+        update_id=0,
+        text_raw=text,
+        text_normalized=normalize_text(text),
+        received_at=datetime.now(timezone.utc),
+    )
 
 def _numeric_message_id(value: str) -> int:
     if not value:

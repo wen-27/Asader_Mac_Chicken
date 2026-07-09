@@ -47,9 +47,9 @@ class FakeProductRepository:
                 category=ProductCategory.ADICIONALES,
                 price=MoneyCOP(8200),
             ),
-            "LITRO_MEDIO": Product(
-                code=ProductCode("LITRO_MEDIO"),
-                name=ProductName("Litro y Medio"),
+            "COCA_COLA_15": Product(
+                code=ProductCode("COCA_COLA_15"),
+                name=ProductName("Coca-Cola 1.5 L"),
                 category=ProductCategory.BEBIDAS,
                 price=MoneyCOP(8500),
             ),
@@ -88,7 +88,7 @@ def test_rule_based_parser_understands_asado_and_coca_litro_medio() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [
         ("ASADO_ENTERO", 1),
-        ("LITRO_MEDIO", 1),
+        ("COCA_COLA_15", 1),
     ]
     assert parsed.confidence >= 0.9
 
@@ -109,9 +109,15 @@ def test_rule_based_parser_understands_three_quarters() -> None:
 
 
 def test_rule_based_parser_understands_plural_coca_litro_medio() -> None:
+    parsed = parse_natural_order_rules("quiero dos cocas 1.5")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("COCA_COLA_15", 2)]
+
+
+def test_rule_based_parser_does_not_add_ambiguous_litro_medio() -> None:
     parsed = parse_natural_order_rules("quiero dos gaseosas 1.5")
 
-    assert [(item.code, item.quantity) for item in parsed.items] == [("LITRO_MEDIO", 2)]
+    assert parsed.items == []
 
 
 def test_rule_based_parser_understands_additional_papas_fritas() -> None:
@@ -121,7 +127,7 @@ def test_rule_based_parser_understands_additional_papas_fritas() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [
         ("ASADO_ENTERO", 1),
-        ("LITRO_MEDIO", 1),
+        ("COCA_COLA_15", 1),
         ("PAPA_FRANCESA", 1),
     ]
 
@@ -145,7 +151,7 @@ def test_rule_based_parser_understands_generic_papas_as_francesa() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [
         ("ASADO_ENTERO", 1),
-        ("LITRO_MEDIO", 1),
+        ("COCA_COLA_15", 1),
         ("PAPA_FRANCESA", 1),
     ]
 
@@ -244,5 +250,5 @@ async def test_interpret_natural_order_uses_rules_before_llm() -> None:
     assert not result.needs_clarification
     assert [(item.code, item.quantity) for item in result.parsed.items] == [
         ("ASADO_ENTERO", 1),
-        ("LITRO_MEDIO", 1),
+        ("COCA_COLA_15", 1),
     ]

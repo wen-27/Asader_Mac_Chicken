@@ -82,6 +82,34 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def ask_chicken_part(cls, product_name: str) -> str:
+        return "\n".join(
+            [
+                f"🍗 {product_name}",
+                "",
+                "¿Lo quieres en pierna o pechuga?",
+                "",
+                "1. Pierna",
+                "2. Pechuga",
+                "0. ⬅️ Volver a categorias",
+            ]
+        )
+
+    @classmethod
+    def ask_chicken_composition(cls, product_name: str) -> str:
+        return "\n".join(
+            [
+                f"🍗 {product_name}",
+                "",
+                "¿Como quieres la presa?",
+                "",
+                "1. 2 piernas y 1 pechuga",
+                "2. 2 pechugas y 1 pierna",
+                "0. ⬅️ Volver a categorias",
+            ]
+        )
+
+    @classmethod
     def product_unavailable(cls) -> str:
         return (
             "⚠️ Ese producto solo esta disponible fines de semana o festivos. "
@@ -285,6 +313,14 @@ class BotMessageFactory:
     @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:
         return f"El domicilio para {neighborhood} cuesta ${price_cop}."
+
+    @classmethod
+    def order_status_answer(cls) -> str:
+        return (
+            "🍗 Estamos haciendo lo posible para despachar tu pedido lo mas pronto posible. "
+            "El tiempo aproximado es de 40 minutos o menos.\n\n"
+            "Gracias por tu paciencia 🙌"
+        )
 
     @classmethod
     def business_unknown_answer(cls) -> str:

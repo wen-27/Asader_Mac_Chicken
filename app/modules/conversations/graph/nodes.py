@@ -8,6 +8,7 @@ Those details stay behind ConversationGraphServices and application use cases.
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -30,7 +31,7 @@ from app.modules.conversations.graph.state import (
     ConversationGraphState,
     CustomerDataState,
 )
-from app.shared.domain.value_object import ChatId, ProductCode
+from app.shared.domain.value_object import ChatId, ProductCode, ProductName
 from app.shared.utils.text_normalizer import normalize_text
 
 
@@ -58,6 +59,7 @@ async def load_or_create_session(
     state.selected_product_code = (
         session.selected_product_code.value if session.selected_product_code else None
     )
+    state.selected_chicken_part = session.selected_chicken_part
     state.cart = [
         CartLineState(
             product_code=item.product_code.value,
@@ -83,6 +85,15 @@ async def detect_intent(
     if text in {"0", "volver", "atras", "atrás", "regresar"}:
         state.intent = ConversationIntent.VOLVER
         return state
+    if state.current_step == ConversationState.ASK_CHICKEN_PART:
+        state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
+        quantity = _extract_positive_integer(text)
+        if state.selected_chicken_part and quantity is not None and text.strip() not in {"1", "2"}:
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            state.quantity = quantity
+            return state
+        state.intent = ConversationIntent.PEDIR_CANTIDAD
+        return state
     if _detect_numbered_menu_intent(state):
         return state
     natural_menu_intent = _detect_natural_menu_intent(text)
@@ -92,13 +103,13 @@ async def detect_intent(
     if state.current_step == ConversationState.POST_ADD:
         # After adding an item, short commands such as "3" or "finalizar" should
         # continue checkout instead of being interpreted as product quantities.
-        if text in {"agregar", "agregar mas", "agregar más", "seguir", "seguir comprando"}:
+        if _contains_command(text, ("agregar", "agregar mas", "agregar más", "seguir", "seguir comprando")):
             state.intent = ConversationIntent.VER_MENU
             return state
-        if text in {"carrito", "ver carrito"}:
+        if _contains_command(text, ("carrito", "ver carrito")):
             state.intent = ConversationIntent.MOSTRAR_CARRITO
             return state
-        if text in {"finalizar", "finalizar pedido", "checkout"}:
+        if _contains_command(text, ("finalizar", "finalizar pedido", "checkout")):
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return state
     query = _classify_business_query(text)
@@ -246,6 +257,7 @@ async def select_product(
         return state
     state.selected_product_code = product.code.value
     state.selected_product_name = product.name.value
+    state.selected_chicken_part = None
     state.selected_unit_price_cop = product.price.amount
     return state
 
@@ -273,10 +285,22 @@ async def ask_quantity(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     if state.selected_product_name is None or state.selected_unit_price_cop is None:
-        return await fallback_natural_language(state, services)
+        product = await services.find_product(state.selected_product_code or "")
+        if product is None:
+            return await fallback_natural_language(state, services)
+        state.selected_product_name = product.name.value
+        state.selected_unit_price_cop = product.price.amount
+    if _requires_chicken_selection(state.selected_product_code) and not state.selected_chicken_part:
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = _ask_chicken_selection_message(
+            state.selected_product_code,
+            state.selected_product_name,
+        )
+        await _persist_step(state, services)
+        return state
     state.current_step = ConversationState.ASK_QUANTITY
     state.response_text = BotMessageFactory.ask_quantity(
-        state.selected_product_name,
+        _display_product_name(state.selected_product_name, state.selected_chicken_part),
         state.selected_unit_price_cop,
     )
     await _persist_step(state, services)
@@ -295,7 +319,13 @@ async def add_to_cart(
     if product is None:
         state.response_text = BotMessageFactory.product_not_found()
         return state
-    item = cart_item_from_product(product, state.quantity)
+    if state.selected_chicken_part:
+        session.selected_chicken_part = state.selected_chicken_part
+    item = _cart_item_from_selected_product(
+        product,
+        state.quantity,
+        session.selected_chicken_part,
+    )
     session.add_cart_item(item)
     session.clear_selected_product()
     session.move_to(ConversationState.POST_ADD)
@@ -319,6 +349,8 @@ async def show_cart(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    if state.cart:
+        state.current_step = ConversationState.POST_ADD
     state.response_text = BotMessageFactory.cart(state.cart, state.subtotal_cop)
     await _persist_step(state, services)
     return state
@@ -733,6 +765,8 @@ async def fallback_natural_language(
                 state.subtotal_cop,
             )
             return state
+        if state.response_text:
+            return state
         if _looks_like_natural_order(state.normalized_text):
             state.current_step = ConversationState.PRODUCT_CATEGORY
             state.response_text = BotMessageFactory.unavailable_product_answer()
@@ -757,6 +791,9 @@ async def answer_query(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    if state.query_type == "order_status":
+        state.response_text = BotMessageFactory.order_status_answer()
+        return state
     if state.query_type == "category":
         category = _category_from_query_value(state.query_value or "")
         if category is not None:
@@ -791,6 +828,7 @@ async def go_back(
         ConversationState.SELECT_BEBIDA,
         ConversationState.SELECT_ADICIONAL,
         ConversationState.SELECT_ESPECIAL,
+        ConversationState.ASK_CHICKEN_PART,
         ConversationState.ASK_QUANTITY,
         ConversationState.POST_ADD,
     }:
@@ -822,6 +860,17 @@ def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
     if not text.isdigit():
         return False
 
+    if state.current_step == ConversationState.POST_ADD:
+        post_add_routes = {
+            "1": ConversationIntent.VER_MENU,
+            "2": ConversationIntent.MOSTRAR_CARRITO,
+            "3": ConversationIntent.PEDIR_DATOS_CLIENTE,
+            "4": ConversationIntent.VACIAR_CARRITO,
+        }
+        if text in post_add_routes:
+            state.intent = post_add_routes[text]
+            return True
+
     if state.current_step == ConversationState.MAIN_MENU:
         main_menu_routes = {
             "1": ConversationIntent.VER_MENU,
@@ -842,16 +891,6 @@ def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
             "6": ConversationIntent.PEDIR_DATOS_CLIENTE,
         }
         state.intent = category_routes.get(text, ConversationIntent.LENGUAJE_NATURAL)
-        return True
-
-    if state.current_step == ConversationState.POST_ADD:
-        post_add_routes = {
-            "1": ConversationIntent.VER_MENU,
-            "2": ConversationIntent.MOSTRAR_CARRITO,
-            "3": ConversationIntent.PEDIR_DATOS_CLIENTE,
-            "4": ConversationIntent.VACIAR_CARRITO,
-        }
-        state.intent = post_add_routes.get(text, ConversationIntent.LENGUAJE_NATURAL)
         return True
 
     if state.current_step == ConversationState.ASK_QUANTITY:
@@ -888,7 +927,20 @@ async def _add_natural_order_to_cart(
             continue
         if not _is_product_available(product):
             continue
-        cart_item = cart_item_from_product(product, item.quantity)
+        chicken_part = _extract_chicken_selection(item.code, state.normalized_text)
+        if _requires_chicken_selection(item.code) and not chicken_part:
+            session.selected_product_code = product.code
+            session.selected_chicken_part = None
+            session.move_to(ConversationState.ASK_CHICKEN_PART)
+            await services.persist_session(session)
+            state.selected_product_code = product.code.value
+            state.selected_product_name = product.name.value
+            state.selected_unit_price_cop = product.price.amount
+            state.selected_chicken_part = None
+            state.current_step = ConversationState.ASK_CHICKEN_PART
+            state.response_text = _ask_chicken_selection_message(item.code, product.name.value)
+            return []
+        cart_item = _cart_item_from_selected_product(product, item.quantity, chicken_part)
         session.add_cart_item(cart_item)
         line = CartLineState(
             product_code=cart_item.product_code.value,
@@ -939,17 +991,17 @@ def _looks_like_natural_order(text: str) -> bool:
 def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
     if _is_main_menu_request(text):
         return ConversationIntent.MOSTRAR_MENU
-    if _contains_any(text, ("finalizar", "finalizar pedido", "terminar pedido", "checkout")):
+    if _contains_command(text, ("finalizar", "finalizar pedido", "terminar pedido", "checkout")):
         return ConversationIntent.PEDIR_DATOS_CLIENTE
-    if _contains_any(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+    if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
         return ConversationIntent.MOSTRAR_CARRITO
-    if _contains_any(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
+    if _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
         return ConversationIntent.VACIAR_CARRITO
-    if _contains_any(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
+    if _contains_command(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
         return ConversationIntent.ELIMINAR_PRODUCTO
-    if _contains_any(text, ("horario", "horarios", "a que hora", "a qué hora")):
+    if _contains_command(text, ("horario", "horarios", "a que hora", "a qué hora")):
         return ConversationIntent.HORARIOS
-    if _contains_any(text, ("pedir escribiendo", "pedido libre", "escribir pedido")):
+    if _contains_command(text, ("pedir escribiendo", "pedido libre", "escribir pedido")):
         return ConversationIntent.LENGUAJE_NATURAL
     if _is_category_request(text, ("pollo asado", "menu asado", "menú asado", "asado")):
         return ConversationIntent.MENU_ASADO
@@ -964,6 +1016,29 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
     if _is_menu_request(text):
         return ConversationIntent.VER_MENU
     return None
+
+
+def _contains_command(text: str, commands: tuple[str, ...]) -> bool:
+    if _contains_any(text, commands):
+        return True
+    text_tokens = text.split()
+    for command in commands:
+        command_tokens = normalize_text(command).split()
+        if not command_tokens or len(command_tokens) > len(text_tokens):
+            continue
+        for index in range(len(text_tokens) - len(command_tokens) + 1):
+            window = text_tokens[index : index + len(command_tokens)]
+            if all(_is_close_word(word, expected) for word, expected in zip(window, command_tokens)):
+                return True
+    return False
+
+
+def _is_close_word(value: str, expected: str) -> bool:
+    if value == expected:
+        return True
+    if len(expected) <= 3:
+        return False
+    return SequenceMatcher(None, value, expected).ratio() >= 0.78
 
 
 def _is_main_menu_request(text: str) -> bool:
@@ -985,6 +1060,97 @@ def _is_main_menu_request(text: str) -> bool:
 
 def _contains_any(text: str, phrases: tuple[str, ...]) -> bool:
     return any(phrase in text for phrase in phrases)
+
+
+def _requires_chicken_selection(product_code: str | None) -> bool:
+    return _requires_chicken_part(product_code) or _requires_chicken_composition(product_code)
+
+
+def _requires_chicken_part(product_code: str | None) -> bool:
+    return product_code in {"ASADO_CUARTO", "BROASTER_CUARTO"}
+
+
+def _requires_chicken_composition(product_code: str | None) -> bool:
+    return product_code in {"ASADO_34", "BROASTER_34"}
+
+
+def _ask_chicken_selection_message(product_code: str | None, product_name: str) -> str:
+    if _requires_chicken_composition(product_code):
+        return BotMessageFactory.ask_chicken_composition(product_name)
+    return BotMessageFactory.ask_chicken_part(product_name)
+
+
+def _extract_chicken_selection(product_code: str | None, text: str) -> str | None:
+    if _requires_chicken_composition(product_code):
+        return _extract_chicken_composition(text)
+    return _extract_chicken_part(text)
+
+
+def _extract_chicken_part(text: str) -> str | None:
+    if text.strip() == "1":
+        return "Pierna"
+    if text.strip() == "2":
+        return "Pechuga"
+    tokens = text.split()
+    for token in tokens:
+        if _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
+            return "Pierna"
+        if _is_close_word(token, "pechuga") or _is_close_word(token, "pechga"):
+            return "Pechuga"
+    return None
+
+
+def _extract_chicken_composition(text: str) -> str | None:
+    cleaned = text.strip()
+    if cleaned == "1":
+        return "2 piernas y 1 pechuga"
+    if cleaned == "2":
+        return "2 pechugas y 1 pierna"
+    if _mentions_count(text, "pierna", 2) and _mentions_count(text, "pechuga", 1):
+        return "2 piernas y 1 pechuga"
+    if _mentions_count(text, "pechuga", 2) and _mentions_count(text, "pierna", 1):
+        return "2 pechugas y 1 pierna"
+    return None
+
+
+def _mentions_count(text: str, word: str, count: int) -> bool:
+    count_words = {
+        1: ("1", "una", "un"),
+        2: ("2", "dos"),
+    }
+    tokens = text.split()
+    for index, token in enumerate(tokens):
+        if not _is_close_word(token, word):
+            continue
+        nearby = tokens[max(0, index - 2) : index]
+        if any(value in count_words[count] for value in nearby):
+            return True
+    return False
+
+
+def _extract_positive_integer(text: str) -> int | None:
+    match = re.search(r"\b([1-9]\d*)\b", text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _display_product_name(product_name: str, chicken_part: str | None) -> str:
+    if not chicken_part:
+        return product_name
+    return f"{product_name} - {chicken_part}"
+
+
+def _cart_item_from_selected_product(product: Product, quantity: int, chicken_part: str | None):
+    item = cart_item_from_product(product, quantity)
+    if not chicken_part:
+        return item
+    return type(item)(
+        product_code=item.product_code,
+        product_name=ProductName(_display_product_name(item.product_name.value, chicken_part)),
+        unit_price=item.unit_price,
+        quantity=item.quantity,
+    )
 
 
 def _is_category_request(text: str, category_terms: tuple[str, ...]) -> bool:
@@ -1010,6 +1176,8 @@ def _is_menu_request(text: str) -> bool:
 def _classify_business_query(text: str) -> tuple[str, str] | None:
     if _is_out_of_scope_query(text):
         return ("unknown", text)
+    if _looks_like_order_status_query(text):
+        return ("order_status", text)
     short_product_reference = _short_product_reference(text)
     if short_product_reference:
         return ("price", short_product_reference)
@@ -1034,6 +1202,25 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         if any(word in text for word in ["especial", "especiales", "lasagna", "maduro"]):
             return ("category", "especiales")
     return None
+
+
+def _looks_like_order_status_query(text: str) -> bool:
+    status_terms = (
+        "demora",
+        "demorar",
+        "demorado",
+        "tarda",
+        "tardar",
+        "llega",
+        "llegar",
+        "despacho",
+        "despachar",
+        "pedido",
+        "como va",
+        "cómo va",
+    )
+    product_terms = ("pollo", "pedido", "domicilio", "comida")
+    return _contains_any(text, status_terms) and _contains_any(text, product_terms)
 
 
 def _short_product_reference(text: str) -> str:
@@ -1170,4 +1357,5 @@ async def _persist_step(
         session.selected_product_code = ProductCode(state.selected_product_code)
     else:
         session.clear_selected_product()
+    session.selected_chicken_part = state.selected_chicken_part
     await services.persist_step(session, state.current_step)

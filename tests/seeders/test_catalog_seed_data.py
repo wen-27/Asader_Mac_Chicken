@@ -27,6 +27,9 @@ def test_seed_prices_are_exact() -> None:
         "GASEOSA": 3000,
         "LATA_GASEOSA": 3300,
         "LITRO_MEDIO": 8500,
+        "COCA_COLA_15": 8500,
+        "POSTOBON_25": 8500,
+        "QUATRO_15": 8500,
         "TRES_LITROS": 9000,
         "PERSONAL_400": 3500,
         "AGUA_BOTELLA": 2600,
@@ -108,8 +111,9 @@ def test_aliases_normalized() -> None:
     assert "pollo broaster" in normalized_aliases
     assert "medio pollo" in normalized_aliases
     assert "media" in normalized_aliases
-    assert "gaseosa litro y medio" in normalized_aliases
-    assert "coca litro y medio" in normalized_aliases
+    assert "coca cola 1.5" in normalized_aliases
+    assert "postobon 2.5" in normalized_aliases
+    assert "quatro 1.5" in normalized_aliases
     assert "lasana" in normalized_aliases
     assert "lasagna" in normalized_aliases
     assert "maduro" in normalized_aliases

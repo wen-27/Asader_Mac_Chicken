@@ -88,8 +88,18 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
         ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
     NaturalProductRule(
-        "LITRO_MEDIO",
-        ("coca", "cocas", "cocacola", "coca cola", "coca colas", "gaseosa", "gaseosas", "bebida"),
+        "COCA_COLA_15",
+        ("coca", "cocas", "cocacola", "coca cola", "coca colas"),
+        ("1.5", "1,5", "1 5", "litro y medio", "litro medio", "litroymedio"),
+    ),
+    NaturalProductRule(
+        "POSTOBON_25",
+        ("postobon", "postobón"),
+        ("2.5", "2,5", "2 5", "dos litros y medio", "2 litros y medio"),
+    ),
+    NaturalProductRule(
+        "QUATRO_15",
+        ("quatro", "cuatro"),
         ("1.5", "1,5", "1 5", "litro y medio", "litro medio", "litroymedio"),
     ),
     NaturalProductRule(

@@ -15,6 +15,7 @@ class TelegramSession:
     chat_id: ChatId
     current_step: ConversationState = ConversationState.MAIN_MENU
     selected_product_code: ProductCode | None = None
+    selected_chicken_part: str | None = None
     cart: list[CartItem] = field(default_factory=list)
     customer_name: str | None = None
     customer_phone: str | None = None
@@ -28,10 +29,12 @@ class TelegramSession:
 
     def select_product(self, product_code: ProductCode) -> None:
         self.selected_product_code = product_code
+        self.selected_chicken_part = None
         self.current_step = ConversationState.ASK_QUANTITY
 
     def clear_selected_product(self) -> None:
         self.selected_product_code = None
+        self.selected_chicken_part = None
 
     def add_cart_item(self, item: CartItem) -> None:
         self.cart.append(item)

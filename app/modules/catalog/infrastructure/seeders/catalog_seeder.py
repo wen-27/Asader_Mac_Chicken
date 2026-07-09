@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog.domain.product_alias import normalize_alias
@@ -55,6 +55,11 @@ async def seed_products(session: AsyncSession) -> int:
 async def seed_product_aliases(session: AsyncSession) -> int:
     product_rows = await session.execute(select(ProductORM))
     products_by_code = {row.code: row for row in product_rows.scalars().all()}
+    expected_aliases = {
+        normalize_alias(alias)
+        for seed in PRODUCT_ALIAS_SEEDS
+        for alias in seed.aliases
+    }
     upserted = 0
 
     for seed in PRODUCT_ALIAS_SEEDS:
@@ -80,6 +85,9 @@ async def seed_product_aliases(session: AsyncSession) -> int:
                 row.alias = alias
                 row.normalized_alias = normalized_alias
             upserted += 1
+    await session.execute(
+        delete(ProductAliasORM).where(ProductAliasORM.normalized_alias.not_in(expected_aliases))
+    )
     await session.flush()
     return upserted
 
@@ -91,4 +99,3 @@ async def seed_catalog(session: AsyncSession) -> CatalogSeedResult:
         products_upserted=products_upserted,
         aliases_upserted=aliases_upserted,
     )
-

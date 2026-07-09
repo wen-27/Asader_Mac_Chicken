@@ -1,0 +1,330 @@
+code,municipality,neighborhood,normalized_neighborhood,delivery_price_cop,is_active,pricing_source,review_required,data_source,source_quality
+DOMICILIO_BUCARAMANGA_1_DE_MAYO,Bucaramanga,1 DE MAYO,1 de mayo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_12_DE_OCTUBRE,Bucaramanga,12 DE OCTUBRE,12 de octubre bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_13_DE_JUNIO,Bucaramanga,13 DE JUNIO,13 de junio bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_20_DE_JULIO,Bucaramanga,20 DE JULIO,20 de julio bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_23_DE_JUNIO,Bucaramanga,23 DE JUNIO,23 de junio bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_AFRICA,Bucaramanga,AFRICA,africa bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALARCON,Bucaramanga,ALARCON,alarcon bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALBANIA,Bucaramanga,ALBANIA,albania bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALFONSO_LOPEZ,Bucaramanga,ALFONSO LOPEZ,alfonso lopez bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALTOS_DEL_CACIQUE,Bucaramanga,ALTOS DEL CACIQUE,altos del cacique bucaramanga,8000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALTOS_DEL_JARDIN,Bucaramanga,ALTOS DEL JARDIN,altos del jardin bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALTOS_DEL_KENNEDY,Bucaramanga,ALTOS DEL KENNEDY,altos del kennedy bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALTOS_DEL_LAGO,Bucaramanga,ALTOS DEL LAGO,altos del lago bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALTOS_DEL_PROGRESO,Bucaramanga,ALTOS DEL PROGRESO,altos del progreso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ALVAREZ_LAS_AMERICAS,Bucaramanga,ALVAREZ LAS AMERICAS,alvarez las americas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ANTIGUA_COLOMBIA,Bucaramanga,ANTIGUA COLOMBIA,antigua colombia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ANTONIA_SANTOS_CENTRO,Bucaramanga,ANTONIA SANTOS CENTRO,antonia santos centro bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ANTONIA_SANTOS_SUR,Bucaramanga,ANTONIA SANTOS SUR,antonia santos sur bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ASENTAMIENTO_5_DE_ENERO,Bucaramanga,ASENTAMIENTO 5 DE ENERO,asentamiento 5 de enero bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ASENTAMIENTO_JOSE_ANTONIO_GALAN,Bucaramanga,ASENTAMIENTO JOSE ANTONIO GALAN,asentamiento jose antonio galan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ASENTAMIENTO_RESERVA_LA_INMACULADA,Bucaramanga,ASENTAMIENTO RESERVA LA INMACULADA,asentamiento reserva la inmaculada bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ASTURIAS,Bucaramanga,ASTURIAS,asturias bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BALCON_DEL_LAGO,Bucaramanga,BALCON DEL LAGO,balcon del lago bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BALCONCITOS,Bucaramanga,BALCONCITOS,balconcitos bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BALCONES_DEL_KENEDY,Bucaramanga,BALCONES DEL KENEDY,balcones del kenedy bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BALCONES_DEL_SUR,Bucaramanga,BALCONES DEL SUR,balcones del sur bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BETANIA,Bucaramanga,BETANIA,betania bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BOLARQUI,Bucaramanga,BOLARQUI,bolarqui bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BOLIVAR,Bucaramanga,BOLIVAR,bolivar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BOSCONIA,Bucaramanga,BOSCONIA,bosconia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BOSQUE_NORTE,Bucaramanga,BOSQUE NORTE,bosque norte bucaramanga,6000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BOSQUES_DEL_CACIQUE,Bucaramanga,BOSQUES DEL CACIQUE,bosques del cacique bucaramanga,8000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BRISAS_DE_PROVENZA,Bucaramanga,BRISAS DE PROVENZA,brisas de provenza bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BRISAS_DEL_MUTIS,Bucaramanga,BRISAS DEL MUTIS,brisas del mutis bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BRISAS_DEL_PALMAR,Bucaramanga,BRISAS DEL PALMAR,brisas del palmar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BRISAS_DEL_PARAISO,Bucaramanga,BRISAS DEL PARAISO,brisas del paraiso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BUCARAMANGA,Bucaramanga,BUCARAMANGA,bucaramanga bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BUENAVISTA,Bucaramanga,BUENAVISTA,buenavista bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_BUENOS_AIRES,Bucaramanga,BUENOS AIRES,buenos aires bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CABECERA_DEL_LLANO,Bucaramanga,CABECERA DEL LLANO,cabecera del llano bucaramanga,12000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CAMPESTRE,Bucaramanga,CAMPESTRE,campestre bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CAMPESTRE_NORTE,Bucaramanga,CAMPESTRE NORTE,campestre norte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CAMPO_HERMOSO,Bucaramanga,CAMPO HERMOSO,campo hermoso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CANDADO,Bucaramanga,CANDADO,candado bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CANDILES,Bucaramanga,CANDILES,candiles bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CANELOS,Bucaramanga,CANELOS,canelos bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CENTRO,Bucaramanga,CENTRO,centro bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CHAPINERO,Bucaramanga,CHAPINERO,chapinero bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CHARTA,Bucaramanga,CHARTA,charta bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CHORRERAS_DE_DON_JUAN,Bucaramanga,CHORRERAS DE DON JUAN,chorreras de don juan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CIUDAD_VENECIA,Bucaramanga,CIUDAD VENECIA,ciudad venecia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CIUDADELA_REAL_DE_MINAS,Bucaramanga,CIUDADELA REAL DE MINAS,ciudadela real de minas bucaramanga,11000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CLAVERIANO,Bucaramanga,CLAVERIANO,claveriano bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_COLSEGUROS_NORTE,Bucaramanga,COLSEGUROS NORTE,colseguros norte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_COMUNEROS,Bucaramanga,COMUNEROS,comuneros bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CONDADO_DE_GIBRALTAR,Bucaramanga,CONDADO DE GIBRALTAR,condado de gibraltar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CONQUISTADORES,Bucaramanga,CONQUISTADORES,conquistadores bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CONUCOS,Bucaramanga,CONUCOS,conucos bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CORDONCILLO_I,Bucaramanga,CORDONCILLO I,cordoncillo i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CORDONCILLO_II,Bucaramanga,CORDONCILLO II,cordoncillo ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_CRISTAL_BAJO,Bucaramanga,CRISTAL BAJO,cristal bajo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DANGOND,Bucaramanga,DANGOND,dangond bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DELICIAS_BAJAS,Bucaramanga,DELICIAS BAJAS,delicias bajas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DELICIAS,Bucaramanga,DELICIAS,delicias bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DIAMANTE_I,Bucaramanga,DIAMANTE I,diamante i bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DIAMANTE_II,Bucaramanga,DIAMANTE II,diamante ii bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_DON_BOSCO,Bucaramanga,DON BOSCO,don bosco bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_CINAL,Bucaramanga,EL CINAL,el cinal bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_CRISTAL,Bucaramanga,EL CRISTAL,el cristal bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_DIVISO,Bucaramanga,EL DIVISO,el diviso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_JARDIN,Bucaramanga,EL JARDIN,el jardin bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_PABLON,Bucaramanga,EL PABLÓN,el pablon bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_PLAN,Bucaramanga,EL PLAN,el plan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_PORVENIR,Bucaramanga,EL PORVENIR,el porvenir bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_PRADO,Bucaramanga,EL PRADO,el prado bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_ROCIO,Bucaramanga,EL ROCIO,el rocio bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_ROSAL,Bucaramanga,EL ROSAL,el rosal bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_EL_TEJAR,Bucaramanga,EL TEJAR,el tejar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ESPERANZA_I,Bucaramanga,ESPERANZA I,esperanza i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ESPERANZA_II,Bucaramanga,ESPERANZA II,esperanza ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ESPERANZA_III,Bucaramanga,ESPERANZA III,esperanza iii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ESTORAQUES,Bucaramanga,ESTORAQUES,estoraques bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_FONTANA,Bucaramanga,FONTANA,fontana bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GAITAN,Bucaramanga,GAITAN,gaitan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GALAN,Bucaramanga,GALAN,galan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GARCIA_ROVIRA,Bucaramanga,GARCIA ROVIRA,garcia rovira bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GIRARDOT,Bucaramanga,GIRARDOT,girardot bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GOMEZ_NINO,Bucaramanga,GOMEZ NIÑO,gomez nino bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GRANADA,Bucaramanga,GRANADA,granada bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GRANJAS_DE_JULIO_RINCON,Bucaramanga,GRANJAS DE JULIO RINCON,granjas de julio rincon bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GRANJAS_DE_PROVENZA,Bucaramanga,GRANJAS DE PROVENZA,granjas de provenza bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_GRANJAS_REGAN,Bucaramanga,GRANJAS REGAN,granjas regan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_HACIENDA_SAN_JUAN,Bucaramanga,HACIENDA SAN JUAN,hacienda san juan bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_IGSABELAR,Bucaramanga,IGSABELAR,igsabelar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_JARDINES_DE_COAVICONSA,Bucaramanga,JARDINES DE COAVICONSA,jardines de coaviconsa bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_JUAN_XXIII,Bucaramanga,JUAN XXIII,juan xxiii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_KENNEDY,Bucaramanga,KENNEDY,kennedy bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_AURORA,Bucaramanga,LA AURORA,la aurora bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_CEIBA,Bucaramanga,LA CEIBA,la ceiba bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_CONCORDIA,Bucaramanga,LA CONCORDIA,la concordia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_ESTRELLA,Bucaramanga,LA ESTRELLA,la estrella bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_FERIA,Bucaramanga,LA FERIA,la feria bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_FLORESTA,Bucaramanga,LA FLORESTA,la floresta bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_GLORIA,Bucaramanga,LA GLORIA,la gloria bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_GRAN_LADERA,Bucaramanga,LA GRAN LADERA,la gran ladera bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_INDEPENDENCIA,Bucaramanga,LA INDEPENDENCIA,la independencia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_JOYA,Bucaramanga,LA JOYA,la joya bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_JUVENTUD,Bucaramanga,LA JUVENTUD,la juventud bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_LIBERTAD,Bucaramanga,LA LIBERTAD,la libertad bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_PEDREGOSA,Bucaramanga,LA PEDREGOSA,la pedregosa bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LA_VICTORIA,Bucaramanga,LA VICTORIA,la victoria bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LAGOS_DEL_CACIQUE,Bucaramanga,LAGOS DEL CACIQUE,lagos del cacique bucaramanga,8000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LAS_CASITAS,Bucaramanga,LAS CASITAS,las casitas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LAS_HAMACAS,Bucaramanga,LAS HAMACAS,las hamacas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LIMONCITO_I,Bucaramanga,LIMONCITO I,limoncito i bucaramanga,6000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LIZCANO_I,Bucaramanga,LIZCANO I,lizcano i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LIZCANO_II,Bucaramanga,LIZCANO II,lizcano ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_ANGELES,Bucaramanga,LOS ANGELES,los angeles bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_CEDROS,Bucaramanga,LOS CEDROS,los cedros bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_GUAYACANES,Bucaramanga,LOS GUAYACANES,los guayacanes bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_HEROES,Bucaramanga,LOS HEROES,los heroes bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_PINOS,Bucaramanga,LOS PINOS,los pinos bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_LOS_SAUCES,Bucaramanga,LOS SAUCES,los sauces bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MALPASO,Bucaramanga,MALPASO,malpaso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MANUELA_BELTRAN,Bucaramanga,MANUELA BELTRAN,manuela beltran bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MANZANARES,Bucaramanga,MANZANARES,manzanares bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MARIA_PAZ,Bucaramanga,MARIA PAZ,maria paz bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MEJORAS_PUBLICAS,Bucaramanga,MEJORAS PUBLICAS,mejoras publicas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MERCEDES,Bucaramanga,MERCEDES,mercedes bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MINUTO_DE_DIOS,Bucaramanga,MINUTO DE DIOS,minuto de dios bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MIRADORES_DEL_KENNEDY,Bucaramanga,MIRADORES DEL KENNEDY,miradores del kennedy bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MIRAFLORES,Bucaramanga,MIRAFLORES,miraflores bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MIRAMAR,Bucaramanga,MIRAMAR,miramar bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MODELO,Bucaramanga,MODELO,modelo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MONTERREDONDO,Bucaramanga,MONTERREDONDO,monterredondo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MORRORICO,Bucaramanga,MORRORICO,morrorico bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_MUTIS,Bucaramanga,MUTIS,mutis bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NAPOLES,Bucaramanga,NAPOLES,napoles bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NARINO,Bucaramanga,NARIÑO,narino bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NORTE_BAJO,Bucaramanga,NORTE BAJO,norte bajo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NUEVA_COLOMBIA,Bucaramanga,NUEVA COLOMBIA,nueva colombia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NUEVA_FONTANA,Bucaramanga,NUEVA FONTANA,nueva fontana bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NUEVA_GRANADA,Bucaramanga,NUEVA GRANADA,nueva granada bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_NUEVO_SOTOMAYOR,Bucaramanga,NUEVO SOTOMAYOR,nuevo sotomayor bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_OLAS_ALTAS,Bucaramanga,OLAS ALTAS,olas altas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_OLAS_BAJAS,Bucaramanga,OLAS BAJAS,olas bajas bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_OLAS_II,Bucaramanga,OLAS II,olas ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_OMAGA_I,Bucaramanga,OMAGA I,omaga i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_OMAGA_II,Bucaramanga,OMAGA II,omaga ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PABLO_VI,Bucaramanga,PABLO VI,pablo vi bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PAISAJES_NORTE,Bucaramanga,PAISAJES NORTE,paisajes norte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PAN_DE_AZUCAR,Bucaramanga,PAN DE AZUCAR,pan de azucar bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PANTANO_I,Bucaramanga,PANTANO I,pantano i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PANTANO_II,Bucaramanga,PANTANO II,pantano ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PANTANO_III,Bucaramanga,PANTANO III,pantano iii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PIO_XII,Bucaramanga,PIO XII,pio xii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PORTO_FINO,Bucaramanga,PORTO FINO,porto fino bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PRADOS_MUTIS,Bucaramanga,PRADOS MUTIS,prados mutis bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PROVENZA,Bucaramanga,PROVENZA,provenza bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PUERTA_DEL_SOL,Bucaramanga,PUERTA DEL SOL,puerta del sol bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PUERTO_RICO,Bucaramanga,PUERTO RICO,puerto rico bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_PUNTA_PARAISO,Bucaramanga,PUNTA PARAISO,punta paraiso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUEBRADA_LA_IGLESIA,Bucaramanga,QUEBRADA LA IGLESIA,quebrada la iglesia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUEBRADA_LA_IGLESIA_I,Bucaramanga,QUEBRADA LA IGLESIA I,quebrada la iglesia i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUEBRADA_LA_IGLESIA_II,Bucaramanga,QUEBRADA LA IGLESIA II,quebrada la iglesia ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUINTA_BRIGADA,Bucaramanga,QUINTA BRIGADA,quinta brigada bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUINTA_DANIA,Bucaramanga,QUINTA DANIA,quinta dania bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_QUINTA_ESTRELLA,Bucaramanga,QUINTA ESTRELLA,quinta estrella bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_REGADERO_NORTE,Bucaramanga,REGADERO NORTE,regadero norte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_RICAURTE,Bucaramanga,RICAURTE,ricaurte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_RINCON_DE_LA_PAZ,Bucaramanga,RINCON DE LA PAZ,rincon de la paz bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_RIO_DE_ORO_I,Bucaramanga,RIO DE ORO I,rio de oro i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_RIO_DE_ORO_II,Bucaramanga,RIO DE ORO II,rio de oro ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_ROBLES,Bucaramanga,ROBLES,robles bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_ALONSO,Bucaramanga,SAN ALONSO,san alonso bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_CRISTOBAL,Bucaramanga,SAN CRISTOBAL,san cristobal bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_EXPEDITO,Bucaramanga,SAN EXPEDITO,san expedito bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_FRANCISCO,Bucaramanga,SAN FRANCISCO,san francisco bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_GERARDO,Bucaramanga,SAN GERARDO,san gerardo bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_LUIS,Bucaramanga,SAN LUIS,san luis bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_MARTIN,Bucaramanga,SAN MARTIN,san martin bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_MIGUEL,Bucaramanga,SAN MIGUEL,san miguel bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_PEDRO_CLAVER,Bucaramanga,SAN PEDRO CLAVER,san pedro claver bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_RAFAEL,Bucaramanga,SAN RAFAEL,san rafael bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SAN_VALENTIN,Bucaramanga,SAN VALENTIN,san valentin bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SANTA_MARIA,Bucaramanga,SANTA MARIA,santa maria bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SANTANDER,Bucaramanga,SANTANDER,santander bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_SOTOMAYOR,Bucaramanga,SOTOMAYOR,sotomayor bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_TEJAR_NORTE,Bucaramanga,TEJAR NORTE,tejar norte bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_TEJARCITO,Bucaramanga,TEJARCITO,tejarcito bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_TERRAZAS,Bucaramanga,TERRAZAS,terrazas bucaramanga,12000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_TOLEDO_PLATA,Bucaramanga,TOLEDO PLATA,toledo plata bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_TRANSICION,Bucaramanga,TRANSICION,transicion bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VEGAS_DE_MORRORRICO,Bucaramanga,VEGAS DE MORRORRICO,vegas de morrorrico bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VENADO_DE_ORO,Bucaramanga,VENADO DE ORO,venado de oro bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_ALEGRIA_I,Bucaramanga,VILLA ALEGRIA I,villa alegria i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_ALEGRIA_II,Bucaramanga,VILLA ALEGRIA II,villa alegria ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_ALICIA,Bucaramanga,VILLA ALICIA,villa alicia bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_DEL_NOGAL,Bucaramanga,VILLA DEL NOGAL,villa del nogal bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_DIAMANTE,Bucaramanga,VILLA DIAMANTE,villa diamante bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_FLOR,Bucaramanga,VILLA FLOR,villa flor bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_HELENA_I,Bucaramanga,VILLA HELENA I,villa helena i bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_HELENA_II,Bucaramanga,VILLA HELENA II,villa helena ii bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_INES,Bucaramanga,VILLA INES,villa ines bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_MARIA_I_MEDIA,Bucaramanga,VILLA MARIA I (Media),villa maria i media bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_MARIA_II_ALTA,Bucaramanga,VILLA MARIA II (Alta),villa maria ii alta bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_MARIA_III_BAJA,Bucaramanga,VILLA MARIA III (Baja),villa maria iii baja bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_MERCEDES,Bucaramanga,VILLA MERCEDES,villa mercedes bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_ROSA,Bucaramanga,VILLA ROSA,villa rosa bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLA_SARA,Bucaramanga,VILLA SARA,villa sara bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VILLAS_DE_SAN_IGNACIO,Bucaramanga,VILLAS DE SAN IGNACIO,villas de san ignacio bucaramanga,10000,True,rule_suggested,True,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_BUCARAMANGA_VIVEROS_DE_PROVENZA,Bucaramanga,VIVEROS DE PROVENZA,viveros de provenza bucaramanga,7000,True,manual_existing,False,Alcaldía de Bucaramanga,official_arcgis
+DOMICILIO_FLORIDABLANCA_ABADIAS,Floridablanca,Abadías,abadias floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ALTAMIRA,Floridablanca,Altamira,altamira floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ALTOS_DEL_CARACOLI,Floridablanca,Altos del Caracolí,altos del caracoli floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ANDALUCIA,Floridablanca,Andalucía,andalucia floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ARANZOQUE,Floridablanca,Aranzoque,aranzoque floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_BUCARICA,Floridablanca,Bucarica,bucarica floridablanca,4000,True,manual_existing,False,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_BUENOS_AIRES,Floridablanca,Buenos Aires,buenos aires floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CALDAS,Floridablanca,Caldas,caldas floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CAMPESTRE,Floridablanca,Campestre,campestre floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CANAVERAL,Floridablanca,Cañaveral,canaveral floridablanca,6000,True,manual_existing,False,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CANAVERAL_OCCIDENTAL,Floridablanca,Cañaveral Occidental,canaveral occidental floridablanca,6000,True,manual_existing,False,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CANAVERAL_ORIENTAL,Floridablanca,Cañaveral Oriental,canaveral oriental floridablanca,6000,True,manual_existing,False,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CARACOLI,Floridablanca,Caracolí,caracoli floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CASCO_ANTIGUO,Floridablanca,Casco Antiguo,casco antiguo floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_CIUDAD_VALENCIA,Floridablanca,Ciudad Valencia,ciudad valencia floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_BOSQUE,Floridablanca,El Bosque,el bosque floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_CARMEN,Floridablanca,El Carmen,el carmen floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_PORVENIR,Floridablanca,El Porvenir,el porvenir floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_RECREO,Floridablanca,El Recreo,el recreo floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_REPOSO,Floridablanca,El Reposo,el reposo floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_EL_VERDE,Floridablanca,El Verde,el verde floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_FLORIDA,Floridablanca,Florida,florida floridablanca,6000,True,manual_existing,False,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_GUAYACANES,Floridablanca,Guayacanes,guayacanes floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_JARDIN_DEL_LIMONCITO,Floridablanca,Jardín del Limoncito,jardin del limoncito floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LA_CASTELLANA,Floridablanca,La Castellana,la castellana floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LA_CUMBRE,Floridablanca,La Cumbre,la cumbre floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LA_PAZ,Floridablanca,La Paz,la paz floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LA_RONDA,Floridablanca,La Ronda,la ronda floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LA_TRINIDAD,Floridablanca,La Trinidad,la trinidad floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAGOS_I,Floridablanca,Lagos I,lagos i floridablanca,2000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAGOS_II,Floridablanca,Lagos II,lagos ii floridablanca,2000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAGOS_III,Floridablanca,Lagos III,lagos iii floridablanca,2000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAGOS_IV,Floridablanca,Lagos IV,lagos iv floridablanca,2000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAGOS_V,Floridablanca,Lagos V,lagos v floridablanca,2000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAS_RONDAS,Floridablanca,Las Rondas,las rondas floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LAS_VILLAS,Floridablanca,Las Villas,las villas floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LIMONCITO,Floridablanca,Limoncito,limoncito floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LOS_ALARES,Floridablanca,Los Alares,los alares floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_LOS_ANDES,Floridablanca,Los Andes,los andes floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_MOLINOS_ALTOS,Floridablanca,Molinos Altos,molinos altos floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_MOLINOS_BAJOS,Floridablanca,Molinos Bajos,molinos bajos floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_MOLINOS,Floridablanca,Molinos,molinos floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_PALOMITAS,Floridablanca,Palomitas,palomitas floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_PRIMAVERA_I,Floridablanca,Primavera I,primavera i floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_PRIMAVERA_II,Floridablanca,Primavera II,primavera ii floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_SAN_BERNARDO,Floridablanca,San Bernardo,san bernardo floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_SANTA_ANA,Floridablanca,Santa Ana,santa ana floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_VERSALLES,Floridablanca,Versalles,versalles floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_VILLABEL,Floridablanca,Villabel,villabel floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_VILLAS_DE_SAN_FRANCISCO,Floridablanca,Villas de San Francisco,villas de san francisco floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_I,Floridablanca,Zapamanga I,zapamanga i floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_II,Floridablanca,Zapamanga II,zapamanga ii floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_III,Floridablanca,Zapamanga III,zapamanga iii floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_IV,Floridablanca,Zapamanga IV,zapamanga iv floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_V,Floridablanca,Zapamanga V,zapamanga v floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_VI,Floridablanca,Zapamanga VI,zapamanga vi floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_VII,Floridablanca,Zapamanga VII,zapamanga vii floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_FLORIDABLANCA_ZAPAMANGA_VIII,Floridablanca,Zapamanga VIII,zapamanga viii floridablanca,6000,True,rule_suggested,True,AMB/Alcaldía Floridablanca,official_seed_partial
+DOMICILIO_GIRON_ALTOS_DE_LA_CAMPINA,Girón,Altos de la Campiña,altos de la campina giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_ALTOS_DEL_POBLADO,Girón,Altos del Poblado,altos del poblado giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_ARENALES_CAMPESTRE,Girón,Arenales Campestre,arenales campestre giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_BELLAVISTA,Girón,Bellavista,bellavista giron,4000,True,manual_existing,False,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_CAMPINA,Girón,Campiña,campina giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_CARRIZAL_CAMPESTRE,Girón,Carrizal Campestre,carrizal campestre giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_CORIVANDI_1,Girón,Corivandi 1,corivandi 1 giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_CORIVANDI_3,Girón,Corivandi 3,corivandi 3 giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_EL_CONSUELO_3,Girón,El Consuelo 3,el consuelo 3 giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_EL_CONSUELO,Girón,El Consuelo,el consuelo giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_EL_GALLINERAL,Girón,El Gallineral,el gallineral giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_EL_RINCON_PARTE_ALTA,Girón,El Rincón Parte Alta,el rincon parte alta giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_HACIENDA_SAN_ANTONIO,Girón,Hacienda San Antonio,hacienda san antonio giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_JARDIN_DE_ARENALES,Girón,Jardín de Arenales,jardin de arenales giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_LA_PLAYA,Girón,La Playa,la playa giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_LAS_MARIAS,Girón,Las Marías,las marias giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_LOS_BAMBUES,Girón,Los Bambúes,los bambues giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_MESETA_3,Girón,Meseta 3,meseta 3 giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_MESETA_DE_ALCALA,Girón,Meseta de Alcalá,meseta de alcala giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_MIRADOR_DE_ARENALES,Girón,Mirador de Arenales,mirador de arenales giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_MIRADOR_DE_LA_ALDEA,Girón,Mirador de la Aldea,mirador de la aldea giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_QUINTAS_DEL_LLANITO,Girón,Quintas del Llanito,quintas del llanito giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_RINCON_DE_GIRON,Girón,Rincón de Girón,rincon de giron giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_RINCON_DE_ORO_II,Girón,Rincón de Oro II,rincon de oro ii giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_RIO_PRADO,Girón,Río Prado,rio prado giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_SAN_ANTONIO_CARRIZAL,Girón,San Antonio Carrizal,san antonio carrizal giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_SANTA_CRUZ,Girón,Santa Cruz,santa cruz giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_SECTOR_FRENTE_A_COTRAGAS,Girón,Sector Frente a Cotragas,sector frente a cotragas giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_VILLA_CAMPESTRE,Girón,Villa Campestre,villa campestre giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_VILLANPIS,Girón,Villanpis,villanpis giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_GIRON_VILLAS_DE_DON_JUAN_2,Girón,Villas de Don Juan 2,villas de don juan 2 giron,12000,True,rule_suggested,True,Alcaldía de Girón,official_seed_partial
+DOMICILIO_PIEDECUESTA_BARILOCHE,Piedecuesta,Bariloche,bariloche piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_CABECERA,Piedecuesta,Cabecera,cabecera piedecuesta,12000,True,manual_existing,False,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_CAMPO_VERDE,Piedecuesta,Campo Verde,campo verde piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_CHACARITA,Piedecuesta,Chacarita,chacarita piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_DIVINO_NINO,Piedecuesta,Divino Niño,divino nino piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_EL_MOLINO,Piedecuesta,El Molino,el molino piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_EL_REFUGIO,Piedecuesta,El Refugio,el refugio piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_EL_TRAPICHE,Piedecuesta,El Trapiche,el trapiche piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_HOSPITAL_INTERNACIONAL,Piedecuesta,Hospital Internacional,hospital internacional piedecuesta,10000,True,manual_existing,False,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_HOYO_GRANDE,Piedecuesta,Hoyo Grande,hoyo grande piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_ARGENTINA,Piedecuesta,La Argentina,la argentina piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_CANDELARIA,Piedecuesta,La Candelaria,la candelaria piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_CASTELLANA,Piedecuesta,La Castellana,la castellana piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_COLINA,Piedecuesta,La Colina,la colina piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_MACARENA,Piedecuesta,La Macarena,la macarena piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_RIOJA,Piedecuesta,La Rioja,la rioja piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_LA_TACHUELA,Piedecuesta,La Tachuela,la tachuela piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_PASEO_DEL_PUENTE,Piedecuesta,Paseo del Puente,paseo del puente piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_PAYSANDU,Piedecuesta,Paysandú,paysandu piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_PINARES_DE_GRANADA,Piedecuesta,Pinares de Granada,pinares de granada piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_PUERTO_MADERO,Piedecuesta,Puerto Madero,puerto madero piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_QUINTA_GRANADA,Piedecuesta,Quinta Granada,quinta granada piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_CARLOS,Piedecuesta,San Carlos,san carlos piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_CRISTOBAL,Piedecuesta,San Cristóbal,san cristobal piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_FRANCISCO,Piedecuesta,San Francisco,san francisco piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_LUIS,Piedecuesta,San Luis,san luis piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_RAFAEL,Piedecuesta,San Rafael,san rafael piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial
+DOMICILIO_PIEDECUESTA_SAN_TELMO,Piedecuesta,San Telmo,san telmo piedecuesta,14000,True,rule_suggested,True,Alcaldía de Piedecuesta,official_seed_partial

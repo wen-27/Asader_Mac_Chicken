@@ -12,6 +12,16 @@ class WhatsAppTextSchema(BaseModel):
     body: str | None = None
 
 
+class WhatsAppButtonReplySchema(BaseModel):
+    id: str | None = None
+    title: str | None = None
+
+
+class WhatsAppInteractiveSchema(BaseModel):
+    type: str | None = None
+    button_reply: WhatsAppButtonReplySchema | None = None
+
+
 class WhatsAppProfileSchema(BaseModel):
     name: str | None = None
 
@@ -27,12 +37,22 @@ class WhatsAppMessageSchema(BaseModel):
     timestamp: str | None = None
     type: str
     text: WhatsAppTextSchema | None = None
+    interactive: WhatsAppInteractiveSchema | None = None
 
     @property
     def body(self) -> str:
-        if self.text is None:
-            return ""
-        return self.text.body or ""
+        if self.type == "text" and self.text is not None:
+            return self.text.body or ""
+        if self.type == "interactive" and self.interactive is not None:
+            button = self.interactive.button_reply
+            if button is None:
+                return ""
+            if button.id == "confirm_order_yes":
+                return "si"
+            if button.id == "confirm_order_no":
+                return "no"
+            return button.title or ""
+        return ""
 
 
 class WhatsAppMetadataSchema(BaseModel):
@@ -82,7 +102,7 @@ class WhatsAppWebhookPayload(BaseModel):
                     if contact.wa_id
                 }
                 for message in change.value.messages or []:
-                    if message.type != "text" or not message.body.strip():
+                    if message.type not in {"text", "interactive"} or not message.body.strip():
                         continue
                     phone_digits = _digits_only(message.from_phone)
                     inbound_messages.append(

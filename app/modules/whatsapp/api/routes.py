@@ -125,6 +125,25 @@ async def whatsapp_webhook(
     processed = 0
     duplicated = 0
     for inbound in inbound_messages:
+        try:
+            await message_client.record_incoming_message(
+                chat_id=str(inbound.chat_id),
+                phone=inbound.phone,
+                body=inbound.text,
+                external_message_id=inbound.external_message_id,
+            )
+        except Exception:
+            logger.exception("failed to sync incoming whatsapp message to admin backend")
+
+        try:
+            control = await message_client.get_conversation_control(chat_id=str(inbound.chat_id))
+        except Exception:
+            logger.exception("failed to load whatsapp conversation control")
+            control = {"aiActive": True}
+        if control.get("aiActive") is False:
+            processed += 1
+            continue
+
         result = await use_case.execute(
             TelegramInboundMessage(
                 update_id=inbound.update_id,
@@ -138,15 +157,14 @@ async def whatsapp_webhook(
         )
         if result.processed:
             processed += 1
-            try:
-                await message_client.record_incoming_message(
-                    chat_id=str(inbound.chat_id),
-                    phone=inbound.phone,
-                    body=inbound.text,
-                    external_message_id=inbound.external_message_id,
-                )
-            except Exception:
-                logger.exception("failed to sync incoming whatsapp message to admin backend")
+            if result.response_text:
+                try:
+                    await message_client.record_bot_message(
+                        chat_id=str(inbound.chat_id),
+                        body=result.response_text,
+                    )
+                except Exception:
+                    logger.exception("failed to sync outgoing whatsapp message to admin backend")
         if result.duplicated:
             duplicated += 1
 
