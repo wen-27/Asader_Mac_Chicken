@@ -53,6 +53,18 @@ class FakeProductRepository:
                 category=ProductCategory.BEBIDAS,
                 price=MoneyCOP(8500),
             ),
+            "LASAGNA_MIXTA": Product(
+                code=ProductCode("LASAGNA_MIXTA"),
+                name=ProductName("Lasagna Mixta"),
+                category=ProductCategory.ESPECIALES,
+                price=MoneyCOP(20000),
+            ),
+            "LITRO_MEDIO": Product(
+                code=ProductCode("LITRO_MEDIO"),
+                name=ProductName("Litro y Medio"),
+                category=ProductCategory.BEBIDAS,
+                price=MoneyCOP(8500),
+            ),
         }
 
     async def get_by_code(self, code: ProductCode):
@@ -160,6 +172,19 @@ def test_rule_based_parser_tolerates_repeated_vowel_typo() -> None:
     parsed = parse_natural_order_rules("quiero una lasaaña")
 
     assert [(item.code, item.quantity) for item in parsed.items] == [("LASAGNA_MIXTA", 1)]
+
+
+def test_rule_based_parser_understands_lasagna_typos() -> None:
+    examples = [
+        "quiero agregar una lasaña",
+        "lasaña mista",
+        "lasagna mixta",
+        "quiero una lasana mista",
+    ]
+
+    for example in examples:
+        parsed = parse_natural_order_rules(example)
+        assert [(item.code, item.quantity) for item in parsed.items] == [("LASAGNA_MIXTA", 1)]
 
 
 @pytest.mark.asyncio

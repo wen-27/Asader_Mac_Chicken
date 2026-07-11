@@ -90,6 +90,11 @@ python -m scripts.migrate
 python -m scripts.seed
 ```
 
+redis local
+
+cd /Users/wen/Desktop/Asader_Mac_Chicken
+.local/bin/redis-server --port 6379
+
 ### 5. Levantar todo
 
 Primera vez o cuando quieras validar migraciones y seeders:

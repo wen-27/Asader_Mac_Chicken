@@ -80,6 +80,7 @@ async def detect_intent(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     text = state.normalized_text
+    parsed_rules = parse_natural_order_rules(state.raw_text)
     # Navigation and numbered menus are handled before natural-language parsing.
     # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
     if text in {"0", "volver", "atras", "atrás", "regresar"}:
@@ -99,6 +100,17 @@ async def detect_intent(
     natural_menu_intent = _detect_natural_menu_intent(text)
     if natural_menu_intent is not None:
         state.intent = natural_menu_intent
+        return state
+    query = _classify_business_query(text)
+    if query is not None and _looks_like_question(text):
+        # Questions such as "cuanto vale medio pollo" must answer information,
+        # not mutate the cart just because they mention a product.
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = query[0]
+        state.query_value = query[1]
+        return state
+    if parsed_rules.items:
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if state.current_step == ConversationState.POST_ADD:
         # After adding an item, short commands such as "3" or "finalizar" should
@@ -127,7 +139,7 @@ async def detect_intent(
     elif (
         state.current_step == ConversationState.NATURAL_ORDER
         or _looks_like_natural_order(text)
-        or parse_natural_order_rules(state.raw_text).items
+        or parsed_rules.items
     ):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
@@ -141,9 +153,9 @@ async def detect_intent(
         state.intent = ConversationIntent.MENU_ADICIONALES
     elif "especial" in text or "lasagna" in text or "lasana" in text or "maduro" in text:
         state.intent = ConversationIntent.MENU_ESPECIALES
-    elif text in {"carrito", "ver carrito"}:
+    elif _contains_command(text, ("carrito", "ver carrito", "mostrar carrito", "mi carrito")):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
-    elif text in {"vaciar", "vaciar carrito"}:
+    elif _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
         state.intent = ConversationIntent.VACIAR_CARRITO
     elif text in {"eliminar", "quitar", "eliminar producto"}:
         state.intent = ConversationIntent.ELIMINAR_PRODUCTO
@@ -921,11 +933,13 @@ async def _add_natural_order_to_cart(
 
     session = await services.load_or_create_session(ChatId(state.chat_id))
     added_lines: list[CartLineState] = []
+    restricted_product_name: str | None = None
     for item in parsed.items:
         product = await services.find_product(item.code)
         if product is None:
             continue
         if not _is_product_available(product):
+            restricted_product_name = product.name.value
             continue
         chicken_part = _extract_chicken_selection(item.code, state.normalized_text)
         if _requires_chicken_selection(item.code) and not chicken_part:
@@ -953,6 +967,9 @@ async def _add_natural_order_to_cart(
         added_lines.append(line)
 
     if not added_lines:
+        if restricted_product_name:
+            state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+            state.response_text = BotMessageFactory.product_unavailable()
         return []
     session.clear_selected_product()
     session.move_to(ConversationState.POST_ADD)
@@ -1226,7 +1243,7 @@ def _looks_like_order_status_query(text: str) -> bool:
 def _short_product_reference(text: str) -> str:
     cleaned = text.strip(" ¿?.,!¡")
     if cleaned in {"la 1.5", "1.5", "1,5", "litro y medio", "litro medio"}:
-        return "gaseosa litro y medio"
+        return "coca cola 1.5"
     if cleaned in {"agua", "aguita", "botella de agua"}:
         return "agua botella"
     if cleaned in {"personal", "la personal", "400", "400 ml"}:

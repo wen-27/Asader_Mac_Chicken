@@ -99,7 +99,7 @@ class WhatsAppWebhookPayload(BaseModel):
                 contacts_by_phone = {
                     contact.wa_id: contact.profile.name if contact.profile else None
                     for contact in change.value.contacts or []
-                    if contact.wa_id
+                    if contact.wa_id and contact.profile and contact.profile.name
                 }
                 for message in change.value.messages or []:
                     if message.type not in {"text", "interactive"} or not message.body.strip():

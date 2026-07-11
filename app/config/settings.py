@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8001
 
+    # Local administrator seed for the admin backend/panel.
+    admin_email: str = "admin@asadero.local"
+    admin_password: str = Field(default="servor1230", repr=False)
+    admin_name: str = "Administrador"
+
     # Telegram is kept as a legacy/local development channel. WhatsApp Cloud API
     # is the production entry point for restaurant customers.
     telegram_bot_token: str = Field(default="", repr=False)
@@ -53,11 +58,14 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = Field(default="", repr=False)
     whatsapp_verify_token: str = Field(default="", repr=False)
     whatsapp_graph_api_version: str = "v23.0"
+    whatsapp_send_timeout_seconds: float = 4.0
 
     # Gemini is the configured LLM path. Deterministic rules run first to avoid
     # spending credits on common menu/order messages.
     llm_provider: Literal["gemini"] = "gemini"
     gemini_model: str = "gemini-2.0-flash-lite"
+    llm_fallback_enabled: bool = False
+    gemini_timeout_seconds: float = 3.0
     google_api_key: str = Field(default="", repr=False)
     gemini_api_key: str = Field(default="", repr=False)
     # Delivery fallback settings. Manual seeded zones still take priority over
@@ -71,6 +79,8 @@ class Settings(BaseSettings):
 
     admin_backend_base_url: str = "http://localhost:3000/api/v1/internal"
     internal_api_key: str = Field(default="", repr=False)
+    admin_backend_sync_enabled: bool = False
+    admin_backend_timeout_seconds: float = 0.4
 
     log_level: str = "INFO"
 

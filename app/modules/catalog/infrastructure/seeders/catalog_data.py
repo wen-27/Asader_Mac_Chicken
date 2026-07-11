@@ -131,7 +131,20 @@ PRODUCT_ALIAS_SEEDS: tuple[ProductAliasSeed, ...] = (
     ProductAliasSeed("GASEOSA", ("gaseosa", "bebida", "soda")),
     ProductAliasSeed("LATA_GASEOSA", ("lata gaseosa", "gaseosa en lata")),
     ProductAliasSeed("COLA_POLA", ("cola y pola", "cola pola", "colapola")),
-    ProductAliasSeed("LASAGNA_MIXTA", ("lasana", "lasagna", "lasaña", "lasagna mixta")),
+    ProductAliasSeed(
+        "LASAGNA_MIXTA",
+        (
+            "lasana",
+            "lasagna",
+            "lasaña",
+            "lasagna mixta",
+            "lasagna mista",
+            "lasaña mixta",
+            "lasaña mista",
+            "lasana mixta",
+            "lasana mista",
+        ),
+    ),
     ProductAliasSeed("MADURO_QUESO", ("maduro", "maduro con queso", "platano maduro")),
     ProductAliasSeed(
         "PAPA_FRANCESA",

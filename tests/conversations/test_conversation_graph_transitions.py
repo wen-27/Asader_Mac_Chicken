@@ -70,6 +70,13 @@ class FakeConversationServices:
                 category=ProductCategory.POLLO_BROASTER,
                 price=MoneyCOP(38200),
             ),
+            "LASAGNA_MIXTA": Product(
+                code=ProductCode("LASAGNA_MIXTA"),
+                name=ProductName("Lasagna Mixta"),
+                category=ProductCategory.ESPECIALES,
+                price=MoneyCOP(20000),
+                restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+            ),
         }
 
     async def load_or_create_session(self, chat_id: ChatId) -> TelegramSession:
@@ -203,6 +210,36 @@ async def test_main_menu_number_three_shows_cart() -> None:
 
     assert state.intent == ConversationIntent.MOSTRAR_CARRITO
     assert route_after_intent(state) == "show_cart"
+
+
+@pytest.mark.asyncio
+async def test_natural_cart_query_shows_cart() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    state = ConversationGraphState(chat_id=123, raw_text="quiero ver mi carrito")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert state.intent == ConversationIntent.MOSTRAR_CARRITO
+    assert route_after_intent(state) == "show_cart"
+
+
+@pytest.mark.asyncio
+async def test_lasagna_request_uses_fast_rules_before_business_query() -> None:
+    services = FakeConversationServices()
+    state = ConversationGraphState(chat_id=123, raw_text="quiero pedir una lasaña")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    state = await nodes.fallback_natural_language(state, services)
+
+    assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
+    assert "fines de semana" in state.response_text
+    assert "no cuento con informacion" not in state.response_text.lower()
 
 
 @pytest.mark.asyncio
@@ -832,7 +869,7 @@ async def test_question_about_gaseosas_lists_products_without_adding_to_cart() -
 
     assert "🥤 Bebidas" in result["response_text"]
     assert "Gaseosa: $3000" in result["response_text"]
-    assert "Litro y Medio: $8500" in result["response_text"]
+    assert "Coca-Cola 1.5 L: $8500" in result["response_text"]
     assert len(services.session.cart) == 0
 
 
@@ -851,9 +888,9 @@ async def test_question_about_product_price_answers_without_cart() -> None:
 @pytest.mark.asyncio
 async def test_ambiguous_gaseosa_price_question_lists_bebidas() -> None:
     services = FakeConversationServices()
-    services.products["LITRO_MEDIO"] = Product(
-        code=ProductCode("LITRO_MEDIO"),
-        name=ProductName("Litro y Medio"),
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
         category=ProductCategory.BEBIDAS,
         price=MoneyCOP(8500),
     )
@@ -864,7 +901,7 @@ async def test_ambiguous_gaseosa_price_question_lists_bebidas() -> None:
 
     assert "🥤 Bebidas" in result["response_text"]
     assert "Gaseosa: $3000" in result["response_text"]
-    assert "Litro y Medio: $8500" in result["response_text"]
+    assert "Coca-Cola 1.5 L: $8500" in result["response_text"]
     assert "Gaseosa vale $3000" not in result["response_text"]
     assert len(services.session.cart) == 0
 
@@ -965,7 +1002,7 @@ async def test_weekday_special_natural_order_stays_unavailable(monkeypatch) -> N
     state = await nodes.detect_intent(state, services)
     result = await nodes.fallback_natural_language(state, services)
 
-    assert "no cuento con informacion de ese producto" in result.response_text.lower()
+    assert "solo esta disponible fines de semana" in result.response_text.lower()
     assert len(services.session.cart) == 0
 
 
@@ -1025,9 +1062,9 @@ async def test_main_menu_options_work_as_natural_language(
 @pytest.mark.asyncio
 async def test_short_litro_medio_question_answers_price() -> None:
     services = FakeConversationServices()
-    services.products["LITRO_MEDIO"] = Product(
-        code=ProductCode("LITRO_MEDIO"),
-        name=ProductName("Litro y Medio"),
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
         category=ProductCategory.BEBIDAS,
         price=MoneyCOP(8500),
     )
@@ -1036,7 +1073,7 @@ async def test_short_litro_medio_question_answers_price() -> None:
 
     result = await graph.ainvoke(state)
 
-    assert "Litro y Medio vale $8500" in result["response_text"]
+    assert "Coca-Cola 1.5 L vale $8500" in result["response_text"]
     assert len(services.session.cart) == 0
 
 
@@ -1049,9 +1086,9 @@ async def test_graph_adds_natural_order_additional_items_to_cart() -> None:
         category=ProductCategory.POLLO_ASADO,
         price=MoneyCOP(44500),
     )
-    services.products["LITRO_MEDIO"] = Product(
-        code=ProductCode("LITRO_MEDIO"),
-        name=ProductName("Litro y Medio"),
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
         category=ProductCategory.BEBIDAS,
         price=MoneyCOP(8500),
     )
