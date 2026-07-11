@@ -22,7 +22,7 @@ class TelegramSessionORM(TimestampMixin, Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_step: Mapped[str] = mapped_column(String(80), nullable=False)
     selected_product_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    selected_chicken_part: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    selected_chicken_part: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     cart_json: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB().with_variant(JSON, "sqlite"),
         default=list,

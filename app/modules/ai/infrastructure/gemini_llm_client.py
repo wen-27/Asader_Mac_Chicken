@@ -20,6 +20,7 @@ class GeminiLLMClient:
             raise InvalidValueError("gemini api key is not configured")
         self._api_key = settings.resolved_google_api_key
         self._model = model or settings.gemini_model
+        self._timeout = settings.gemini_timeout_seconds
         self._client = client
 
     async def complete(self, prompt: str) -> str:
@@ -29,7 +30,7 @@ class GeminiLLMClient:
         )
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         if self._client is None:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
                 data = await self._post(client, url, payload)
         else:
             data = await self._post(self._client, url, payload)

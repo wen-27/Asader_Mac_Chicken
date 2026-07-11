@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Optional
+
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -40,6 +44,8 @@ class OrderORM(TimestampMixin, Base):
     delivery_price_cop: Mapped[int] = mapped_column(Integer, nullable=False)
     total_cop: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
+    payment_proof_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    payment_proof_reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     items: Mapped[list["OrderItemORM"]] = relationship(
         back_populates="order",
@@ -70,4 +76,3 @@ class OrderItemORM(Base):
     subtotal_cop: Mapped[int] = mapped_column(Integer, nullable=False)
 
     order: Mapped[OrderORM] = relationship(back_populates="items")
-

@@ -15,6 +15,12 @@ from app.modules.catalog.infrastructure.seeders.catalog_data import PRODUCT_SEED
 from app.modules.conversations.application.ports import TelegramSessionRepository
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.telegram_session import TelegramSession
+from app.modules.customers.domain.customer import Customer
+from app.modules.delivery.domain.delivery_zone import DeliveryZone
+from app.modules.orders.application.ports import OrderRepository
+from app.modules.orders.domain.enums import OrderStatus, PaymentMethod
+from app.modules.orders.domain.order import Order
+from app.modules.orders.domain.order_item import OrderItem
 from app.modules.orders.infrastructure.admin_backend_order_client import (
     AdminOrderCustomerPayload,
     AdminOrderItemPayload,
@@ -22,7 +28,7 @@ from app.modules.orders.infrastructure.admin_backend_order_client import (
     AdminBackendOrderClient,
 )
 from app.shared.domain.money import MoneyCOP
-from app.shared.domain.value_object import ChatId, ProductCode, ProductName
+from app.shared.domain.value_object import Address, ChatId, CustomerName, Neighborhood, OrderId, PhoneNumber, ProductCode, ProductName
 
 
 class ConversationGraphServices(Protocol):
@@ -83,6 +89,7 @@ class SeedCatalogService:
 class DefaultConversationGraphServices:
     sessions: TelegramSessionRepository
     products: ProductRepository | None = None
+    orders: OrderRepository | None = None
     delivery_calculator: object | None = None
     seed_catalog: SeedCatalogService = SeedCatalogService()
 
@@ -119,6 +126,9 @@ class DefaultConversationGraphServices:
         return await self.delivery_calculator.execute(address=address, neighborhood=neighborhood)
 
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
+        if self.orders is not None:
+            await self.orders.add(_order_from_admin_payload(payload), ChatId(int(payload.chat_id)))
+            return
         await AdminBackendOrderClient(get_settings()).sync_order_payload(payload)
 
 
@@ -129,3 +139,57 @@ def cart_item_from_product(product: Product, quantity: int) -> CartItem:
         unit_price=product.price,
         quantity=quantity,
     )
+
+
+def _order_from_admin_payload(payload: AdminOrderPayload) -> Order:
+    address, neighborhood = _split_customer_address(payload.customer.address)
+    order = Order(
+        order_id=OrderId(payload.external_bot_id),
+        customer=Customer(
+            name=CustomerName(payload.customer.full_name),
+            phone=PhoneNumber(payload.customer.phone),
+            address=Address(address),
+            neighborhood=Neighborhood(neighborhood),
+            observations=payload.observations or "Ninguna",
+        ),
+        items=[
+            OrderItem(
+                product_code=ProductCode(item.product_code),
+                product_name=ProductName(item.product_name),
+                unit_price_snapshot=MoneyCOP(item.unit_price_cop),
+                quantity=item.quantity,
+                subtotal_snapshot=MoneyCOP(item.unit_price_cop * item.quantity),
+            )
+            for item in payload.items
+        ],
+        delivery_zone=DeliveryZone(
+            code="WHATSAPP_CHECKOUT",
+            neighborhood=Neighborhood(neighborhood),
+            delivery_price=MoneyCOP(payload.delivery_fee_cop),
+            is_active=True,
+        ),
+        payment_method=_payment_method_from_text(payload.payment_method),
+        status=OrderStatus.CONFIRMED,
+    )
+    return order
+
+
+def _split_customer_address(raw_address: str) -> tuple[str, str]:
+    parts = [part.strip() for part in raw_address.split(" - ", 1)]
+    if len(parts) == 2 and parts[0] and parts[1]:
+        return parts[0], parts[1]
+    return raw_address.strip(), "Sin barrio"
+
+
+def _payment_method_from_text(value: str) -> PaymentMethod:
+    normalized = value.strip().lower()
+    for method in PaymentMethod:
+        if normalized == method.value.lower():
+            return method
+    if "nequi" in normalized:
+        return PaymentMethod.NEQUI
+    if "datafono" in normalized or "datáfono" in normalized:
+        return PaymentMethod.DATAPHONE
+    if "bancolombia" in normalized or "transferencia" in normalized:
+        return PaymentMethod.BANCOLOMBIA_TRANSFER
+    return PaymentMethod.CASH

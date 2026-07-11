@@ -34,3 +34,7 @@ class TelegramMessageORM(Base):
     message_type: Mapped[str] = mapped_column(String(40), default="text", nullable=False)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    media_id: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    media_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    media_mime_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    media_sha256: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)

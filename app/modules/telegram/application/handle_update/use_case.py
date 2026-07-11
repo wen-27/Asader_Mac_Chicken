@@ -8,6 +8,8 @@ serializes messages per chat so two rapid user messages cannot corrupt state.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+from time import perf_counter
 
 from app.modules.conversations.application.ports import ConversationMessageHandler
 from app.modules.telegram.application.ports import TelegramClient, TelegramMessageRepository
@@ -15,6 +17,8 @@ from app.modules.telegram.domain.telegram_message import TelegramMessage
 from app.shared.application.redis_ports import RedisIdempotencyPort, RedisLockPort
 from app.shared.domain.value_object import ChatId
 from app.shared.utils.text_normalizer import normalize_text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,7 @@ class HandleTelegramUpdateUseCase:
         chat_id: ChatId,
         idempotency_key: str,
     ) -> TelegramUpdateResult:
+        started_at = perf_counter()
         normalized_text = normalize_text(inbound.text)
         inbound_message = TelegramMessage(
             chat_id=chat_id,
@@ -112,14 +117,34 @@ class HandleTelegramUpdateUseCase:
 
         # Pass the raw text to the conversation. Normalized text removes line
         # breaks, and checkout data often arrives as several human-written lines.
+        conversation_started_at = perf_counter()
         response_text = await self._conversation_handler.handle(inbound.text, chat_id)
+        conversation_ms = round((perf_counter() - conversation_started_at) * 1000, 2)
+        send_started_at = perf_counter()
         sent_message = await self._telegram_client.send_text_message(chat_id, response_text)
-        await self._messages.add(sent_message, direction="outbound")
+        send_ms = round((perf_counter() - send_started_at) * 1000, 2)
         if self._idempotency is not None:
+            # Once WhatsApp/Telegram accepted the outbound message, mark the
+            # inbound update as processed before any secondary persistence can
+            # fail. Otherwise the platform may retry the webhook and the user
+            # can receive the same bot reply twice.
             await self._idempotency.mark_processed(
                 idempotency_key,
                 self._idempotency_ttl_seconds,
             )
+        save_started_at = perf_counter()
+        await self._messages.add(sent_message, direction="outbound")
+        save_ms = round((perf_counter() - save_started_at) * 1000, 2)
+        total_ms = round((perf_counter() - started_at) * 1000, 2)
+        logger.info(
+            "telegram update timings chat_id=%s update_id=%s conversation_ms=%s send_ms=%s outbound_save_ms=%s total_ms=%s",
+            chat_id.value,
+            inbound.update_id,
+            conversation_ms,
+            send_ms,
+            save_ms,
+            total_ms,
+        )
 
         return TelegramUpdateResult(
             processed=True,

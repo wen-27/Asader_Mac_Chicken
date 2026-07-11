@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
+from app.config.settings import get_settings
 from app.modules.ai.application.ports import CachePort, NaturalLanguageOrderParser
 from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
 from app.modules.ai.application.schemas import NaturalLanguageOrderParse, ParsedOrderItem
@@ -33,11 +34,13 @@ class InterpretNaturalOrder:
         parser: NaturalLanguageOrderParser,
         semantic_search: CatalogSemanticSearch,
         cache: CachePort | None = None,
+        llm_fallback_enabled: bool | None = None,
     ) -> None:
         self._products = products
         self._parser = parser
         self._semantic_search = semantic_search
         self._cache = cache
+        self._llm_fallback_enabled = llm_fallback_enabled
 
     async def execute(self, command: InterpretNaturalOrderCommand) -> InterpretNaturalOrderResult:
         # Fast path: deterministic rules cover the common restaurant language and
@@ -48,6 +51,21 @@ class InterpretNaturalOrder:
         )
         if rule_parsed.items:
             return InterpretNaturalOrderResult(parsed=rule_parsed, needs_clarification=False)
+
+        llm_fallback_enabled = (
+            get_settings().llm_fallback_enabled
+            if self._llm_fallback_enabled is None
+            else self._llm_fallback_enabled
+        )
+        if not llm_fallback_enabled:
+            return InterpretNaturalOrderResult(
+                parsed=NaturalLanguageOrderParse(
+                    intent="unknown",
+                    confidence=0.0,
+                    notes=["llm_fallback_disabled"],
+                ),
+                needs_clarification=True,
+            )
 
         catalog_context = await self._catalog_context()
         # LLM fallback only receives current catalog context. It must return

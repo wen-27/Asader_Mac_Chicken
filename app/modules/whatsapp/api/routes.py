@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
+from time import perf_counter, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings, get_settings
@@ -37,9 +40,14 @@ from app.modules.delivery.infrastructure.sqlalchemy_delivery_zone_repository imp
 )
 from app.modules.telegram.application.handle_update import HandleTelegramUpdateUseCase
 from app.modules.telegram.application.handle_update.use_case import TelegramInboundMessage
+from app.modules.telegram.infrastructure.models import TelegramMessageORM
 from app.modules.telegram.infrastructure.sqlalchemy_message_repository import (
     SqlAlchemyTelegramMessageRepository,
 )
+from app.modules.admin.realtime import admin_realtime_hub
+from app.modules.orders.application.payment_proofs import mark_payment_proof_received_for_chat
+from app.modules.orders.infrastructure.models import OrderORM
+from app.modules.orders.infrastructure.sqlalchemy_order_repository import SqlAlchemyOrderRepository
 from app.modules.whatsapp.api.schemas import WhatsAppWebhookPayload
 from app.modules.whatsapp.infrastructure.admin_backend_message_client import (
     AdminBackendMessageClient,
@@ -49,6 +57,8 @@ from app.shared.infrastructure.database.session import get_async_session
 from app.shared.infrastructure.redis.cache import RedisTextCache
 from app.shared.infrastructure.redis.idempotency import RedisIdempotency
 from app.shared.infrastructure.redis.locks import RedisLock
+from app.shared.domain.value_object import ChatId
+from app.shared.utils.text_normalizer import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +86,103 @@ async def whatsapp_webhook(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
+    started_at = perf_counter()
     inbound_messages = payload.iter_text_messages()
-    if not inbound_messages:
+    inbound_media_messages = payload.iter_media_messages()
+    if not inbound_messages and not inbound_media_messages:
         return {"ok": True, "processed": False, "reason": "unsupported_update"}
 
     redis_cache = RedisTextCache(settings)
+    idempotency = RedisIdempotency(redis_cache)
+    message_repository = SqlAlchemyTelegramMessageRepository(session)
+
+    processed = 0
+    duplicated = 0
+    failed = 0
+    ignored = 0
+
+    for inbound_media in inbound_media_messages:
+        idempotency_key = f"telegram:update:{inbound_media.update_id}:message:{inbound_media.message_id}"
+        try:
+            if await idempotency.is_processed(idempotency_key):
+                duplicated += 1
+                continue
+            if not await idempotency.mark_processing(idempotency_key, 86_400):
+                duplicated += 1
+                continue
+            existing = await session.execute(
+                select(TelegramMessageORM).where(
+                    TelegramMessageORM.update_id == inbound_media.update_id,
+                    TelegramMessageORM.direction == "inbound",
+                )
+            )
+            if existing.scalar_one_or_none() is not None:
+                duplicated += 1
+                await idempotency.mark_processed(idempotency_key, 86_400)
+                continue
+            media_text = inbound_media.caption or "Imagen recibida"
+            session.add(
+                TelegramMessageORM(
+                    update_id=inbound_media.update_id,
+                    chat_id=inbound_media.chat_id,
+                    direction="inbound",
+                    message_text=media_text,
+                    normalized_message_text=normalize_text(media_text),
+                    message_type=inbound_media.media_type,
+                    telegram_message_id=inbound_media.message_id,
+                    created_at=_message_datetime(inbound_media.sent_at_epoch),
+                    media_id=inbound_media.media_id,
+                    media_type=inbound_media.media_type,
+                    media_mime_type=inbound_media.mime_type,
+                    media_sha256=inbound_media.sha256,
+                )
+            )
+            await session.flush()
+            await idempotency.mark_processed(idempotency_key, 86_400)
+            await mark_payment_proof_received_for_chat(
+                session,
+                settings,
+                inbound_media.chat_id,
+                _message_datetime(inbound_media.sent_at_epoch),
+            )
+            processed += 1
+            logger.info(
+                "stored whatsapp media chat_id=%s media_type=%s media_id=%s delivery_lag_ms=%s",
+                inbound_media.chat_id,
+                inbound_media.media_type,
+                inbound_media.media_id,
+                _delivery_lag_ms(inbound_media.sent_at_epoch),
+            )
+        except Exception:
+            failed += 1
+            await session.rollback()
+            logger.exception("failed to store whatsapp inbound media")
+
+    if inbound_media_messages:
+        await session.commit()
+
+    if not inbound_messages:
+        if processed:
+            await admin_realtime_hub.broadcast({"type": "conversations.changed"})
+            await admin_realtime_hub.broadcast({"type": "orders.changed"})
+        logger.info(
+            "completed whatsapp webhook messages=%s media=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
+            0,
+            len(inbound_media_messages),
+            processed,
+            duplicated,
+            failed,
+            ignored,
+            round((perf_counter() - started_at) * 1000, 2),
+        )
+        return {
+            "ok": True,
+            "processed": processed,
+            "duplicated": duplicated,
+            "failed": failed,
+            "ignored": ignored,
+        }
+
     session_repository = CachedTelegramSessionRepository(
         SqlAlchemyTelegramSessionRepository(session),
         redis_cache,
@@ -108,33 +210,60 @@ async def whatsapp_webhook(
         ),
     )
     use_case = HandleTelegramUpdateUseCase(
-        messages=SqlAlchemyTelegramMessageRepository(session),
+        messages=message_repository,
         telegram_client=WhatsAppCloudClient(settings),
         conversation_handler=LangGraphConversationMessageHandler(
             DefaultConversationGraphServices(
                 sessions=session_repository,
                 products=product_repository,
+                orders=SqlAlchemyOrderRepository(session),
                 delivery_calculator=delivery_calculator,
             )
         ),
-        idempotency=RedisIdempotency(redis_cache),
+        idempotency=idempotency,
         locks=RedisLock(redis_cache),
     )
     message_client = AdminBackendMessageClient(settings)
 
-    processed = 0
-    duplicated = 0
     for inbound in inbound_messages:
-        try:
-            await message_client.record_incoming_message(
-                chat_id=str(inbound.chat_id),
-                phone=inbound.phone,
-                body=inbound.text,
-                external_message_id=inbound.external_message_id,
+        message_started_at = perf_counter()
+        delivery_lag_ms = _delivery_lag_ms(inbound.sent_at_epoch)
+        admin_preparing_reply = await _admin_preparing_reply(session, inbound)
+        if admin_preparing_reply is not None:
+            try:
+                if await _store_admin_preparing_reply(session, settings, idempotency, inbound, admin_preparing_reply):
+                    processed += 1
+                else:
+                    duplicated += 1
+            except Exception:
+                failed += 1
+                logger.exception("failed to store whatsapp admin preparing reply")
+                await session.rollback()
+            continue
+        if _is_order_timing_query(inbound.text):
+            try:
+                if await _answer_order_timing_query(session, settings, idempotency, inbound):
+                    processed += 1
+                else:
+                    duplicated += 1
+            except Exception:
+                failed += 1
+                logger.exception("failed to answer whatsapp order timing query")
+                await session.rollback()
+            continue
+        if await _should_ignore_stale_greeting(inbound, message_repository):
+            ignored += 1
+            await idempotency.mark_processed(
+                f"telegram:update:{inbound.update_id}:message:{inbound.message_id}",
+                86_400,
             )
-        except Exception:
-            logger.exception("failed to sync incoming whatsapp message to admin backend")
-
+            logger.info(
+                "ignored stale whatsapp greeting chat_id=%s delivery_lag_ms=%s text=%s",
+                inbound.chat_id,
+                delivery_lag_ms,
+                normalize_text(inbound.text),
+            )
+            continue
         try:
             control = await message_client.get_conversation_control(chat_id=str(inbound.chat_id))
         except Exception:
@@ -144,17 +273,40 @@ async def whatsapp_webhook(
             processed += 1
             continue
 
-        result = await use_case.execute(
-            TelegramInboundMessage(
-                update_id=inbound.update_id,
-                message_id=inbound.message_id,
-                chat_id=inbound.chat_id,
-                text=inbound.text,
-                first_name=inbound.first_name,
-                username=None,
-                message_type="text",
+        try:
+            result = await use_case.execute(
+                TelegramInboundMessage(
+                    update_id=inbound.update_id,
+                    message_id=inbound.message_id,
+                    chat_id=inbound.chat_id,
+                    text=inbound.text,
+                    first_name=inbound.first_name,
+                    username=None,
+                    message_type="text",
+                )
             )
+        except Exception:
+            failed += 1
+            logger.exception("failed to process whatsapp inbound message")
+            await session.rollback()
+            continue
+        logger.info(
+            "processed whatsapp message chat_id=%s processed=%s duplicated=%s duration_ms=%s delivery_lag_ms=%s",
+            inbound.chat_id,
+            result.processed,
+            result.duplicated,
+            round((perf_counter() - message_started_at) * 1000, 2),
+            delivery_lag_ms,
         )
+        try:
+            await message_client.record_incoming_message(
+                chat_id=str(inbound.chat_id),
+                phone=inbound.phone,
+                body=inbound.text,
+                external_message_id=inbound.external_message_id,
+            )
+        except Exception:
+            logger.exception("failed to sync incoming whatsapp message to admin backend")
         if result.processed:
             processed += 1
             if result.response_text:
@@ -169,9 +321,375 @@ async def whatsapp_webhook(
             duplicated += 1
 
     await session.commit()
+    if processed:
+        await admin_realtime_hub.broadcast({"type": "conversations.changed"})
+        if inbound_media_messages:
+            await admin_realtime_hub.broadcast({"type": "orders.changed"})
+    if processed or duplicated:
+        await admin_realtime_hub.broadcast({"type": "orders.changed"})
+    logger.info(
+        "completed whatsapp webhook messages=%s media=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
+        len(inbound_messages),
+        len(inbound_media_messages),
+        processed,
+        duplicated,
+        failed,
+        ignored,
+        round((perf_counter() - started_at) * 1000, 2),
+    )
 
     return {
         "ok": True,
         "processed": processed,
         "duplicated": duplicated,
+        "failed": failed,
+        "ignored": ignored,
     }
+
+
+def _delivery_lag_ms(sent_at_epoch: int | None) -> int | None:
+    if sent_at_epoch is None:
+        return None
+    return max(0, round((time() - sent_at_epoch) * 1000))
+
+
+def _message_datetime(sent_at_epoch: int | None) -> datetime:
+    if sent_at_epoch is None:
+        return datetime.now(timezone.utc)
+    return datetime.fromtimestamp(sent_at_epoch, tz=timezone.utc)
+
+
+async def _admin_preparing_reply(session: AsyncSession, inbound) -> tuple[str, int | None] | None:
+    if inbound.button_reply_id:
+        button_reply = _admin_preparing_button_reply(inbound.button_reply_id)
+        if button_reply is not None:
+            reply_value, order_id = button_reply
+            if order_id is not None:
+                return button_reply
+            recent_order_id = await _recent_admin_preparing_prompt_order_id(session, inbound.chat_id)
+            if recent_order_id is not None:
+                return reply_value, recent_order_id
+            return None
+    reply = _yes_no_reply_from_text(inbound.text)
+    if reply is None:
+        return None
+    order_id = await _recent_admin_preparing_prompt_order_id(session, inbound.chat_id)
+    if order_id is not None:
+        return reply, order_id
+    return None
+
+
+def _admin_preparing_button_reply(button_reply_id: str) -> tuple[str, int | None] | None:
+    if button_reply_id.startswith("admin_preparing_yes"):
+        return "yes", _button_order_id(button_reply_id)
+    if button_reply_id.startswith("admin_preparing_no"):
+        return "no", _button_order_id(button_reply_id)
+    return None
+
+
+def _button_order_id(button_reply_id: str) -> int | None:
+    _, separator, raw_order_id = button_reply_id.partition(":")
+    if not separator or not raw_order_id.isdigit():
+        return None
+    return int(raw_order_id)
+
+
+async def _store_admin_preparing_reply(
+    session: AsyncSession,
+    settings: Settings,
+    idempotency: RedisIdempotency,
+    inbound,
+    admin_preparing_reply: tuple[str, int | None],
+) -> bool:
+    idempotency_key = f"telegram:update:{inbound.update_id}:message:{inbound.message_id}"
+    if await idempotency.is_processed(idempotency_key):
+        return False
+    if not await idempotency.mark_processing(idempotency_key, 86_400):
+        return False
+    existing = await session.execute(
+        select(TelegramMessageORM).where(
+            TelegramMessageORM.update_id == inbound.update_id,
+            TelegramMessageORM.direction == "inbound",
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        await idempotency.mark_processed(idempotency_key, 86_400)
+        return False
+    inbound_text = inbound.text.strip()
+    normalized_text = normalize_text(inbound_text)
+    inbound_created_at = _message_datetime(inbound.sent_at_epoch)
+    reply_value, order_id = admin_preparing_reply
+    session.add(
+        TelegramMessageORM(
+            update_id=inbound.update_id,
+            chat_id=inbound.chat_id,
+            direction="inbound",
+            message_text=inbound_text,
+            normalized_message_text=normalized_text,
+            message_type="admin_reply",
+            telegram_message_id=inbound.message_id,
+            created_at=inbound_created_at,
+        )
+    )
+    if reply_value == "no":
+        await _cancel_order_after_admin_no(session, settings, inbound.chat_id, order_id)
+    await session.flush()
+    await idempotency.mark_processed(idempotency_key, 86_400)
+    return True
+
+
+async def _recent_admin_preparing_prompt_order_id(session: AsyncSession, chat_id: int) -> int | None:
+    latest_order = await _latest_order_for_chat(session, chat_id)
+    if latest_order is None:
+        return None
+    result = await session.execute(
+        select(TelegramMessageORM)
+        .where(
+            TelegramMessageORM.chat_id == chat_id,
+            TelegramMessageORM.direction == "outbound",
+            TelegramMessageORM.created_at >= latest_order.created_at,
+            TelegramMessageORM.message_type.in_(("admin_text", "text")),
+        )
+        .order_by(TelegramMessageORM.created_at.desc())
+        .limit(1)
+    )
+    latest_message = result.scalar_one_or_none()
+    if latest_message is None:
+        return None
+    text = normalize_text(latest_message.message_text or "")
+    if not _text_contains_admin_preparing_prompt(text):
+        return None
+    return latest_order.id
+
+
+def _text_contains_admin_preparing_prompt(text: str) -> bool:
+    normalized = normalize_text(text)
+    return (
+        "en este momento no contamos" in normalized
+        and ("desea pedir de igual manera" in normalized or "desea pedir de alguna otra cosa" in normalized)
+    )
+
+
+def _yes_no_reply_from_text(text: str) -> str | None:
+    normalized = normalize_text(text)
+    if normalized in {"si", "sí"}:
+        return "yes"
+    if normalized == "no":
+        return "no"
+    lines = [normalize_text(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    if lines:
+        last_line = lines[-1]
+        if last_line in {"si", "sí"}:
+            return "yes"
+        if last_line == "no":
+            return "no"
+    words = normalized.split()
+    if words:
+        if words[-1] in {"si", "sí"}:
+            return "yes"
+        if words[-1] == "no":
+            return "no"
+    return None
+
+
+async def _cancel_order_after_admin_no(
+    session: AsyncSession,
+    settings: Settings,
+    chat_id: int,
+    order_id: int | None,
+) -> None:
+    order = await _order_for_admin_reply(session, chat_id, order_id)
+    if order is None or (order.status or "").upper() == "CANCELLED":
+        return
+    order.status = "CANCELLED"
+    response_text = (
+        "Entendido, ya cancelamos tu pedido. "
+        "Gracias por avisarnos. Si deseas hacer un pedido nuevo, aqui estoy para atenderte con mucho gusto."
+    )
+    sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(chat_id), response_text)
+    session.add(
+        TelegramMessageORM(
+            update_id=0,
+            chat_id=sent_message.chat_id.value,
+            direction="outbound",
+            message_text=sent_message.text_raw,
+            normalized_message_text=sent_message.text_normalized,
+            message_type="admin_text",
+            telegram_message_id=sent_message.message_id,
+            created_at=sent_message.received_at,
+        )
+    )
+
+
+async def _order_for_admin_reply(session: AsyncSession, chat_id: int, order_id: int | None) -> OrderORM | None:
+    if order_id is not None:
+        result = await session.execute(
+            select(OrderORM).where(
+                OrderORM.id == order_id,
+                OrderORM.chat_id == chat_id,
+            )
+        )
+        return result.scalar_one_or_none()
+    return await _latest_order_for_chat(session, chat_id)
+
+
+async def _latest_order_for_chat(session: AsyncSession, chat_id: int) -> OrderORM | None:
+    result = await session.execute(
+        select(OrderORM)
+        .where(OrderORM.chat_id == chat_id)
+        .order_by(OrderORM.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _answer_order_timing_query(
+    session: AsyncSession,
+    settings: Settings,
+    idempotency: RedisIdempotency,
+    inbound,
+) -> bool:
+    idempotency_key = f"telegram:update:{inbound.update_id}:message:{inbound.message_id}"
+    if await idempotency.is_processed(idempotency_key):
+        return False
+    if not await idempotency.mark_processing(idempotency_key, 86_400):
+        return False
+    existing = await session.execute(
+        select(TelegramMessageORM).where(
+            TelegramMessageORM.update_id == inbound.update_id,
+            TelegramMessageORM.direction == "inbound",
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        await idempotency.mark_processed(idempotency_key, 86_400)
+        return False
+
+    inbound_row = TelegramMessageORM(
+        update_id=inbound.update_id,
+        chat_id=inbound.chat_id,
+        direction="inbound",
+        message_text=inbound.text,
+        normalized_message_text=normalize_text(inbound.text),
+        message_type="text",
+        telegram_message_id=inbound.message_id,
+        created_at=_message_datetime(inbound.sent_at_epoch),
+    )
+    session.add(inbound_row)
+    response_text = await _order_timing_answer(session, inbound.chat_id)
+    sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(inbound.chat_id), response_text)
+    session.add(
+        TelegramMessageORM(
+            update_id=0,
+            chat_id=sent_message.chat_id.value,
+            direction="outbound",
+            message_text=sent_message.text_raw,
+            normalized_message_text=sent_message.text_normalized,
+            message_type="text",
+            telegram_message_id=sent_message.message_id,
+            created_at=sent_message.received_at,
+        )
+    )
+    await session.flush()
+    await idempotency.mark_processed(idempotency_key, 86_400)
+    return True
+
+
+async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
+    result = await session.execute(
+        select(OrderORM)
+        .where(OrderORM.chat_id == chat_id)
+        .order_by(OrderORM.created_at.desc())
+        .limit(1)
+    )
+    order = result.scalar_one_or_none()
+    if order is None:
+        return (
+            "Con gusto te ayudo. En este momento no encuentro un pedido reciente asociado a este chat. "
+            "Si ya realizaste el pedido, por favor espera un momento o escribenos el numero del pedido para revisarlo."
+        )
+    status_value = (order.status or "").upper()
+    if status_value in {"PENDING", "CONFIRMED"}:
+        return (
+            "👋 Claro, tu pedido ya fue recibido. "
+            "En este estado el tiempo estimado es de aproximadamente 40 minutos. "
+            "Estamos atentos para prepararlo lo mas pronto posible. Gracias por tu paciencia 🙌"
+        )
+    if status_value == "PREPARING":
+        return (
+            "🍗 Tu pedido ya esta en preparacion. "
+            "Normalmente puede tardar entre 25 y 30 minutos. "
+            "Apenas este listo te avisamos. Gracias por esperar 🙌"
+        )
+    if status_value in {"DELIVERED", "DISPATCHED", "DESPACHADO"}:
+        return (
+            "🛵 Tu pedido ya fue despachado. "
+            "El tiempo estimado de llegada es de 10 a 15 minutos, dependiendo de la ruta. "
+            "Gracias por tu paciencia 🙌"
+        )
+    if status_value == "CANCELLED":
+        return (
+            "Tu pedido aparece como cancelado en nuestro sistema. "
+            "Si necesitas hacer uno nuevo, con gusto te ayudamos."
+        )
+    return (
+        "Estamos revisando el estado de tu pedido. "
+        "Te confirmamos lo antes posible, gracias por tu paciencia 🙌"
+    )
+
+
+def _is_order_timing_query(text: str) -> bool:
+    normalized = normalize_text(text)
+    timing_terms = (
+        "demora",
+        "demorar",
+        "demorado",
+        "tarda",
+        "tardar",
+        "cuanto falta",
+        "cuánto falta",
+        "cuando llega",
+        "cuándo llega",
+        "llega",
+        "llegar",
+        "como va",
+        "cómo va",
+        "estado",
+        "despacho",
+        "despachado",
+    )
+    order_terms = ("pedido", "domicilio", "orden", "pollo", "comida")
+    direct_time_question = any(
+        phrase in normalized
+        for phrase in (
+            "cuanto se demora",
+            "cuanto demora",
+            "cuanto tarda",
+            "cuánto se demora",
+            "cuánto demora",
+            "cuánto tarda",
+            "cuando llega",
+            "cuándo llega",
+        )
+    )
+    return direct_time_question or (
+        any(term in normalized for term in timing_terms) and any(term in normalized for term in order_terms)
+    )
+
+
+async def _should_ignore_stale_greeting(
+    inbound,
+    message_repository: SqlAlchemyTelegramMessageRepository,
+) -> bool:
+    normalized = normalize_text(inbound.text)
+    if normalized not in {"hola", "buenas", "buenos dias", "buenos días", "buenas tardes", "buenas noches"}:
+        return False
+    if inbound.sent_at_epoch is None:
+        return False
+    sent_at = datetime.fromtimestamp(inbound.sent_at_epoch, tz=timezone.utc)
+    recent_messages = await message_repository.list_by_chat_id(ChatId(inbound.chat_id), limit=8)
+    latest_outbound = next(
+        (message for message in recent_messages if message.update_id == 0),
+        None,
+    )
+    return latest_outbound is not None and latest_outbound.received_at > sent_at

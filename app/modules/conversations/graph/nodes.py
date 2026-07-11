@@ -86,20 +86,32 @@ async def detect_intent(
     if text in {"0", "volver", "atras", "atrás", "regresar"}:
         state.intent = ConversationIntent.VOLVER
         return state
+    if state.current_step == ConversationState.POST_ADD and _is_main_menu_request(text):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    natural_menu_intent = _detect_natural_menu_intent(text)
+    if natural_menu_intent is not None:
+        state.intent = natural_menu_intent
+        return state
     if state.current_step == ConversationState.ASK_CHICKEN_PART:
         state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
         quantity = _extract_positive_integer(text)
-        if state.selected_chicken_part and quantity is not None and text.strip() not in {"1", "2"}:
+        if (
+            state.selected_chicken_part
+            and quantity is not None
+            and text.strip() not in {"1", "2"}
+            and not _requires_chicken_composition(state.selected_product_code)
+        ):
             state.intent = ConversationIntent.AGREGAR_PRODUCTO
             state.quantity = quantity
             return state
         state.intent = ConversationIntent.PEDIR_CANTIDAD
         return state
-    if _detect_numbered_menu_intent(state):
+    if state.current_step == ConversationState.ASK_QUANTITY:
+        state.intent = ConversationIntent.AGREGAR_PRODUCTO
+        state.quantity = _extract_positive_integer(text) or 0
         return state
-    natural_menu_intent = _detect_natural_menu_intent(text)
-    if natural_menu_intent is not None:
-        state.intent = natural_menu_intent
+    if _detect_numbered_menu_intent(state):
         return state
     query = _classify_business_query(text)
     if query is not None and _looks_like_question(text):
@@ -153,10 +165,20 @@ async def detect_intent(
         state.intent = ConversationIntent.MENU_ADICIONALES
     elif "especial" in text or "lasagna" in text or "lasana" in text or "maduro" in text:
         state.intent = ConversationIntent.MENU_ESPECIALES
+    elif _contains_command(
+        text,
+        (
+            "vaciar carrito",
+            "vaciar el carrito",
+            "borrar carrito",
+            "borrar el carrito",
+            "limpiar carrito",
+            "limpiar el carrito",
+        ),
+    ):
+        state.intent = ConversationIntent.VACIAR_CARRITO
     elif _contains_command(text, ("carrito", "ver carrito", "mostrar carrito", "mi carrito")):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
-    elif _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
-        state.intent = ConversationIntent.VACIAR_CARRITO
     elif text in {"eliminar", "quitar", "eliminar producto"}:
         state.intent = ConversationIntent.ELIMINAR_PRODUCTO
     elif text in {"finalizar", "checkout", "resumen", "finalizar pedido"}:
@@ -169,9 +191,6 @@ async def detect_intent(
         state.intent = ConversationIntent.CANCELAR
     elif text in {"horarios", "horario"}:
         state.intent = ConversationIntent.HORARIOS
-    elif state.current_step == ConversationState.ASK_QUANTITY and text.isdigit():
-        state.intent = ConversationIntent.AGREGAR_PRODUCTO
-        state.quantity = int(text)
     elif state.current_step == ConversationState.ASK_CUSTOMER_DATA:
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
     else:
@@ -191,6 +210,11 @@ async def show_main_menu(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     state.current_step = ConversationState.MAIN_MENU
+    state.selected_product_code = None
+    state.selected_product_name = None
+    state.selected_chicken_part = None
+    state.selected_unit_price_cop = None
+    state.quantity = None
     state.response_text = BotMessageFactory.main_menu()
     await _persist_step(state, services)
     return state
@@ -201,6 +225,11 @@ async def show_product_categories(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     state.current_step = ConversationState.PRODUCT_CATEGORY
+    state.selected_product_code = None
+    state.selected_product_name = None
+    state.selected_chicken_part = None
+    state.selected_unit_price_cop = None
+    state.quantity = None
     state.response_text = BotMessageFactory.product_categories()
     await _persist_step(state, services)
     return state
@@ -485,6 +514,7 @@ async def validate_customer_data(
         missing.append("metodo de pago")
     if missing:
         state.errors = missing
+        state.current_step = ConversationState.ASK_CUSTOMER_DATA
         session = await services.load_or_create_session(ChatId(state.chat_id))
         _copy_checkout_state_to_session(state, session)
         session.move_to(ConversationState.ASK_CUSTOMER_DATA)
@@ -492,7 +522,10 @@ async def validate_customer_data(
         state.response_text = BotMessageFactory.missing_customer_data(missing)
     else:
         state.current_step = ConversationState.CHECKOUT_REVIEW
-        await _persist_step(state, services)
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        _copy_checkout_state_to_session(state, session)
+        session.move_to(ConversationState.CHECKOUT_REVIEW)
+        await services.persist_session(session)
     return state
 
 
@@ -516,6 +549,8 @@ def _extract_customer_data_from_free_lines(
 
     if not customer.name and remaining:
         customer.name = remaining.pop(0)
+    if not customer.observations and remaining and _looks_like_empty_note(normalize_text(remaining[0])):
+        customer.observations = remaining.pop(0)
     if not customer.neighborhood and remaining:
         customer.neighborhood = remaining.pop(0)
     if not customer.observations and remaining:
@@ -567,6 +602,20 @@ def _looks_like_payment_method(normalized: str) -> bool:
     )
 
 
+def _looks_like_empty_note(normalized: str) -> bool:
+    return normalized in {
+        "ninguna",
+        "ninguno",
+        "sin nota",
+        "sin notas",
+        "sin observacion",
+        "sin observaciones",
+        "no",
+        "n/a",
+        "na",
+    }
+
+
 def _normalize_payment_method(normalized: str, original: str) -> str:
     if "nequi" in normalized:
         return "Nequi"
@@ -595,12 +644,14 @@ def _copy_checkout_session_to_state(
     session,
     state: ConversationGraphState,
 ) -> None:
-    state.customer.name = state.customer.name or session.customer_name
-    state.customer.phone = state.customer.phone or session.customer_phone
-    state.customer.address = state.customer.address or session.customer_address
-    state.customer.neighborhood = state.customer.neighborhood or session.customer_neighborhood
-    state.customer.payment_method = state.customer.payment_method or session.payment_method
-    state.customer.observations = state.customer.observations or session.observations
+    customer = state.customer.model_copy(deep=True)
+    customer.name = customer.name or session.customer_name
+    customer.phone = customer.phone or session.customer_phone
+    customer.address = customer.address or session.customer_address
+    customer.neighborhood = customer.neighborhood or session.customer_neighborhood
+    customer.payment_method = customer.payment_method or session.payment_method
+    customer.observations = customer.observations or session.observations
+    state.customer = customer
 
 
 def _clear_checkout_session(session) -> None:
@@ -695,7 +746,9 @@ async def confirm_order(
         state.errors = missing
         state.current_step = ConversationState.ASK_CUSTOMER_DATA
         state.response_text = BotMessageFactory.missing_customer_data(missing)
-        await _persist_step(state, services)
+        _copy_checkout_state_to_session(state, session)
+        session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+        await services.persist_session(session)
         return state
     if state.customer.address and state.customer.neighborhood:
         delivery = await services.calculate_delivery(
@@ -1010,10 +1063,20 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
         return ConversationIntent.MOSTRAR_MENU
     if _contains_command(text, ("finalizar", "finalizar pedido", "terminar pedido", "checkout")):
         return ConversationIntent.PEDIR_DATOS_CLIENTE
+    if _contains_command(
+        text,
+        (
+            "vaciar carrito",
+            "vaciar el carrito",
+            "borrar carrito",
+            "borrar el carrito",
+            "limpiar carrito",
+            "limpiar el carrito",
+        ),
+    ):
+        return ConversationIntent.VACIAR_CARRITO
     if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
         return ConversationIntent.MOSTRAR_CARRITO
-    if _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
-        return ConversationIntent.VACIAR_CARRITO
     if _contains_command(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
         return ConversationIntent.ELIMINAR_PRODUCTO
     if _contains_command(text, ("horario", "horarios", "a que hora", "a qué hora")):
@@ -1147,9 +1210,28 @@ def _mentions_count(text: str, word: str, count: int) -> bool:
 
 def _extract_positive_integer(text: str) -> int | None:
     match = re.search(r"\b([1-9]\d*)\b", text)
-    if match is None:
-        return None
-    return int(match.group(1))
+    if match is not None:
+        return int(match.group(1))
+    tokens = text.split()
+    number_words = {
+        "un": 1,
+        "una": 1,
+        "uno": 1,
+        "dos": 2,
+        "tres": 3,
+        "cuatro": 4,
+        "cinco": 5,
+        "seis": 6,
+        "siete": 7,
+        "ocho": 8,
+        "nueve": 9,
+        "diez": 10,
+    }
+    for token in tokens:
+        value = number_words.get(token)
+        if value is not None:
+            return value
+    return None
 
 
 def _display_product_name(product_name: str, chicken_part: str | None) -> str:
@@ -1370,7 +1452,9 @@ async def _persist_step(
     services: ConversationGraphServices,
 ) -> None:
     session = await services.load_or_create_session(ChatId(state.chat_id))
-    if state.selected_product_code:
+    if state.current_step in {ConversationState.MAIN_MENU, ConversationState.PRODUCT_CATEGORY}:
+        session.clear_selected_product()
+    elif state.selected_product_code:
         session.selected_product_code = ProductCode(state.selected_product_code)
     else:
         session.clear_selected_product()

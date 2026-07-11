@@ -44,6 +44,7 @@ class AdminBackendOrderClient:
     def __init__(self, settings: Settings) -> None:
         self._base_url = settings.admin_backend_base_url.rstrip("/")
         self._api_key = settings.internal_api_key
+        self._enabled = settings.admin_backend_sync_enabled
 
     async def sync_confirmed_order(self, order: Order, chat_id: int) -> None:
         payload = AdminOrderPayload(
@@ -70,6 +71,9 @@ class AdminBackendOrderClient:
         await self.sync_order_payload(payload)
 
     async def sync_order_payload(self, payload: AdminOrderPayload) -> None:
+        if not self._enabled:
+            logger.info("admin backend order sync is disabled; skipping external sync")
+            return
         if not self._api_key:
             logger.warning("internal api key is not configured; skipping admin backend order sync")
             return
