@@ -25,6 +25,7 @@ class WhatsAppCloudClient:
             f"{settings.whatsapp_phone_number_id}/messages"
         )
         self._access_token = settings.whatsapp_access_token
+        self._timeout = settings.whatsapp_send_timeout_seconds
         self._client = client
 
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
@@ -39,9 +40,20 @@ class WhatsAppCloudClient:
         response_data = await self._send_payload(payload)
         return _sent_message(chat_id, text, response_data)
 
+    async def send_yes_no_message(
+        self,
+        chat_id: ChatId,
+        text: str,
+        yes_id: str = "admin_preparing_yes",
+        no_id: str = "admin_preparing_no",
+    ) -> TelegramMessage:
+        payload = _yes_no_buttons_payload(chat_id, text, yes_id=yes_id, no_id=no_id)
+        response_data = await self._send_payload(payload)
+        return _sent_message(chat_id, text, response_data)
+
     async def _send_payload(self, payload: dict[str, object]) -> dict[str, object]:
         if self._client is None:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
                 return await self._send(client, payload)
         return await self._send(self._client, payload)
 
@@ -76,10 +88,7 @@ class WhatsAppCloudClient:
 def _confirmation_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
     if "Responde SI para confirmar o NO para cancelar." not in text:
         return None
-    body = text.replace(
-        "\n\nResponde SI para confirmar o NO para cancelar.",
-        "",
-    )
+    body = _confirmation_body_text(text)
     return {
         "messaging_product": "whatsapp",
         "to": str(chat_id.value),
@@ -91,11 +100,51 @@ def _confirmation_buttons_payload(chat_id: ChatId, text: str) -> dict[str, objec
                 "buttons": [
                     {
                         "type": "reply",
-                        "reply": {"id": "confirm_order_yes", "title": "Si, confirmar"},
+                        "reply": {"id": "confirm_order_yes", "title": "Sí"},
                     },
                     {
                         "type": "reply",
-                        "reply": {"id": "confirm_order_no", "title": "No, cancelar"},
+                        "reply": {"id": "confirm_order_no", "title": "No"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _confirmation_body_text(text: str) -> str:
+    body = text.replace(
+        "¿Deseas confirmar el pedido? Responde SI para confirmar o NO para cancelar.",
+        "¿Deseas confirmar el pedido?",
+    )
+    body = body.replace(
+        "\n\nResponde SI para confirmar o NO para cancelar.",
+        "",
+    )
+    body = body.replace(
+        " Responde SI para confirmar o NO para cancelar.",
+        "",
+    )
+    return body.strip()
+
+
+def _yes_no_buttons_payload(chat_id: ChatId, text: str, yes_id: str, no_id: str) -> dict[str, object]:
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": yes_id, "title": "Si"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": no_id, "title": "No"},
                     },
                 ]
             },

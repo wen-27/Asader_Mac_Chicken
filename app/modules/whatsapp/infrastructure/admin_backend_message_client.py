@@ -15,6 +15,8 @@ class AdminBackendMessageClient:
     def __init__(self, settings: Settings) -> None:
         self._base_url = settings.admin_backend_base_url.rstrip("/")
         self._api_key = settings.internal_api_key
+        self._enabled = settings.admin_backend_sync_enabled
+        self._timeout = settings.admin_backend_timeout_seconds
 
     async def record_incoming_message(
         self,
@@ -24,8 +26,7 @@ class AdminBackendMessageClient:
         body: str,
         external_message_id: str,
     ) -> None:
-        if not self._api_key:
-            logger.warning("internal api key is not configured; skipping incoming message sync")
+        if not self._enabled or not self._api_key:
             return
 
         payload = {
@@ -35,7 +36,7 @@ class AdminBackendMessageClient:
             "externalMessageId": external_message_id,
         }
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
                 f"{self._base_url}/messages/incoming",
                 json=payload,
@@ -50,8 +51,7 @@ class AdminBackendMessageClient:
         body: str,
         external_message_id: str | None = None,
     ) -> None:
-        if not self._api_key:
-            logger.warning("internal api key is not configured; skipping bot message sync")
+        if not self._enabled or not self._api_key:
             return
 
         payload = {
@@ -60,7 +60,7 @@ class AdminBackendMessageClient:
             "externalMessageId": external_message_id,
         }
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
                 f"{self._base_url}/messages/outgoing-bot",
                 json=payload,
@@ -69,10 +69,10 @@ class AdminBackendMessageClient:
             response.raise_for_status()
 
     async def get_conversation_control(self, *, chat_id: str) -> dict[str, object]:
-        if not self._api_key:
+        if not self._enabled or not self._api_key:
             return {"aiActive": True}
 
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.get(
                 f"{self._base_url}/conversations/{chat_id}/control",
                 headers={"X-Internal-Api-Key": self._api_key},

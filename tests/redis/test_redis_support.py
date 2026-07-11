@@ -82,6 +82,13 @@ class FakeMessageRepository:
         return []
 
 
+class FakeOutboundFailingMessageRepository(FakeMessageRepository):
+    async def add(self, message: TelegramMessage, direction: str = "inbound") -> TelegramMessage:
+        if direction == "outbound":
+            raise RuntimeError("outbound persistence failed")
+        return await super().add(message, direction)
+
+
 class FakeTelegramClient:
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
         return TelegramMessage(
@@ -182,6 +189,26 @@ async def test_mensaje_duplicado_no_se_procesa_dos_veces() -> None:
     second = await use_case.execute(inbound())
 
     assert first.processed
+    assert second.duplicated
+    assert handler.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_update_marked_processed_after_successful_send_even_if_outbound_save_fails() -> None:
+    handler = FakeConversationHandler()
+    idempotency = FakeIdempotency()
+    use_case = HandleTelegramUpdateUseCase(
+        FakeOutboundFailingMessageRepository(),
+        FakeTelegramClient(),
+        handler,
+        idempotency=idempotency,
+        locks=FakeLock(),
+    )
+
+    with pytest.raises(RuntimeError):
+        await use_case.execute(inbound())
+    second = await use_case.execute(inbound())
+
     assert second.duplicated
     assert handler.calls == 1
 

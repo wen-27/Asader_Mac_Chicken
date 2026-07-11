@@ -15,6 +15,7 @@ async def main() -> None:
 
     print(
         "Seed completed: "
+        f"{result.admin_user.users_upserted} admin user ({result.admin_user.email}), "
         f"{result.catalog.products_upserted} products, "
         f"{result.catalog.aliases_upserted} aliases, "
         f"{result.delivery_zones.zones_upserted} delivery zones."
@@ -23,4 +24,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

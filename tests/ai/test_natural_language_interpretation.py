@@ -200,6 +200,7 @@ async def test_semantic_search_recovers_misspelled_product() -> None:
         products=FakeProductRepository(),
         parser=parser,
         semantic_search=CatalogSemanticSearch(FakeVectorStore()),
+        llm_fallback_enabled=True,
     )
 
     result = await use_case.execute(
@@ -218,6 +219,7 @@ async def test_low_confidence_requests_clarification() -> None:
         products=FakeProductRepository(),
         parser=parser,
         semantic_search=CatalogSemanticSearch(FakeVectorStore()),
+        llm_fallback_enabled=True,
     )
 
     result = await use_case.execute(InterpretNaturalOrderCommand("quiero algo rico"))
@@ -232,6 +234,7 @@ async def test_semantic_search_runs_when_parser_returns_no_items() -> None:
         products=FakeProductRepository(),
         parser=parser,
         semantic_search=CatalogSemanticSearch(FakeVectorStore()),
+        llm_fallback_enabled=True,
     )
 
     result = await use_case.execute(InterpretNaturalOrderCommand("agrega dos pappas francesas"))
@@ -251,6 +254,7 @@ async def test_ai_cannot_keep_invented_codes() -> None:
         products=FakeProductRepository(),
         parser=parser,
         semantic_search=CatalogSemanticSearch(FakeVectorStore()),
+        llm_fallback_enabled=True,
     )
 
     result = await use_case.execute(InterpretNaturalOrderCommand("quiero producto inventado"))
