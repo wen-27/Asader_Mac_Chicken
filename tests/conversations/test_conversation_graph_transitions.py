@@ -27,6 +27,7 @@ class FakeConversationServices:
         self.persisted_steps: list[ConversationState] = []
         self.synced_orders: list[AdminOrderPayload] = []
         self.fail_sync = False
+        self.created_orders: list[str] = []
         self.products = {
             "GASEOSA": Product(
                 code=ProductCode("GASEOSA"),
@@ -114,6 +115,11 @@ class FakeConversationServices:
         if self.fail_sync:
             raise RuntimeError("admin backend unavailable")
         self.synced_orders.append(payload)
+
+    async def create_confirmed_order(self, chat_id: ChatId, delivery_price_cop: int) -> str | None:
+        order_number = f"TEST-{chat_id.value}-{len(self.created_orders) + 1}"
+        self.created_orders.append(order_number)
+        return order_number
 
 
 @pytest.mark.asyncio

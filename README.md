@@ -286,7 +286,40 @@ Reindexar catalogo semantico:
 curl -X POST http://localhost:8000/admin/catalog/reindex-vector-store
 ```
 
-Verificar validacion del webhook:
+Panel administrativo:
+
+```bash
+cd ../Asadero_Frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+El panel queda en:
+
+```text
+http://localhost:5173
+```
+
+La API debe estar corriendo en `http://localhost:8000`. Si cambia la URL, edita `../Frontend_Asadero/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+Endpoints usados por el panel:
+
+```text
+GET   /api/admin/orders/incoming
+GET   /api/admin/orders/accepted
+GET   /api/admin/orders/rejected
+GET   /api/admin/orders/{id}
+PATCH /api/admin/orders/{id}/accept
+PATCH /api/admin/orders/{id}/reject
+PATCH /api/admin/orders/{id}/printed
+```
+
+Verificar webhook actual:
 
 ```bash
 curl "https://TU_URL_PUBLICA/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=${WHATSAPP_VERIFY_TOKEN}&hub.challenge=test"

@@ -12,6 +12,7 @@ from app.config.settings import get_settings
 from app.modules.admin.api.routes import router as admin_router, ws_router
 from app.modules.catalog.api.routes import router as catalog_admin_router
 from app.modules.internal.routes import router as internal_router
+from app.modules.orders.api.admin_routes import router as orders_admin_router
 from app.modules.orders.application.payment_proofs import run_payment_proof_reminder_loop
 from app.modules.telegram.api.routes import router as telegram_router
 from app.modules.whatsapp.api.routes import router as whatsapp_router
@@ -27,14 +28,31 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         debug=settings.app_debug,
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
+    allowed_origins = [
+        origin.strip()
+        for origin in getattr(
+            settings,
+            "cors_allowed_origins",
+            "http://localhost:5173",
+        ).split(",")
+        if origin.strip()
+    ]
+    if not allowed_origins:
+        allowed_origins = [
             "http://localhost:5173",
             "http://localhost:5174",
             "http://127.0.0.1:5173",
             "http://127.0.0.1:5174",
-        ],
+        ]
+    allowed_origins = [
+        *allowed_origins,
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -90,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     app.include_router(catalog_admin_router)
     app.include_router(internal_router)
+    app.include_router(orders_admin_router)
 
     return app
 

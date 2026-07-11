@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    cors_allowed_origins: str = "http://localhost:5173"
 
     # External service URLs. PostgreSQL is the source of truth; Redis and Chroma
     # are rebuildable helpers.

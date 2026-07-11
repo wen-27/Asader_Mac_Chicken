@@ -68,6 +68,9 @@ def _session_to_dict(session: TelegramSession) -> dict[str, object]:
         "customer_phone": session.customer_phone,
         "customer_address": session.customer_address,
         "customer_neighborhood": session.customer_neighborhood,
+        "phone": session.phone,
+        "address": session.address,
+        "neighborhood": session.neighborhood,
         "payment_method": session.payment_method,
         "observations": session.observations,
     }
@@ -82,9 +85,16 @@ def _session_from_dict(data: dict[str, object]) -> TelegramSession:
         selected_chicken_part=data.get("selected_chicken_part") or None,
         cart=[cart_item_from_json(item) for item in data.get("cart", [])],
         customer_name=data.get("customer_name") or None,
-        customer_phone=data.get("customer_phone") or None,
-        customer_address=data.get("customer_address") or None,
-        customer_neighborhood=data.get("customer_neighborhood") or None,
+        customer_phone=_optional_text(data.get("customer_phone") or data.get("phone")),
+        customer_address=_optional_text(data.get("customer_address") or data.get("address")),
+        customer_neighborhood=_optional_text(data.get("customer_neighborhood") or data.get("neighborhood")),
         payment_method=data.get("payment_method") or None,
         observations=data.get("observations") or None,
     )
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

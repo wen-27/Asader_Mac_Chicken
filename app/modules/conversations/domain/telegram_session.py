@@ -24,6 +24,30 @@ class TelegramSession:
     payment_method: str | None = None
     observations: str | None = None
 
+    @property
+    def phone(self) -> str | None:
+        return self.customer_phone
+
+    @phone.setter
+    def phone(self, value: str | None) -> None:
+        self.customer_phone = value
+
+    @property
+    def address(self) -> str | None:
+        return self.customer_address
+
+    @address.setter
+    def address(self, value: str | None) -> None:
+        self.customer_address = value
+
+    @property
+    def neighborhood(self) -> str | None:
+        return self.customer_neighborhood
+
+    @neighborhood.setter
+    def neighborhood(self, value: str | None) -> None:
+        self.customer_neighborhood = value
+
     def move_to(self, step: ConversationState) -> None:
         self.current_step = step
 
@@ -42,6 +66,25 @@ class TelegramSession:
 
     def empty_cart(self) -> None:
         self.cart.clear()
+
+    def update_customer_data(
+        self,
+        customer_name: str | None = None,
+        phone: str | None = None,
+        address: str | None = None,
+        neighborhood: str | None = None,
+        payment_method: str | None = None,
+        observations: str | None = None,
+    ) -> None:
+        self.customer_name = customer_name
+        self.phone = phone
+        self.address = address
+        self.neighborhood = neighborhood
+        self.payment_method = payment_method
+        self.observations = observations
+
+    def clear_customer_data(self) -> None:
+        self.update_customer_data()
 
     def remove_last_cart_item(self) -> CartItem | None:
         if not self.cart:
