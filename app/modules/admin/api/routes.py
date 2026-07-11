@@ -287,10 +287,11 @@ async def list_conversation_messages(
     result = await session.execute(
         select(TelegramMessageORM)
         .where(TelegramMessageORM.chat_id == _chat_id_to_int(chat_id))
-        .order_by(TelegramMessageORM.created_at.asc())
-        .limit(150)
+        .order_by(TelegramMessageORM.created_at.desc(), TelegramMessageORM.id.desc())
+        .limit(200)
     )
-    return {"data": [_message_payload(message) for message in result.scalars().all()]}
+    messages = list(reversed(result.scalars().all()))
+    return {"data": [_message_payload(message) for message in messages]}
 
 
 @router.post("/admin/conversations/{chat_id}/messages")
@@ -365,10 +366,11 @@ async def list_order_messages(
             TelegramMessageORM.chat_id == order.chat_id,
             TelegramMessageORM.created_at >= order.created_at,
         )
-        .order_by(TelegramMessageORM.created_at.asc())
-        .limit(150)
+        .order_by(TelegramMessageORM.created_at.desc(), TelegramMessageORM.id.desc())
+        .limit(200)
     )
-    return {"data": [_message_payload(message, order_id=str(order.id)) for message in result.scalars().all()]}
+    messages = list(reversed(result.scalars().all()))
+    return {"data": [_message_payload(message, order_id=str(order.id)) for message in messages]}
 
 
 @router.post("/admin/conversations/orders/{order_id}/messages")
