@@ -1,10 +1,12 @@
-"""Conversation orchestration code. It should coordinate state transitions and delegate business work to use cases/services."""
+"""Conversation orchestration code.
+
+It should coordinate state transitions and delegate business work to use
+cases/services.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-
-from langgraph.graph import END, StateGraph
 
 from app.modules.conversations.application.graph_services import ConversationGraphServices
 from app.modules.conversations.graph import nodes
@@ -20,84 +22,95 @@ from app.modules.conversations.graph.state import ConversationGraphState
 NodeFn = Callable[[ConversationGraphState, ConversationGraphServices], Awaitable[ConversationGraphState]]
 
 
-def _bind(
-    fn: NodeFn,
-    services: ConversationGraphServices,
-) -> Callable[[ConversationGraphState], Awaitable[ConversationGraphState]]:
-    async def wrapped(state: ConversationGraphState) -> ConversationGraphState:
-        return await fn(state, services)
+class ConversationGraphRunner:
+    def __init__(self, services: ConversationGraphServices) -> None:
+        self._services = services
 
-    return wrapped
+    async def ainvoke(self, state: ConversationGraphState | dict) -> dict:
+        graph_state = self._coerce_state(state)
+        graph_state = await nodes.receive_message(graph_state, self._services)
+        graph_state = await nodes.normalize_message(graph_state, self._services)
+        graph_state = await nodes.load_or_create_session(graph_state, self._services)
+        graph_state = await nodes.detect_intent(graph_state, self._services)
+
+        next_node = route_after_intent(graph_state)
+        graph_state = await self._run_node(next_node, graph_state)
+        graph_state = await self._run_until_response(next_node, graph_state)
+        return graph_state.model_dump()
+
+    def _coerce_state(self, state: ConversationGraphState | dict) -> ConversationGraphState:
+        if isinstance(state, ConversationGraphState):
+            return state
+        return ConversationGraphState.model_validate(state)
+
+    async def _run_until_response(
+        self,
+        previous_node: str,
+        state: ConversationGraphState,
+    ) -> ConversationGraphState:
+        if previous_node == "select_product":
+            next_node = route_after_product_selection(state)
+            state = await self._run_node(next_node, state)
+            previous_node = next_node
+
+        if previous_node == "validate_product_availability":
+            next_node = route_after_product_availability(state)
+            state = await self._run_node(next_node, state)
+            previous_node = next_node
+
+        if previous_node == "extract_customer_data":
+            state = await nodes.validate_customer_data(state, self._services)
+            next_node = route_after_customer_validation(state)
+            state = await self._run_node(next_node, state)
+            previous_node = next_node
+
+        if previous_node == "calculate_delivery":
+            state = await nodes.create_order(state, self._services)
+            previous_node = "create_order"
+
+        if previous_node != "send_telegram_response":
+            state = await nodes.send_telegram_response(state, self._services)
+        return state
+
+    async def _run_node(
+        self,
+        name: str,
+        state: ConversationGraphState,
+    ) -> ConversationGraphState:
+        node = _NODE_REGISTRY.get(name)
+        if node is None:
+            return await nodes.fallback_natural_language(state, self._services)
+        return await node(state, self._services)
 
 
-def build_conversation_graph(services: ConversationGraphServices):
-    graph = StateGraph(ConversationGraphState)
+_NODE_REGISTRY: dict[str, NodeFn] = {
+    "show_main_menu": nodes.show_main_menu,
+    "show_product_categories": nodes.show_product_categories,
+    "show_asado_menu": nodes.show_asado_menu,
+    "show_broaster_menu": nodes.show_broaster_menu,
+    "show_drinks_menu": nodes.show_drinks_menu,
+    "show_addons_menu": nodes.show_addons_menu,
+    "show_specials_menu": nodes.show_specials_menu,
+    "select_product": nodes.select_product,
+    "validate_product_availability": nodes.validate_product_availability,
+    "ask_quantity": nodes.ask_quantity,
+    "add_to_cart": nodes.add_to_cart,
+    "show_cart": nodes.show_cart,
+    "clear_cart": nodes.clear_cart,
+    "remove_last_item": nodes.remove_last_item,
+    "prepare_checkout_summary": nodes.prepare_checkout_summary,
+    "ask_customer_data": nodes.ask_customer_data,
+    "extract_customer_data": nodes.extract_customer_data,
+    "calculate_delivery": nodes.calculate_delivery,
+    "create_order": nodes.create_order,
+    "confirm_order": nodes.confirm_order,
+    "cancel_order": nodes.cancel_order,
+    "send_telegram_response": nodes.send_telegram_response,
+    "fallback_natural_language": nodes.fallback_natural_language,
+    "show_schedules": nodes.show_schedules,
+    "go_back": nodes.go_back,
+    "answer_query": nodes.answer_query,
+}
 
-    graph.add_node("receive_message", _bind(nodes.receive_message, services))
-    graph.add_node("normalize_message", _bind(nodes.normalize_message, services))
-    graph.add_node("load_or_create_session", _bind(nodes.load_or_create_session, services))
-    graph.add_node("detect_intent", _bind(nodes.detect_intent, services))
-    graph.add_node("route_intent", _bind(nodes.route_intent, services))
-    graph.add_node("show_main_menu", _bind(nodes.show_main_menu, services))
-    graph.add_node("show_product_categories", _bind(nodes.show_product_categories, services))
-    graph.add_node("show_asado_menu", _bind(nodes.show_asado_menu, services))
-    graph.add_node("show_broaster_menu", _bind(nodes.show_broaster_menu, services))
-    graph.add_node("show_drinks_menu", _bind(nodes.show_drinks_menu, services))
-    graph.add_node("show_addons_menu", _bind(nodes.show_addons_menu, services))
-    graph.add_node("show_specials_menu", _bind(nodes.show_specials_menu, services))
-    graph.add_node("select_product", _bind(nodes.select_product, services))
-    graph.add_node("validate_product_availability", _bind(nodes.validate_product_availability, services))
-    graph.add_node("ask_quantity", _bind(nodes.ask_quantity, services))
-    graph.add_node("add_to_cart", _bind(nodes.add_to_cart, services))
-    graph.add_node("show_cart", _bind(nodes.show_cart, services))
-    graph.add_node("clear_cart", _bind(nodes.clear_cart, services))
-    graph.add_node("remove_last_item", _bind(nodes.remove_last_item, services))
-    graph.add_node("prepare_checkout_summary", _bind(nodes.prepare_checkout_summary, services))
-    graph.add_node("ask_customer_data", _bind(nodes.ask_customer_data, services))
-    graph.add_node("extract_customer_data", _bind(nodes.extract_customer_data, services))
-    graph.add_node("validate_customer_data", _bind(nodes.validate_customer_data, services))
-    graph.add_node("calculate_delivery", _bind(nodes.calculate_delivery, services))
-    graph.add_node("create_order", _bind(nodes.create_order, services))
-    graph.add_node("confirm_order", _bind(nodes.confirm_order, services))
-    graph.add_node("cancel_order", _bind(nodes.cancel_order, services))
-    graph.add_node("send_telegram_response", _bind(nodes.send_telegram_response, services))
-    graph.add_node("fallback_natural_language", _bind(nodes.fallback_natural_language, services))
-    graph.add_node("show_schedules", _bind(nodes.show_schedules, services))
-    graph.add_node("go_back", _bind(nodes.go_back, services))
-    graph.add_node("answer_query", _bind(nodes.answer_query, services))
-
-    graph.set_entry_point("receive_message")
-    graph.add_edge("receive_message", "normalize_message")
-    graph.add_edge("normalize_message", "load_or_create_session")
-    graph.add_edge("load_or_create_session", "detect_intent")
-    graph.add_edge("detect_intent", "route_intent")
-    graph.add_conditional_edges("route_intent", route_after_intent)
-    graph.add_conditional_edges("select_product", route_after_product_selection)
-    graph.add_conditional_edges("validate_product_availability", route_after_product_availability)
-    graph.add_edge("ask_quantity", "send_telegram_response")
-    graph.add_edge("add_to_cart", "send_telegram_response")
-    graph.add_edge("show_main_menu", "send_telegram_response")
-    graph.add_edge("show_product_categories", "send_telegram_response")
-    graph.add_edge("show_asado_menu", "send_telegram_response")
-    graph.add_edge("show_broaster_menu", "send_telegram_response")
-    graph.add_edge("show_drinks_menu", "send_telegram_response")
-    graph.add_edge("show_addons_menu", "send_telegram_response")
-    graph.add_edge("show_specials_menu", "send_telegram_response")
-    graph.add_edge("show_cart", "send_telegram_response")
-    graph.add_edge("clear_cart", "send_telegram_response")
-    graph.add_edge("remove_last_item", "send_telegram_response")
-    graph.add_edge("prepare_checkout_summary", "send_telegram_response")
-    graph.add_edge("ask_customer_data", "send_telegram_response")
-    graph.add_edge("extract_customer_data", "validate_customer_data")
-    graph.add_conditional_edges("validate_customer_data", route_after_customer_validation)
-    graph.add_edge("calculate_delivery", "create_order")
-    graph.add_edge("create_order", "send_telegram_response")
-    graph.add_edge("confirm_order", "send_telegram_response")
-    graph.add_edge("cancel_order", "send_telegram_response")
-    graph.add_edge("show_schedules", "send_telegram_response")
-    graph.add_edge("go_back", "send_telegram_response")
-    graph.add_edge("answer_query", "send_telegram_response")
-    graph.add_edge("fallback_natural_language", "send_telegram_response")
-    graph.add_edge("send_telegram_response", END)
-
-    return graph.compile()
+def build_conversation_graph(services: ConversationGraphServices) -> ConversationGraphRunner:
+    return ConversationGraphRunner(services)

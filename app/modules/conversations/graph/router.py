@@ -11,6 +11,12 @@ from app.modules.conversations.domain.conversation_state import ConversationStat
 from app.modules.conversations.graph.state import ConversationGraphState
 
 
+def _value(state: ConversationGraphState | dict, key: str):
+    if isinstance(state, dict):
+        return state.get(key)
+    return getattr(state, key)
+
+
 def route_after_intent(state: ConversationGraphState) -> str:
     # Explicit intents win first. If an intent is missing here, the graph falls
     # back to product selection only while the user is inside a category menu.
@@ -36,10 +42,10 @@ def route_after_intent(state: ConversationGraphState) -> str:
         ConversationIntent.VOLVER: "go_back",
         ConversationIntent.RESPONDER_CONSULTA: "answer_query",
     }
-    route = routes.get(state.intent)
+    route = routes.get(_value(state, "intent"))
     if route is not None:
         return route
-    if state.current_step not in {
+    if _value(state, "current_step") not in {
         ConversationState.SELECT_ASADO,
         ConversationState.SELECT_BROASTER,
         ConversationState.SELECT_BEBIDA,
@@ -51,7 +57,7 @@ def route_after_intent(state: ConversationGraphState) -> str:
 
 
 def route_after_product_selection(state: ConversationGraphState) -> str:
-    if state.intent in {
+    if _value(state, "intent") in {
         ConversationIntent.PRODUCTO_INEXISTENTE,
         ConversationIntent.PRODUCTO_RESTRINGIDO,
     }:
@@ -60,7 +66,7 @@ def route_after_product_selection(state: ConversationGraphState) -> str:
 
 
 def route_after_product_availability(state: ConversationGraphState) -> str:
-    if state.intent in {
+    if _value(state, "intent") in {
         ConversationIntent.PRODUCTO_INEXISTENTE,
         ConversationIntent.PRODUCTO_RESTRINGIDO,
     }:
@@ -69,6 +75,6 @@ def route_after_product_availability(state: ConversationGraphState) -> str:
 
 
 def route_after_customer_validation(state: ConversationGraphState) -> str:
-    if state.errors:
+    if _value(state, "errors"):
         return "send_telegram_response"
     return "calculate_delivery"

@@ -75,6 +75,12 @@ class WhatsAppMessageSchema(BaseModel):
         return button.id
 
 
+class WhatsAppCallSchema(BaseModel):
+    id: str
+    from_phone: str = Field(alias="from")
+    timestamp: str | None = None
+
+
 class WhatsAppMetadataSchema(BaseModel):
     phone_number_id: str | None = None
     display_phone_number: str | None = None
@@ -85,6 +91,7 @@ class WhatsAppValueSchema(BaseModel):
     metadata: WhatsAppMetadataSchema | None = None
     contacts: list[WhatsAppContactSchema] | None = None
     messages: list[WhatsAppMessageSchema] | None = None
+    calls: list[WhatsAppCallSchema] | None = None
 
 
 class WhatsAppChangeSchema(BaseModel):
@@ -122,6 +129,17 @@ class WhatsAppInboundMediaMessage:
     mime_type: str | None
     sha256: str | None
     caption: str | None
+    sent_at_epoch: int | None
+    first_name: str | None
+
+
+@dataclass(frozen=True)
+class WhatsAppInboundCall:
+    call_id: str
+    update_id: int
+    message_id: int
+    chat_id: int
+    phone: str
     sent_at_epoch: int | None
     first_name: str | None
 
@@ -190,6 +208,31 @@ class WhatsAppWebhookPayload(BaseModel):
                         )
                     )
         return inbound_messages
+
+    def iter_calls(self) -> list[WhatsAppInboundCall]:
+        inbound_calls: list[WhatsAppInboundCall] = []
+        for entry in self.entry:
+            for change in entry.changes:
+                contacts_by_phone = {
+                    contact.wa_id: contact.profile.name if contact.profile else None
+                    for contact in change.value.contacts or []
+                    if contact.wa_id and contact.profile and contact.profile.name
+                }
+                for call in change.value.calls or []:
+                    phone_digits = _digits_only(call.from_phone)
+                    inbound_calls.append(
+                        WhatsAppInboundCall(
+                            call_id=call.id,
+                            update_id=_stable_numeric_id(f"wa-call-update:{call.id}"),
+                            message_id=_stable_numeric_id(f"wa-call-message:{call.id}"),
+                            chat_id=int(phone_digits),
+                            phone=phone_digits,
+                            sent_at_epoch=_parse_epoch(call.timestamp),
+                            first_name=contacts_by_phone.get(call.from_phone)
+                            or contacts_by_phone.get(phone_digits),
+                        )
+                    )
+        return inbound_calls
 
 
 def _digits_only(value: str) -> str:

@@ -64,6 +64,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["whatsapp"])
 
+WHATSAPP_CALL_REPLY_TEXT = (
+    "Hola, gracias por comunicarte con Asadero MC Chicken Express. "
+    "En este momento no estamos recibiendo llamadas por WhatsApp. "
+    "Si quieres hacer un pedido, escríbenos por este mismo chat y con gusto te atendemos."
+)
+
 
 @router.get("/whatsapp", response_class=PlainTextResponse)
 async def verify_whatsapp_webhook(
@@ -89,7 +95,8 @@ async def whatsapp_webhook(
     started_at = perf_counter()
     inbound_messages = payload.iter_text_messages()
     inbound_media_messages = payload.iter_media_messages()
-    if not inbound_messages and not inbound_media_messages:
+    inbound_calls = payload.iter_calls()
+    if not inbound_messages and not inbound_media_messages and not inbound_calls:
         return {"ok": True, "processed": False, "reason": "unsupported_update"}
 
     redis_cache = RedisTextCache(settings)
@@ -100,6 +107,76 @@ async def whatsapp_webhook(
     duplicated = 0
     failed = 0
     ignored = 0
+
+    message_client = AdminBackendMessageClient(settings)
+
+    for inbound_call in inbound_calls:
+        idempotency_key = f"whatsapp:call:{inbound_call.call_id}"
+        try:
+            if await idempotency.is_processed(idempotency_key):
+                duplicated += 1
+                continue
+            if not await idempotency.mark_processing(idempotency_key, 86_400):
+                duplicated += 1
+                continue
+            session.add(
+                TelegramMessageORM(
+                    update_id=inbound_call.update_id,
+                    chat_id=inbound_call.chat_id,
+                    direction="inbound",
+                    message_text="Llamada de WhatsApp recibida",
+                    normalized_message_text=normalize_text("Llamada de WhatsApp recibida"),
+                    message_type="call",
+                    telegram_message_id=inbound_call.message_id,
+                    created_at=_message_datetime(inbound_call.sent_at_epoch),
+                )
+            )
+            await WhatsAppCloudClient(settings).send_text_message(
+                ChatId(inbound_call.chat_id),
+                WHATSAPP_CALL_REPLY_TEXT,
+            )
+            await idempotency.mark_processed(idempotency_key, 86_400)
+            processed += 1
+            try:
+                await message_client.record_incoming_message(
+                    chat_id=str(inbound_call.chat_id),
+                    phone=inbound_call.phone,
+                    body="Llamada de WhatsApp recibida",
+                    external_message_id=inbound_call.call_id,
+                )
+                await message_client.record_bot_message(
+                    chat_id=str(inbound_call.chat_id),
+                    body=WHATSAPP_CALL_REPLY_TEXT,
+                )
+            except Exception:
+                logger.exception("failed to sync whatsapp call autoresponse to admin backend")
+        except Exception:
+            failed += 1
+            await session.rollback()
+            logger.exception("failed to answer whatsapp inbound call")
+
+    if inbound_calls:
+        await session.commit()
+
+    if not inbound_messages and not inbound_media_messages:
+        if processed:
+            await admin_realtime_hub.broadcast({"type": "conversations.changed"})
+        logger.info(
+            "completed whatsapp webhook calls=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
+            len(inbound_calls),
+            processed,
+            duplicated,
+            failed,
+            ignored,
+            round((perf_counter() - started_at) * 1000, 2),
+        )
+        return {
+            "ok": True,
+            "processed": processed,
+            "duplicated": duplicated,
+            "failed": failed,
+            "ignored": ignored,
+        }
 
     for inbound_media in inbound_media_messages:
         idempotency_key = f"telegram:update:{inbound_media.update_id}:message:{inbound_media.message_id}"
@@ -223,8 +300,6 @@ async def whatsapp_webhook(
         idempotency=idempotency,
         locks=RedisLock(redis_cache),
     )
-    message_client = AdminBackendMessageClient(settings)
-
     for inbound in inbound_messages:
         message_started_at = perf_counter()
         delivery_lag_ms = _delivery_lag_ms(inbound.sent_at_epoch)

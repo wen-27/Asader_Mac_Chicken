@@ -83,6 +83,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def start_payment_proof_reminders() -> None:
+        if settings.app_env not in {"staging", "production"}:
+            return
         stop_event = asyncio.Event()
         app.state.payment_proof_reminder_stop = stop_event
         app.state.payment_proof_reminder_task = asyncio.create_task(
