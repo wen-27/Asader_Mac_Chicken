@@ -111,3 +111,28 @@ class AdminBackendOrderClient:
                 headers={"X-Internal-Api-Key": self._api_key},
             )
             response.raise_for_status()
+
+    async def update_order_status(
+        self,
+        external_bot_id: str,
+        status: str,
+        reason: str | None = None,
+    ) -> None:
+        if not self._enabled:
+            logger.info("admin backend order sync is disabled; skipping status sync")
+            return
+        if not self._api_key:
+            logger.warning("internal api key is not configured; skipping admin backend status sync")
+            return
+
+        request_body: dict[str, object] = {"status": status}
+        if reason:
+            request_body["reason"] = reason
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.patch(
+                f"{self._base_url}/orders/external/{external_bot_id}/status",
+                json=request_body,
+                headers={"X-Internal-Api-Key": self._api_key},
+            )
+            response.raise_for_status()

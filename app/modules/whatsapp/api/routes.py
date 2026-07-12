@@ -47,12 +47,14 @@ from app.modules.telegram.infrastructure.sqlalchemy_message_repository import (
 )
 from app.modules.admin.realtime import admin_realtime_hub
 from app.modules.orders.application.payment_proofs import mark_payment_proof_received_for_chat
+from app.modules.orders.infrastructure.admin_backend_order_client import AdminBackendOrderClient
 from app.modules.orders.infrastructure.models import OrderORM
 from app.modules.orders.infrastructure.sqlalchemy_order_repository import SqlAlchemyOrderRepository
 from app.modules.whatsapp.api.schemas import WhatsAppWebhookPayload
 from app.modules.whatsapp.infrastructure.admin_backend_message_client import (
     AdminBackendMessageClient,
 )
+from app.modules.whatsapp.infrastructure.media_cache import fetch_and_cache_whatsapp_media
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
 from app.shared.infrastructure.database.session import get_async_session
 from app.shared.infrastructure.redis.cache import RedisTextCache
@@ -96,6 +98,7 @@ async def whatsapp_webhook(
     redis_cache = RedisTextCache(settings)
     idempotency = RedisIdempotency(redis_cache)
     message_repository = SqlAlchemyTelegramMessageRepository(session)
+    message_client = AdminBackendMessageClient(settings)
 
     processed = 0
     duplicated = 0
@@ -180,6 +183,28 @@ async def whatsapp_webhook(
                 inbound_media.chat_id,
                 _message_datetime(inbound_media.sent_at_epoch),
             )
+            try:
+                await fetch_and_cache_whatsapp_media(settings, inbound_media.media_id)
+            except Exception:
+                logger.exception("failed to cache whatsapp media locally")
+            try:
+                media_sent_at = _message_datetime(inbound_media.sent_at_epoch)
+                await message_client.record_incoming_message(
+                    chat_id=str(inbound_media.chat_id),
+                    phone=inbound_media.phone,
+                    body=media_text,
+                    external_message_id=inbound_media.external_message_id,
+                    sent_at=media_sent_at.isoformat(),
+                    attachment={
+                        "type": inbound_media.media_type,
+                        "mediaId": inbound_media.media_id,
+                        "mimeType": inbound_media.mime_type,
+                        "sha256": inbound_media.sha256,
+                        "url": f"/api/media/whatsapp/{inbound_media.media_id}",
+                    },
+                )
+            except Exception:
+                logger.exception("failed to sync incoming whatsapp media to admin backend")
             processed += 1
             logger.info(
                 "stored whatsapp media chat_id=%s media_type=%s media_id=%s delivery_lag_ms=%s",
@@ -265,7 +290,14 @@ async def whatsapp_webhook(
         admin_preparing_reply = await _admin_preparing_reply(session, inbound)
         if admin_preparing_reply is not None:
             try:
-                if await _store_admin_preparing_reply(session, settings, idempotency, inbound, admin_preparing_reply):
+                if await _store_admin_preparing_reply(
+                    session,
+                    settings,
+                    idempotency,
+                    message_client,
+                    inbound,
+                    admin_preparing_reply,
+                ):
                     processed += 1
                 else:
                     duplicated += 1
@@ -338,6 +370,7 @@ async def whatsapp_webhook(
                 phone=inbound.phone,
                 body=inbound.text,
                 external_message_id=inbound.external_message_id,
+                sent_at=_message_datetime(inbound.sent_at_epoch).isoformat(),
             )
         except Exception:
             logger.exception("failed to sync incoming whatsapp message to admin backend")
@@ -348,6 +381,8 @@ async def whatsapp_webhook(
                     await message_client.record_bot_message(
                         chat_id=str(inbound.chat_id),
                         body=result.response_text,
+                        external_message_id=f"bot:{inbound.external_message_id}",
+                        sent_at=datetime.now(timezone.utc).isoformat(),
                     )
                 except Exception:
                     logger.exception("failed to sync outgoing whatsapp message to admin backend")
@@ -517,6 +552,7 @@ async def _store_admin_preparing_reply(
     session: AsyncSession,
     settings: Settings,
     idempotency: RedisIdempotency,
+    message_client: AdminBackendMessageClient,
     inbound,
     admin_preparing_reply: tuple[str, int | None],
 ) -> bool:
@@ -550,8 +586,34 @@ async def _store_admin_preparing_reply(
             created_at=inbound_created_at,
         )
     )
-    if reply_value == "no":
-        await _cancel_order_after_admin_no(session, settings, inbound.chat_id, order_id)
+    try:
+        await message_client.record_incoming_message(
+            chat_id=str(inbound.chat_id),
+            phone=inbound.phone,
+            body=inbound_text,
+            external_message_id=inbound.external_message_id,
+            sent_at=inbound_created_at.isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync admin preparing reply to admin backend")
+    if reply_value == "yes":
+        await _continue_order_after_admin_yes(
+            session,
+            settings,
+            message_client,
+            inbound.chat_id,
+            order_id,
+            inbound.external_message_id,
+        )
+    elif reply_value == "no":
+        await _cancel_order_after_admin_no(
+            session,
+            settings,
+            message_client,
+            inbound.chat_id,
+            order_id,
+            inbound.external_message_id,
+        )
     await session.flush()
     await idempotency.mark_processed(idempotency_key, 86_400)
     return True
@@ -615,16 +677,18 @@ def _yes_no_reply_from_text(text: str) -> str | None:
 async def _cancel_order_after_admin_no(
     session: AsyncSession,
     settings: Settings,
+    message_client: AdminBackendMessageClient,
     chat_id: int,
     order_id: int | None,
+    inbound_external_message_id: str,
 ) -> None:
     order = await _order_for_admin_reply(session, chat_id, order_id)
     if order is None or (order.status or "").upper() == "CANCELLED":
         return
     order.status = "CANCELLED"
     response_text = (
-        "Entendido, ya cancelamos tu pedido. "
-        "Gracias por avisarnos. Si deseas hacer un pedido nuevo, aqui estoy para atenderte con mucho gusto."
+        "Entendido, ya cancelamos tu pedido. Muchas gracias por pedir en ASADERO MC CHICKEN EXPRESS. "
+        "Quedamos atentos para ayudarte con cualquier otro pedido cuando lo desees."
     )
     sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(chat_id), response_text)
     session.add(
@@ -639,6 +703,76 @@ async def _cancel_order_after_admin_no(
             created_at=sent_message.received_at,
         )
     )
+    await _sync_admin_order_status(settings, order, "CANCELLED", "Cliente no acepto el cambio sugerido")
+    await _sync_admin_bot_message(message_client, chat_id, response_text, f"bot:admin-preparing-no:{inbound_external_message_id}")
+
+
+async def _continue_order_after_admin_yes(
+    session: AsyncSession,
+    settings: Settings,
+    message_client: AdminBackendMessageClient,
+    chat_id: int,
+    order_id: int | None,
+    inbound_external_message_id: str,
+) -> None:
+    order = await _order_for_admin_reply(session, chat_id, order_id)
+    if order is None:
+        return
+    if (order.status or "").upper() != "PREPARING":
+        order.status = "PREPARING"
+        order.accepted_at = datetime.now(timezone.utc)
+    response_text = (
+        "Perfecto, muchas gracias por confirmarnos. Tu pedido ya esta en preparacion. "
+        "En este estado normalmente tarda entre 25 y 30 minutos. Apenas este listo te avisamos."
+    )
+    sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(chat_id), response_text)
+    session.add(
+        TelegramMessageORM(
+            update_id=0,
+            chat_id=sent_message.chat_id.value,
+            direction="outbound",
+            message_text=sent_message.text_raw,
+            normalized_message_text=sent_message.text_normalized,
+            message_type="admin_text",
+            telegram_message_id=sent_message.message_id,
+            created_at=sent_message.received_at,
+        )
+    )
+    await _sync_admin_order_status(settings, order, "PREPARING")
+    await _sync_admin_bot_message(message_client, chat_id, response_text, f"bot:admin-preparing-yes:{inbound_external_message_id}")
+
+
+async def _sync_admin_order_status(
+    settings: Settings,
+    order: OrderORM,
+    status_value: str,
+    reason: str | None = None,
+) -> None:
+    try:
+        await AdminBackendOrderClient(settings).update_order_status(
+            external_bot_id=order.order_number,
+            status=status_value,
+            reason=reason,
+        )
+    except Exception:
+        logger.exception("failed to sync admin order status after preparing reply")
+
+
+async def _sync_admin_bot_message(
+    message_client: AdminBackendMessageClient,
+    chat_id: int,
+    response_text: str,
+    external_message_id: str,
+) -> None:
+    try:
+        await message_client.record_bot_message(
+            chat_id=str(chat_id),
+            body=response_text,
+            external_message_id=external_message_id,
+            sent_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync admin preparing bot response to admin backend")
 
 
 async def _order_for_admin_reply(session: AsyncSession, chat_id: int, order_id: int | None) -> OrderORM | None:

@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     admin_backend_base_url: str = "http://localhost:3000/api/v1/internal"
     internal_api_key: str = Field(default="", repr=False)
     admin_backend_sync_enabled: bool = False
-    admin_backend_timeout_seconds: float = 0.4
+    admin_backend_timeout_seconds: float = 3.0
 
     log_level: str = "INFO"
 
