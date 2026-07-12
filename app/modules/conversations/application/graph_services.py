@@ -141,7 +141,6 @@ class DefaultConversationGraphServices:
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
         if self.orders is not None:
             await self.orders.add(_order_from_admin_payload(payload), ChatId(int(payload.chat_id)))
-            return
         await AdminBackendOrderClient(get_settings()).sync_order_payload(payload)
 
     async def create_confirmed_order(self, chat_id: ChatId, delivery_price_cop: int) -> str | None:

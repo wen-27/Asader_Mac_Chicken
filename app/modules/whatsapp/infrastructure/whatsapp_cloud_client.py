@@ -140,7 +140,7 @@ def _yes_no_buttons_payload(chat_id: ChatId, text: str, yes_id: str, no_id: str)
                 "buttons": [
                     {
                         "type": "reply",
-                        "reply": {"id": yes_id, "title": "Si"},
+                        "reply": {"id": yes_id, "title": "Sí"},
                     },
                     {
                         "type": "reply",

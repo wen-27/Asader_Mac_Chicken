@@ -25,6 +25,8 @@ class AdminBackendMessageClient:
         phone: str,
         body: str,
         external_message_id: str,
+        sent_at: str | None = None,
+        attachment: dict[str, object] | None = None,
     ) -> None:
         if not self._enabled or not self._api_key:
             return
@@ -35,6 +37,10 @@ class AdminBackendMessageClient:
             "body": body,
             "externalMessageId": external_message_id,
         }
+        if sent_at is not None:
+            payload["sentAt"] = sent_at
+        if attachment is not None:
+            payload["attachment"] = attachment
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
@@ -50,6 +56,7 @@ class AdminBackendMessageClient:
         chat_id: str,
         body: str,
         external_message_id: str | None = None,
+        sent_at: str | None = None,
     ) -> None:
         if not self._enabled or not self._api_key:
             return
@@ -59,6 +66,8 @@ class AdminBackendMessageClient:
             "body": body,
             "externalMessageId": external_message_id,
         }
+        if sent_at is not None:
+            payload["sentAt"] = sent_at
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(

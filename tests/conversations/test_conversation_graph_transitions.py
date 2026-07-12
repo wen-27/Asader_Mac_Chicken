@@ -272,7 +272,8 @@ async def test_natural_clear_cart_command_clears_cart() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lasagna_request_uses_fast_rules_before_business_query() -> None:
+async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 14))
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="quiero pedir una lasaña")
 
