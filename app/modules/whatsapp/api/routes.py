@@ -21,6 +21,7 @@ from app.modules.conversations.application.graph_services import DefaultConversa
 from app.modules.conversations.application.langgraph_handler import (
     LangGraphConversationMessageHandler,
 )
+from app.modules.conversations.graph.message_factory import BotMessageFactory
 from app.modules.conversations.infrastructure.redis_session_cache import (
     CachedTelegramSessionRepository,
 )
@@ -89,7 +90,8 @@ async def whatsapp_webhook(
     started_at = perf_counter()
     inbound_messages = payload.iter_text_messages()
     inbound_media_messages = payload.iter_media_messages()
-    if not inbound_messages and not inbound_media_messages:
+    inbound_call_events = payload.iter_call_events()
+    if not inbound_messages and not inbound_media_messages and not inbound_call_events:
         return {"ok": True, "processed": False, "reason": "unsupported_update"}
 
     redis_cache = RedisTextCache(settings)
@@ -100,6 +102,20 @@ async def whatsapp_webhook(
     duplicated = 0
     failed = 0
     ignored = 0
+
+    for inbound_call in inbound_call_events:
+        try:
+            if await _answer_whatsapp_call_event(session, settings, idempotency, inbound_call):
+                processed += 1
+            else:
+                duplicated += 1
+        except Exception:
+            failed += 1
+            await session.rollback()
+            logger.exception("failed to answer whatsapp call event")
+
+    if inbound_call_events:
+        await session.commit()
 
     for inbound_media in inbound_media_messages:
         idempotency_key = f"telegram:update:{inbound_media.update_id}:message:{inbound_media.message_id}"
@@ -166,9 +182,10 @@ async def whatsapp_webhook(
             await admin_realtime_hub.broadcast({"type": "conversations.changed"})
             await admin_realtime_hub.broadcast({"type": "orders.changed"})
         logger.info(
-            "completed whatsapp webhook messages=%s media=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
+            "completed whatsapp webhook messages=%s media=%s calls=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
             0,
             len(inbound_media_messages),
+            len(inbound_call_events),
             processed,
             duplicated,
             failed,
@@ -328,9 +345,10 @@ async def whatsapp_webhook(
     if processed or duplicated:
         await admin_realtime_hub.broadcast({"type": "orders.changed"})
     logger.info(
-        "completed whatsapp webhook messages=%s media=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
+        "completed whatsapp webhook messages=%s media=%s calls=%s processed=%s duplicated=%s failed=%s ignored=%s duration_ms=%s",
         len(inbound_messages),
         len(inbound_media_messages),
+        len(inbound_call_events),
         processed,
         duplicated,
         failed,
@@ -357,6 +375,76 @@ def _message_datetime(sent_at_epoch: int | None) -> datetime:
     if sent_at_epoch is None:
         return datetime.now(timezone.utc)
     return datetime.fromtimestamp(sent_at_epoch, tz=timezone.utc)
+
+
+async def _answer_whatsapp_call_event(
+    session: AsyncSession,
+    settings: Settings,
+    idempotency: RedisIdempotency,
+    inbound_call,
+) -> bool:
+    idempotency_key = f"whatsapp:call:{inbound_call.external_message_id}"
+    if await idempotency.is_processed(idempotency_key):
+        return False
+    if not await idempotency.mark_processing(idempotency_key, 86_400):
+        return False
+
+    existing = await session.execute(
+        select(TelegramMessageORM).where(
+            TelegramMessageORM.update_id == inbound_call.update_id,
+            TelegramMessageORM.direction == "inbound",
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        await idempotency.mark_processed(idempotency_key, 86_400)
+        return False
+
+    call_text = "Llamada recibida por WhatsApp"
+    session.add(
+        TelegramMessageORM(
+            update_id=inbound_call.update_id,
+            chat_id=inbound_call.chat_id,
+            direction="inbound",
+            message_text=call_text,
+            normalized_message_text=normalize_text(call_text),
+            message_type="call",
+            telegram_message_id=inbound_call.message_id,
+            created_at=_message_datetime(inbound_call.sent_at_epoch),
+        )
+    )
+
+    response_text = _whatsapp_call_response_text()
+    sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(inbound_call.chat_id), response_text)
+    session.add(
+        TelegramMessageORM(
+            update_id=0,
+            chat_id=sent_message.chat_id.value,
+            direction="outbound",
+            message_text=sent_message.text_raw,
+            normalized_message_text=sent_message.text_normalized,
+            message_type="text",
+            telegram_message_id=sent_message.message_id,
+            created_at=sent_message.received_at,
+        )
+    )
+    await session.flush()
+    await idempotency.mark_processed(idempotency_key, 86_400)
+    logger.info(
+        "answered whatsapp call event chat_id=%s status=%s",
+        inbound_call.chat_id,
+        inbound_call.status,
+    )
+    return True
+
+
+def _whatsapp_call_response_text() -> str:
+    return "\n\n".join(
+        [
+            "Gracias por comunicarte con ASADERO MC CHICKEN EXPRESS. En este momento solo estamos tomando pedidos por mensaje de WhatsApp.",
+            "Puedes escribir tu pedido directamente, por ejemplo: quiero un pollo asado con una Coca-Cola.",
+            BotMessageFactory.main_menu(),
+        ]
+    )
 
 
 async def _admin_preparing_reply(session: AsyncSession, inbound) -> tuple[str, int | None] | None:

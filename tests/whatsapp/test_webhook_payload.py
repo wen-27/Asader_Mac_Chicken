@@ -153,3 +153,43 @@ def test_whatsapp_payload_maps_image_message_to_media() -> None:
     assert media_messages[0].mime_type == "image/jpeg"
     assert media_messages[0].caption == "pago nequi"
     assert media_messages[0].first_name == "Wendy"
+
+
+def test_whatsapp_payload_maps_call_event() -> None:
+    payload = WhatsAppWebhookPayload.model_validate(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "field": "calls",
+                            "value": {
+                                "contacts": [
+                                    {
+                                        "wa_id": "573153327502",
+                                        "profile": {"name": "Wendy"},
+                                    }
+                                ],
+                                "calls": [
+                                    {
+                                        "from": "573153327502",
+                                        "id": "wacid.CALL",
+                                        "timestamp": "1783710000",
+                                        "status": "missed",
+                                    }
+                                ],
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    call_events = payload.iter_call_events()
+
+    assert len(call_events) == 1
+    assert call_events[0].chat_id == 573153327502
+    assert call_events[0].external_message_id == "wacid.CALL"
+    assert call_events[0].status == "missed"
+    assert call_events[0].first_name == "Wendy"

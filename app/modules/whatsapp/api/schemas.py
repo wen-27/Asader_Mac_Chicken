@@ -29,6 +29,13 @@ class WhatsAppImageSchema(BaseModel):
     caption: str | None = None
 
 
+class WhatsAppCallSchema(BaseModel):
+    id: str | None = None
+    from_phone: str | None = Field(default=None, alias="from")
+    timestamp: str | None = None
+    status: str | None = None
+
+
 class WhatsAppProfileSchema(BaseModel):
     name: str | None = None
 
@@ -85,6 +92,7 @@ class WhatsAppValueSchema(BaseModel):
     metadata: WhatsAppMetadataSchema | None = None
     contacts: list[WhatsAppContactSchema] | None = None
     messages: list[WhatsAppMessageSchema] | None = None
+    calls: list[WhatsAppCallSchema] | None = None
 
 
 class WhatsAppChangeSchema(BaseModel):
@@ -122,6 +130,18 @@ class WhatsAppInboundMediaMessage:
     mime_type: str | None
     sha256: str | None
     caption: str | None
+    sent_at_epoch: int | None
+    first_name: str | None
+
+
+@dataclass(frozen=True)
+class WhatsAppInboundCallEvent:
+    update_id: int
+    message_id: int
+    chat_id: int
+    external_message_id: str
+    phone: str
+    status: str | None
     sent_at_epoch: int | None
     first_name: str | None
 
@@ -190,6 +210,35 @@ class WhatsAppWebhookPayload(BaseModel):
                         )
                     )
         return inbound_messages
+
+    def iter_call_events(self) -> list[WhatsAppInboundCallEvent]:
+        inbound_calls: list[WhatsAppInboundCallEvent] = []
+        for entry in self.entry:
+            for change in entry.changes:
+                contacts_by_phone = {
+                    contact.wa_id: contact.profile.name if contact.profile else None
+                    for contact in change.value.contacts or []
+                    if contact.wa_id and contact.profile and contact.profile.name
+                }
+                for call in change.value.calls or []:
+                    if not call.from_phone:
+                        continue
+                    phone_digits = _digits_only(call.from_phone)
+                    external_id = call.id or f"call:{phone_digits}:{call.timestamp or ''}:{call.status or ''}"
+                    inbound_calls.append(
+                        WhatsAppInboundCallEvent(
+                            update_id=_stable_numeric_id(f"wa-call-update:{external_id}"),
+                            message_id=_stable_numeric_id(f"wa-call-message:{external_id}"),
+                            chat_id=int(phone_digits),
+                            external_message_id=external_id,
+                            phone=phone_digits,
+                            status=call.status,
+                            sent_at_epoch=_parse_epoch(call.timestamp),
+                            first_name=contacts_by_phone.get(call.from_phone)
+                            or contacts_by_phone.get(phone_digits),
+                        )
+                    )
+        return inbound_calls
 
 
 def _digits_only(value: str) -> str:
