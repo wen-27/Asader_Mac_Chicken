@@ -155,13 +155,14 @@ def test_whatsapp_payload_maps_image_message_to_media() -> None:
     assert media_messages[0].first_name == "Wendy"
 
 
-def test_whatsapp_payload_maps_inbound_call() -> None:
+def test_whatsapp_payload_maps_call_event() -> None:
     payload = WhatsAppWebhookPayload.model_validate(
         {
             "entry": [
                 {
                     "changes": [
                         {
+                            "field": "calls",
                             "value": {
                                 "contacts": [
                                     {
@@ -171,12 +172,13 @@ def test_whatsapp_payload_maps_inbound_call() -> None:
                                 ],
                                 "calls": [
                                     {
-                                        "id": "wacid.TEST",
                                         "from": "573153327502",
+                                        "id": "wacid.CALL",
                                         "timestamp": "1783710000",
+                                        "status": "missed",
                                     }
                                 ],
-                            }
+                            },
                         }
                     ]
                 }
@@ -184,11 +186,12 @@ def test_whatsapp_payload_maps_inbound_call() -> None:
         }
     )
 
-    calls = payload.iter_calls()
+    call_events = payload.iter_call_events()
 
-    assert len(calls) == 1
-    assert calls[0].call_id == "wacid.TEST"
-    assert calls[0].chat_id == 573153327502
-    assert calls[0].phone == "573153327502"
-    assert calls[0].sent_at_epoch == 1783710000
-    assert calls[0].first_name == "Wendy"
+    assert len(call_events) == 1
+    assert call_events[0].chat_id == 573153327502
+    assert call_events[0].external_message_id == "wacid.CALL"
+    assert call_events[0].phone == "573153327502"
+    assert call_events[0].sent_at_epoch == 1783710000
+    assert call_events[0].status == "missed"
+    assert call_events[0].first_name == "Wendy"
