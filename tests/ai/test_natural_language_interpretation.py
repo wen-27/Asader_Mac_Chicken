@@ -105,6 +105,13 @@ def test_rule_based_parser_understands_asado_and_coca_litro_medio() -> None:
     assert parsed.confidence >= 0.9
 
 
+def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
+    parsed = parse_natural_order_rules("quiero un pollo")
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
+
+
 def test_rule_based_parser_understands_fractions_and_word_quantities() -> None:
     parsed = parse_natural_order_rules("agrega dos medios pollos y tres papas francesas")
 

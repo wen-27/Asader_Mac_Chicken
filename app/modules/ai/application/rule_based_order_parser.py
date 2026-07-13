@@ -61,7 +61,7 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "ASADO_ENTERO",
-        ("pollo", "pollos", "asado"),
+        ("asado",),
         ("entero", "completo", "uno", "un"),
         ("broaster", "broasted", "broster", "medio", "cuarto", "3/4", "1/2", "1/4"),
     ),

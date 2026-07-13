@@ -854,6 +854,11 @@ async def fallback_natural_language(
             return state
         if state.response_text:
             return state
+        if _looks_like_ambiguous_chicken_order(state.normalized_text):
+            state.current_step = ConversationState.PRODUCT_CATEGORY
+            state.response_text = BotMessageFactory.ambiguous_chicken_order()
+            await _persist_step(state, services)
+            return state
         if _looks_like_new_order_request(state.normalized_text):
             category_route = _category_route_from_text(state.normalized_text)
             if category_route is not None:
@@ -1379,6 +1384,14 @@ def _looks_like_new_order_request(text: str) -> bool:
         "quiero comprar",
     )
     return _contains_any(text, new_order_terms)
+
+
+def _looks_like_ambiguous_chicken_order(text: str) -> bool:
+    if not _looks_like_natural_order(text):
+        return False
+    if "pollo" not in text and "pollos" not in text:
+        return False
+    return not _contains_any(text, ("asado", "broaster", "broasted", "broster"))
 
 
 def _category_route_from_text(text: str) -> tuple[ProductCategory, ConversationState] | None:

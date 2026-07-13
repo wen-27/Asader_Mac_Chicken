@@ -121,6 +121,20 @@ class BotMessageFactory:
         return "No encontre ese producto. Escribe menu para ver las opciones disponibles."
 
     @classmethod
+    def ambiguous_chicken_order(cls) -> str:
+        return "\n".join(
+            [
+                "Claro, te ayudo con el pollo.",
+                "",
+                "Para evitar confusiones, dime cual quieres:",
+                "",
+                "1. 🍗 Pollo asado",
+                "2. 🍗 Pollo broaster",
+                "0. ⬅️ Volver al inicio",
+            ]
+        )
+
+    @classmethod
     def invalid_quantity(cls) -> str:
         return "Por favor envia una cantidad valida. Ejemplo: 1, 2 o 3."
 

@@ -1085,6 +1085,27 @@ async def test_graph_adds_natural_order_items_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_graph_asks_for_chicken_type_when_plain_chicken_is_ambiguous() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero un pollo")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
+    assert "dime cual quieres" in result["response_text"]
+    assert "1. 🍗 Pollo asado" in result["response_text"]
+    assert "2. 🍗 Pollo broaster" in result["response_text"]
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
 async def test_question_about_gaseosas_lists_products_without_adding_to_cart() -> None:
     services = FakeConversationServices()
     services.products["COCA_COLA_15"] = Product(
