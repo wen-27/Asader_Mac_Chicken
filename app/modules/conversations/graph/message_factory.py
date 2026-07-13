@@ -259,7 +259,7 @@ class BotMessageFactory:
                         f"Total: ${state.total_cop}",
                     ]
                 ),
-                "Responde SI para confirmar o NO para cancelar.",
+                "¿Confirmas tu pedido? Responde SI para confirmar o NO para cancelar.",
             ]
         )
 

@@ -893,6 +893,8 @@ async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
 
 def _is_order_timing_query(text: str) -> bool:
     normalized = normalize_text(text)
+    if _looks_like_new_order_request(normalized):
+        return False
     timing_terms = (
         "demora",
         "demorar",
@@ -927,6 +929,24 @@ def _is_order_timing_query(text: str) -> bool:
     )
     return direct_time_question or (
         any(term in normalized for term in timing_terms) and any(term in normalized for term in order_terms)
+    )
+
+
+def _looks_like_new_order_request(normalized: str) -> bool:
+    return any(
+        phrase in normalized
+        for phrase in (
+            "otro pedido",
+            "nuevo pedido",
+            "hacer pedido",
+            "hacer otro pedido",
+            "hacer un pedido",
+            "pedir otra vez",
+            "pedir de nuevo",
+            "quiero pedir",
+            "quiero ordenar",
+            "quiero comprar",
+        )
     )
 
 

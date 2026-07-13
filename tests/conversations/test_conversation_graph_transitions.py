@@ -1166,6 +1166,23 @@ async def test_question_about_order_delay_gets_friendly_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_new_order_request_is_not_treated_as_order_delay_query() -> None:
+    services = FakeConversationServices()
+    state = ConversationGraphState(chat_id=123, raw_text="quiero hacer otro pedido de pollo broaster")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    state = await nodes.fallback_natural_language(state, services)
+
+    assert "40 minutos" not in state.response_text
+    assert "Claro, te ayudo con otro pedido" in state.response_text
+    assert "Pollo broaster" in state.response_text
+    assert state.current_step == ConversationState.SELECT_BROASTER
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
 async def test_out_of_scope_question_is_rejected_without_cart() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

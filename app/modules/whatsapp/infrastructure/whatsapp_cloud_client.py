@@ -118,6 +118,10 @@ def _confirmation_body_text(text: str) -> str:
         "¿Deseas confirmar el pedido?",
     )
     body = body.replace(
+        "¿Confirmas tu pedido? Responde SI para confirmar o NO para cancelar.",
+        "¿Confirmas tu pedido?",
+    )
+    body = body.replace(
         "\n\nResponde SI para confirmar o NO para cancelar.",
         "",
     )

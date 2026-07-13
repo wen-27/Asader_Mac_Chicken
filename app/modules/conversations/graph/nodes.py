@@ -7,6 +7,7 @@ Those details stay behind ConversationGraphServices and application use cases.
 
 from __future__ import annotations
 
+import logging
 import re
 from difflib import SequenceMatcher
 from datetime import date, datetime
@@ -33,6 +34,8 @@ from app.modules.conversations.graph.state import (
 )
 from app.shared.domain.value_object import ChatId, ProductCode, ProductName
 from app.shared.utils.text_normalizer import normalize_text
+
+logger = logging.getLogger(__name__)
 
 
 async def receive_message(
@@ -712,6 +715,14 @@ async def calculate_delivery(
             neighborhood=state.customer.neighborhood,
         )
         state.delivery_price_cop = result.delivery_price_cop
+        logger.info(
+            "calculated delivery chat_id=%s neighborhood=%s price_cop=%s source=%s distance_km=%s",
+            state.chat_id,
+            state.customer.neighborhood,
+            result.delivery_price_cop,
+            result.pricing_source,
+            result.distance_km,
+        )
     else:
         state.delivery_price_cop = state.delivery_price_cop or 0
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
@@ -842,6 +853,26 @@ async def fallback_natural_language(
             )
             return state
         if state.response_text:
+            return state
+        if _looks_like_new_order_request(state.normalized_text):
+            category_route = _category_route_from_text(state.normalized_text)
+            if category_route is not None:
+                category, next_step = category_route
+                products = await services.list_products_by_category(category)
+                state.current_step = next_step
+                state.response_text = (
+                    "Claro, te ayudo con otro pedido.\n\n"
+                    + BotMessageFactory.product_menu(category.value, products)
+                )
+                await _persist_step(state, services)
+                return state
+
+            state.current_step = ConversationState.PRODUCT_CATEGORY
+            state.response_text = (
+                "Claro, te ayudo con otro pedido. Elige una categoria para empezar:\n\n"
+                + BotMessageFactory.product_categories()
+            )
+            await _persist_step(state, services)
             return state
         if _looks_like_natural_order(state.normalized_text):
             state.current_step = ConversationState.PRODUCT_CATEGORY
@@ -1315,6 +1346,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
 
 
 def _looks_like_order_status_query(text: str) -> bool:
+    if _looks_like_new_order_request(text):
+        return False
     status_terms = (
         "demora",
         "demorar",
@@ -1325,12 +1358,41 @@ def _looks_like_order_status_query(text: str) -> bool:
         "llegar",
         "despacho",
         "despachar",
-        "pedido",
         "como va",
         "cómo va",
     )
     product_terms = ("pollo", "pedido", "domicilio", "comida")
     return _contains_any(text, status_terms) and _contains_any(text, product_terms)
+
+
+def _looks_like_new_order_request(text: str) -> bool:
+    new_order_terms = (
+        "otro pedido",
+        "nuevo pedido",
+        "hacer pedido",
+        "hacer otro pedido",
+        "hacer un pedido",
+        "pedir otra vez",
+        "pedir de nuevo",
+        "quiero pedir",
+        "quiero ordenar",
+        "quiero comprar",
+    )
+    return _contains_any(text, new_order_terms)
+
+
+def _category_route_from_text(text: str) -> tuple[ProductCategory, ConversationState] | None:
+    if "broaster" in text or "broasted" in text or "broster" in text:
+        return ProductCategory.POLLO_BROASTER, ConversationState.SELECT_BROASTER
+    if "asado" in text:
+        return ProductCategory.POLLO_ASADO, ConversationState.SELECT_ASADO
+    if "bebida" in text or "gaseosa" in text:
+        return ProductCategory.BEBIDAS, ConversationState.SELECT_BEBIDA
+    if "adicional" in text or "papa" in text or "sopa" in text:
+        return ProductCategory.ADICIONALES, ConversationState.SELECT_ADICIONAL
+    if "especial" in text or "lasagna" in text or "lasana" in text or "maduro" in text:
+        return ProductCategory.ESPECIALES, ConversationState.SELECT_ESPECIAL
+    return None
 
 
 def _short_product_reference(text: str) -> str:
