@@ -51,3 +51,15 @@ def test_weekend_or_holiday_product_is_available_on_weekend() -> None:
 
     assert spec.is_satisfied_by(product, date(2026, 7, 4))
 
+
+def test_weekend_or_holiday_product_is_available_on_configured_holiday() -> None:
+    product = Product(
+        code=ProductCode("LASAGNA_MIXTA"),
+        name=ProductName("Lasagna Mixta"),
+        category=ProductCategory.ESPECIALES,
+        price=MoneyCOP(20000),
+        restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+    )
+    spec = ProductAvailabilitySpecification(is_holiday=lambda value: value == date(2026, 7, 13))
+
+    assert spec.is_satisfied_by(product, date(2026, 7, 13))

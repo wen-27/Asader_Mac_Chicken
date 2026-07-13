@@ -121,7 +121,7 @@ async def detect_intent(
         return state
     # Navigation and numbered menus are handled before natural-language parsing.
     # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
-    if text in {"0", "volver", "atras", "atrás", "regresar"}:
+    if _is_back_request(text):
         state.intent = ConversationIntent.VOLVER
         return state
     if state.current_step == ConversationState.POST_ADD and _is_main_menu_request(text):
@@ -348,6 +348,8 @@ async def select_product(
     if product is None:
         product = await services.find_product(state.normalized_text)
     if product is None:
+        product = await _find_natural_product_selection(state, services)
+    if product is None:
         state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
         state.response_text = BotMessageFactory.product_not_found()
         return state
@@ -356,6 +358,23 @@ async def select_product(
     state.selected_chicken_part = None
     state.selected_unit_price_cop = product.price.amount
     return state
+
+
+async def _find_natural_product_selection(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> Product | None:
+    parsed = parse_natural_order_rules(state.raw_text)
+    if not parsed.items:
+        return None
+    current_category = _category_for_selection_step(state.current_step)
+    for item in parsed.items:
+        product = await services.find_product(item.code)
+        if product is None:
+            continue
+        if current_category is None or product.category == current_category:
+            return product
+    return None
 
 
 async def validate_product_availability(
@@ -1130,7 +1149,7 @@ async def _show_category(
 def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
     text = state.normalized_text
     if not text.isdigit():
-        return False
+        return _detect_natural_step_action(state)
 
     if state.current_step == ConversationState.POST_ADD:
         post_add_routes = {
@@ -1179,6 +1198,53 @@ def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
     }:
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return True
+
+    return False
+
+
+def _detect_natural_step_action(state: ConversationGraphState) -> bool:
+    text = state.normalized_text
+
+    if state.current_step == ConversationState.POST_ADD:
+        if _contains_command(text, ("agregar mas", "agregar más", "seguir comprando", "otro producto")):
+            state.intent = ConversationIntent.VER_MENU
+            return True
+        if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+            state.intent = ConversationIntent.MOSTRAR_CARRITO
+            return True
+        if _contains_command(text, ("finalizar", "finalizar pedido", "terminar pedido", "confirmar pedido")):
+            state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+            return True
+        if _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
+            state.intent = ConversationIntent.VACIAR_CARRITO
+            return True
+
+    if state.current_step == ConversationState.MAIN_MENU:
+        if _contains_command(text, ("pedir por menu", "pedir por menú", "ver menu", "ver menú")):
+            state.intent = ConversationIntent.VER_MENU
+            return True
+        if _contains_command(text, ("pedir escribiendo", "pedido libre", "escribir pedido")):
+            state.intent = ConversationIntent.LENGUAJE_NATURAL
+            return True
+        if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+            state.intent = ConversationIntent.MOSTRAR_CARRITO
+            return True
+        if _contains_command(text, ("horario", "horarios")):
+            state.intent = ConversationIntent.HORARIOS
+            return True
+
+    if state.current_step == ConversationState.PRODUCT_CATEGORY:
+        natural_intent = _detect_natural_menu_intent(text)
+        if natural_intent in {
+            ConversationIntent.MENU_ASADO,
+            ConversationIntent.MENU_BROASTER,
+            ConversationIntent.MENU_BEBIDAS,
+            ConversationIntent.MENU_ADICIONALES,
+            ConversationIntent.MENU_ESPECIALES,
+            ConversationIntent.PEDIR_DATOS_CLIENTE,
+        }:
+            state.intent = natural_intent
+            return True
 
     return False
 
@@ -1397,6 +1463,29 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
     if _is_menu_request(text):
         return ConversationIntent.VER_MENU
     return None
+
+
+def _is_back_request(text: str) -> bool:
+    normalized = text.strip()
+    if normalized in {"0", "volver", "atras", "atrás", "regresar"}:
+        return True
+    return _contains_command(
+        normalized,
+        (
+            "volver a categorias",
+            "volver a categoría",
+            "volver a categoria",
+            "volver a categorías",
+            "volver al menu",
+            "volver al menú",
+            "volver al inicio",
+            "regresar a categorias",
+            "regresar a categorías",
+            "regresar al menu",
+            "regresar al menú",
+            "regresar al inicio",
+        ),
+    )
 
 
 def _contains_command(text: str, commands: tuple[str, ...]) -> bool:
@@ -1877,14 +1966,7 @@ async def _find_numbered_product(
 ):
     if not state.normalized_text.isdigit():
         return None
-    category_by_step = {
-        ConversationState.SELECT_ASADO: ProductCategory.POLLO_ASADO,
-        ConversationState.SELECT_BROASTER: ProductCategory.POLLO_BROASTER,
-        ConversationState.SELECT_BEBIDA: ProductCategory.BEBIDAS,
-        ConversationState.SELECT_ADICIONAL: ProductCategory.ADICIONALES,
-        ConversationState.SELECT_ESPECIAL: ProductCategory.ESPECIALES,
-    }
-    category = category_by_step.get(state.current_step)
+    category = _category_for_selection_step(state.current_step)
     if category is None:
         return None
     index = int(state.normalized_text) - 1
@@ -1892,6 +1974,16 @@ async def _find_numbered_product(
     if index < 0 or index >= len(products):
         return None
     return products[index]
+
+
+def _category_for_selection_step(step: ConversationState) -> ProductCategory | None:
+    return {
+        ConversationState.SELECT_ASADO: ProductCategory.POLLO_ASADO,
+        ConversationState.SELECT_BROASTER: ProductCategory.POLLO_BROASTER,
+        ConversationState.SELECT_BEBIDA: ProductCategory.BEBIDAS,
+        ConversationState.SELECT_ADICIONAL: ProductCategory.ADICIONALES,
+        ConversationState.SELECT_ESPECIAL: ProductCategory.ESPECIALES,
+    }.get(step)
 
 
 async def _persist_step(

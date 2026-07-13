@@ -9,6 +9,7 @@ from typing import Protocol
 from app.config.settings import Settings
 from app.modules.catalog.domain.product import Product
 from app.modules.catalog.domain.specifications import ProductAvailabilitySpecification
+from app.shared.utils.colombia_holidays import is_colombian_monday_holiday
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,7 @@ class OperationalAvailabilityService:
             for item in self._settings.special_product_monday_holidays.split(",")
             if item.strip()
         }
-        return value.isoformat() in configured_dates
+        return is_colombian_monday_holiday(value) or value.isoformat() in configured_dates
 
     def _is_allowed_by_calendar(self, code: str, business_date: date | None) -> bool:
         if code not in {"LASAGNA_MIXTA", "MADURO_QUESO"}:

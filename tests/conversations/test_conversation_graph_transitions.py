@@ -356,6 +356,39 @@ async def test_zero_from_product_menu_goes_back_to_categories() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_back_from_product_menu_goes_back_to_categories() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.SELECT_BROASTER)
+    state = ConversationGraphState(chat_id=123, raw_text="volver a categorías")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    state = await nodes.go_back(state, services)
+
+    assert state.intent == ConversationIntent.VOLVER
+    assert state.current_step == ConversationState.PRODUCT_CATEGORY
+    assert "Elige una categoria" in state.response_text
+
+
+@pytest.mark.asyncio
+async def test_natural_back_from_variant_menu_goes_back_to_categories() -> None:
+    services = FakeConversationServices()
+    services.session.selected_product_code = ProductCode("GASEOSA_25")
+    services.session.move_to(ConversationState.ASK_PRODUCT_VARIANT)
+    state = ConversationGraphState(chat_id=123, raw_text="volver a categorias")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    state = await nodes.go_back(state, services)
+
+    assert state.intent == ConversationIntent.VOLVER
+    assert state.current_step == ConversationState.PRODUCT_CATEGORY
+    assert "Bebidas" in state.response_text
+
+
+@pytest.mark.asyncio
 async def test_schedules_show_real_hours() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="4")
@@ -505,6 +538,29 @@ async def test_selected_product_transitions_to_ask_quantity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_product_selection_inside_specials_menu_reports_restriction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 1))
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.SELECT_ESPECIAL)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero una lasagna")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert route_after_intent(state) == "select_product"
+
+    state = await nodes.select_product(state, services)
+    state = await nodes.validate_product_availability(state, services)
+
+    assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
+    assert state.selected_product_code == "LASAGNA_MIXTA"
+    assert "solo esta disponible fines de semana" in state.response_text.lower()
+
+
+@pytest.mark.asyncio
 async def test_quarter_asado_asks_for_chicken_part_before_quantity() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.SELECT_ASADO)
@@ -545,6 +601,27 @@ async def test_chicken_part_response_then_asks_quantity() -> None:
     assert state.current_step == ConversationState.ASK_QUANTITY
     assert services.session.selected_chicken_part == "Pechuga"
     assert "1/4 Broasted - Pechuga" in state.response_text
+
+
+@pytest.mark.asyncio
+async def test_product_variant_response_by_name_then_asks_quantity() -> None:
+    services = FakeConversationServices()
+    services.session.selected_product_code = ProductCode("GASEOSA_25")
+    services.session.move_to(ConversationState.ASK_PRODUCT_VARIANT)
+    state = ConversationGraphState(chat_id=123, raw_text="pepsi")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert state.intent == ConversationIntent.PEDIR_CANTIDAD
+    assert route_after_intent(state) == "ask_quantity"
+
+    state = await nodes.ask_quantity(state, services)
+
+    assert state.current_step == ConversationState.ASK_QUANTITY
+    assert services.session.selected_chicken_part == "Pepsi"
+    assert "Gaseosa 2.5 L - Pepsi" in state.response_text
 
 
 @pytest.mark.asyncio
