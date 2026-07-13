@@ -24,19 +24,14 @@ def test_seed_prices_are_exact() -> None:
         "BROASTER_34": 38600,
         "BROASTER_MEDIO": 25500,
         "BROASTER_CUARTO": 13500,
-        "GASEOSA": 3000,
-        "LATA_GASEOSA": 3300,
         "LITRO_MEDIO": 8500,
         "COCA_COLA_15": 8500,
-        "POSTOBON_25": 8500,
         "QUATRO_15": 8500,
-        "TRES_LITROS": 9000,
+        "GASEOSA_25": 8500,
         "PERSONAL_400": 3500,
         "AGUA_BOTELLA": 2600,
-        "JUGO_LUBY": 2400,
-        "GATORADE": 3500,
-        "JUGO_HIT_LITRO_TETRA": 6000,
-        "COLA_POLA": 3000,
+        "JUGO_HIT_PERSONAL": 3000,
+        "JUGO_HIT_LITRO": 6000,
         "CLUB_COLOMBIA": 4400,
         "PILSEN_BOTELLA": 4000,
         "CERVEZA_LATA": 4400,
@@ -45,6 +40,7 @@ def test_seed_prices_are_exact() -> None:
         "MADURO_QUESO": 9500,
         "PAPA_FRANCESA": 8200,
         "PAPA_SALADA": 5000,
+        "YUCA_FRITA": 5000,
         "BOTELLA_VIDRIO": 200,
         "ICOPOR": 900,
         "ADICIONAL_SALSAS": 900,
@@ -112,11 +108,13 @@ def test_aliases_normalized() -> None:
     assert "medio pollo" in normalized_aliases
     assert "media" in normalized_aliases
     assert "coca cola 1.5" in normalized_aliases
-    assert "postobon 2.5" in normalized_aliases
+    assert "gaseosa 2.5" in normalized_aliases
+    assert "jugo hit personal" in normalized_aliases
     assert "quatro 1.5" in normalized_aliases
     assert "lasana" in normalized_aliases
     assert "lasagna" in normalized_aliases
     assert "maduro" in normalized_aliases
     assert "papa" in normalized_aliases
     assert "papa francesa" in normalized_aliases
+    assert "yuca frita" in normalized_aliases
     assert normalize_alias("Cañaveral") == "canaveral"

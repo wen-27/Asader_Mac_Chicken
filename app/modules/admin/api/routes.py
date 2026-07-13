@@ -460,13 +460,15 @@ async def _find_order(session: AsyncSession, order_id: str) -> OrderORM:
 
 def _order_payload(order: OrderORM) -> dict[str, object]:
     display_number = f"MC-{order.id:04d}"
-    proof_required = payment_requires_proof(order.payment_method)
-    proof_missing = payment_proof_missing(order)
+    fulfillment_type = order.fulfillment_type or "DELIVERY"
+    proof_required = fulfillment_type == "DELIVERY" and payment_requires_proof(order.payment_method)
+    proof_missing = proof_required and payment_proof_missing(order)
     return {
         "id": str(order.id),
         "orderNumber": display_number,
         "invoiceNumber": display_number,
         "status": _frontend_status(order.status),
+        "fulfillmentType": fulfillment_type,
         "customer": {
             "fullName": order.customer_name,
             "phone": order.phone,

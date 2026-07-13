@@ -44,6 +44,7 @@ def session_to_orm(session: TelegramSession) -> TelegramSessionORM:
         neighborhood=session.customer_neighborhood,
         payment_method=session.payment_method,
         observations=session.observations,
+        fulfillment_type=session.fulfillment_type,
     )
 
 
@@ -60,6 +61,7 @@ def update_session_orm(row: TelegramSessionORM, session: TelegramSession) -> Tel
     row.neighborhood = session.customer_neighborhood
     row.payment_method = session.payment_method
     row.observations = session.observations
+    row.fulfillment_type = session.fulfillment_type
     return row
 
 
@@ -78,4 +80,5 @@ def session_from_orm(row: TelegramSessionORM) -> TelegramSession:
         customer_neighborhood=row.neighborhood,
         payment_method=row.payment_method,
         observations=row.observations,
+        fulfillment_type=row.fulfillment_type or "DELIVERY",
     )

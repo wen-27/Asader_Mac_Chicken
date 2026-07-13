@@ -8,6 +8,10 @@ from typing import Protocol
 from app.config.settings import get_settings
 from app.modules.cart.domain.cart_item import CartItem
 from app.modules.catalog.application.ports import ProductRepository
+from app.modules.catalog.application.stock_controls import (
+    AvailabilityResult,
+    OperationalAvailabilityService,
+)
 from app.modules.catalog.domain.enums import ProductCategory
 from app.modules.catalog.domain.product import Product
 from app.modules.catalog.infrastructure.seeders.catalog_data import PRODUCT_SEEDS
@@ -57,6 +61,17 @@ class ConversationGraphServices(Protocol):
     async def find_product(self, code_or_text: str) -> Product | None:
         ...
 
+    async def evaluate_product_availability(
+        self,
+        product: Product,
+        business_date,
+        variant_label: str | None = None,
+    ) -> AvailabilityResult:
+        ...
+
+    async def soup_is_available(self) -> bool:
+        ...
+
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
         ...
 
@@ -102,6 +117,7 @@ class SeedCatalogService:
 class DefaultConversationGraphServices:
     sessions: TelegramSessionRepository
     products: ProductRepository | None = None
+    availability: OperationalAvailabilityService | None = None
     orders: OrderRepository | None = None
     delivery_calculator: object | None = None
     seed_catalog: SeedCatalogService = SeedCatalogService()
@@ -121,9 +137,19 @@ class DefaultConversationGraphServices:
 
     async def list_products_by_category(self, category: ProductCategory) -> list[Product]:
         if self.products is None:
-            return await self.seed_catalog.list_products_by_category(category)
-        products = await self.products.list_active()
-        return [product for product in products if product.category == category]
+            products = await self.seed_catalog.list_products_by_category(category)
+        else:
+            products = await self.products.list_active()
+            products = [product for product in products if product.category == category]
+        if self.availability is None:
+            return products
+        controls = {control.code: control for control in await self.availability.list_controls()}
+        today = _business_today()
+        return [
+            product
+            for product in products
+            if (await self.availability.evaluate_with_controls(product, today, controls)).is_available
+        ]
 
     async def find_product(self, code_or_text: str) -> Product | None:
         if self.products is None:
@@ -132,6 +158,24 @@ class DefaultConversationGraphServices:
             return await self.products.get_by_code(ProductCode(code_or_text))
         except Exception:
             return None
+
+    async def evaluate_product_availability(
+        self,
+        product: Product,
+        business_date,
+        variant_label: str | None = None,
+    ) -> AvailabilityResult:
+        if self.availability is None:
+            return AvailabilityResult(
+                is_available=True,
+                product_name=product.name.value if not variant_label else f"{product.name.value} - {variant_label}",
+            )
+        return await self.availability.evaluate(product, business_date, variant_label)
+
+    async def soup_is_available(self) -> bool:
+        if self.availability is None:
+            return True
+        return await self.availability.soup_is_available()
 
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
         if self.delivery_calculator is None:
@@ -181,6 +225,13 @@ def cart_item_from_product(product: Product, quantity: int) -> CartItem:
         unit_price=product.price,
         quantity=quantity,
     )
+
+
+def _business_today():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("America/Bogota")).date()
 
 
 def _order_from_admin_payload(payload: AdminOrderPayload) -> Order:

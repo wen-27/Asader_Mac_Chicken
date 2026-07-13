@@ -8,8 +8,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings, get_settings
+from app.modules.catalog.application.stock_controls import OperationalAvailabilityService
 from app.modules.catalog.infrastructure.sqlalchemy_product_repository import (
     SqlAlchemyProductRepository,
+)
+from app.modules.catalog.infrastructure.sqlalchemy_stock_control_repository import (
+    SqlAlchemyStockControlRepository,
 )
 from app.modules.catalog.infrastructure.redis_catalog_cache import CachedProductRepository
 from app.modules.conversations.application.graph_services import DefaultConversationGraphServices
@@ -104,6 +108,10 @@ async def telegram_webhook(
             DefaultConversationGraphServices(
                 sessions=session_repository,
                 products=product_repository,
+                availability=OperationalAvailabilityService(
+                    SqlAlchemyStockControlRepository(session),
+                    settings,
+                ),
                 orders=SqlAlchemyOrderRepository(session),
                 delivery_calculator=delivery_calculator,
             )

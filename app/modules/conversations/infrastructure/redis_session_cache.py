@@ -73,6 +73,7 @@ def _session_to_dict(session: TelegramSession) -> dict[str, object]:
         "neighborhood": session.neighborhood,
         "payment_method": session.payment_method,
         "observations": session.observations,
+        "fulfillment_type": session.fulfillment_type,
     }
 
 
@@ -90,6 +91,7 @@ def _session_from_dict(data: dict[str, object]) -> TelegramSession:
         customer_neighborhood=_optional_text(data.get("customer_neighborhood") or data.get("neighborhood")),
         payment_method=data.get("payment_method") or None,
         observations=data.get("observations") or None,
+        fulfillment_type=str(data.get("fulfillment_type") or "DELIVERY"),
     )
 
 

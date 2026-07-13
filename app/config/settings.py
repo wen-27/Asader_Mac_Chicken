@@ -77,6 +77,8 @@ class Settings(BaseSettings):
     delivery_round_to_cop: int = 500
     openrouteservice_api_key: str = Field(default="", repr=False)
     openrouteservice_base_url: str = "https://api.openrouteservice.org"
+    special_product_monday_holidays: str = ""
+    business_hours_enforced: bool = True
 
     admin_backend_base_url: str = "http://localhost:3000/api/v1/internal"
     internal_api_key: str = Field(default="", repr=False)

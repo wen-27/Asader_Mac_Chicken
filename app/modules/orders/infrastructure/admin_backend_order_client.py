@@ -33,6 +33,7 @@ class AdminOrderItemPayload:
 class AdminOrderPayload:
     external_bot_id: str
     chat_id: str
+    fulfillment_type: str
     customer: AdminOrderCustomerPayload
     payment_method: str
     observations: str | None
@@ -50,6 +51,7 @@ class AdminBackendOrderClient:
         payload = AdminOrderPayload(
             external_bot_id=str(order.order_id.value),
             chat_id=str(chat_id),
+            fulfillment_type="DELIVERY",
             customer=AdminOrderCustomerPayload(
                 full_name=order.customer.name.value,
                 phone=order.customer.phone.value,
@@ -81,6 +83,7 @@ class AdminBackendOrderClient:
         request_body = {
             "externalBotId": payload.external_bot_id,
             "chatId": payload.chat_id,
+            "fulfillmentType": payload.fulfillment_type,
             "customer": {
                 "fullName": payload.customer.full_name,
                 "phone": payload.customer.phone,

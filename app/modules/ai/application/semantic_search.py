@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 
 from app.modules.ai.application.ports import CachePort, CatalogSemanticSearchPort
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,7 +36,11 @@ class CatalogSemanticSearch:
             if cached:
                 return [CatalogSemanticMatch(**item) for item in json.loads(cached)]
 
-        results = await self._vector_store.search(query, limit)
+        try:
+            results = await self._vector_store.search(query, limit)
+        except Exception:
+            logger.warning("catalog semantic search unavailable; using deterministic parser only", exc_info=True)
+            return []
         matches = [
             CatalogSemanticMatch(code=result.code, score=result.score, text=result.text)
             for result in results
@@ -45,4 +52,3 @@ class CatalogSemanticSearch:
                 self._cache_ttl_seconds,
             )
         return matches
-

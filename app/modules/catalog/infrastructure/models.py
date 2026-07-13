@@ -50,3 +50,20 @@ class ProductAliasORM(Base):
     normalized_alias: Mapped[str] = mapped_column(String(180), nullable=False)
 
     product: Mapped[ProductORM] = relationship(back_populates="aliases")
+
+
+class StockControlORM(TimestampMixin, Base):
+    __tablename__ = "stock_controls"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_stock_controls_code"),
+        Index("ix_stock_controls_code", "code"),
+        Index("ix_stock_controls_product_code", "product_code"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
+    label: Mapped[str] = mapped_column(String(180), nullable=False)
+    group_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    product_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    variant_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

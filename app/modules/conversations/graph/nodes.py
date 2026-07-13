@@ -38,6 +38,19 @@ from app.shared.utils.text_normalizer import normalize_text
 logger = logging.getLogger(__name__)
 
 
+VARIANT_OPTIONS_BY_PRODUCT: dict[str, tuple[str, ...]] = {
+    "GASEOSA_25": ("Kola", "Pepsi", "Piña", "Colombiana"),
+    "AGUA_BOTELLA": ("Con gas", "Sin gas", "Saborizada"),
+    "JUGO_HIT_PERSONAL": ("Tropical", "Mango"),
+    "ADICIONAL_SALSAS": ("Tártara", "Ají", "Tomate", "Miel"),
+}
+
+SIDE_EXTRA_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("YUCA_FRITA", "Yuca frita"),
+    ("PAPA_SALADA", "Papa o yuca salada"),
+)
+
+
 async def receive_message(
     state: ConversationGraphState,
     services: ConversationGraphServices,
@@ -81,6 +94,7 @@ async def load_or_create_session(
         payment_method=session.payment_method,
         observations=session.observations,
     )
+    state.fulfillment_type = session.fulfillment_type or "DELIVERY"
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     _copy_checkout_session_to_state(session, state)
     return state
@@ -92,6 +106,19 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if _looks_like_pickup_request(text):
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.fulfillment_type = "PICKUP"
+        state.fulfillment_type = "PICKUP"
+        await services.persist_session(session)
+    elif _looks_like_delivery_request(text):
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.fulfillment_type = "DELIVERY"
+        state.fulfillment_type = "DELIVERY"
+        await services.persist_session(session)
+    if text in {"horarios", "horario"}:
+        state.intent = ConversationIntent.HORARIOS
+        return state
     # Navigation and numbered menus are handled before natural-language parsing.
     # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
     if text in {"0", "volver", "atras", "atrás", "regresar"}:
@@ -103,6 +130,9 @@ async def detect_intent(
     natural_menu_intent = _detect_natural_menu_intent(text)
     if natural_menu_intent is not None:
         state.intent = natural_menu_intent
+        return state
+    if _looks_like_delivery_order_start(text):
+        state.intent = ConversationIntent.INICIAR_DOMICILIO
         return state
     if state.current_step == ConversationState.ASK_CHICKEN_PART:
         state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
@@ -116,6 +146,20 @@ async def detect_intent(
             state.intent = ConversationIntent.AGREGAR_PRODUCTO
             state.quantity = quantity
             return state
+        state.intent = ConversationIntent.PEDIR_CANTIDAD
+        return state
+    if state.current_step == ConversationState.ASK_PRODUCT_VARIANT:
+        state.selected_chicken_part = _extract_product_variant(state.selected_product_code, text)
+        state.intent = ConversationIntent.PEDIR_CANTIDAD
+        return state
+    if state.current_step == ConversationState.ASK_SIDE_EXTRA:
+        product_code = _extract_side_extra_product_code(text)
+        if product_code is None:
+            state.response_text = BotMessageFactory.ask_side_extra()
+            state.intent = ConversationIntent.PEDIR_CANTIDAD
+            return state
+        state.selected_product_code = product_code
+        state.selected_chicken_part = None
         state.intent = ConversationIntent.PEDIR_CANTIDAD
         return state
     if state.current_step == ConversationState.ASK_QUANTITY:
@@ -326,9 +370,14 @@ async def validate_product_availability(
         state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
         state.response_text = BotMessageFactory.product_not_found()
         return state
-    if not _is_product_available(product):
+    availability = await _evaluate_product_availability(product, services)
+    if not availability.is_available:
         state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-        state.response_text = BotMessageFactory.product_unavailable()
+        state.response_text = BotMessageFactory.product_unavailable(
+            availability.product_name,
+            availability.alternatives,
+            availability.reason,
+        )
     return state
 
 
@@ -336,6 +385,10 @@ async def ask_quantity(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    if state.current_step == ConversationState.ASK_SIDE_EXTRA and not state.selected_product_code:
+        state.response_text = BotMessageFactory.ask_side_extra()
+        await _persist_step(state, services)
+        return state
     if state.selected_product_name is None or state.selected_unit_price_cop is None:
         product = await services.find_product(state.selected_product_code or "")
         if product is None:
@@ -350,6 +403,30 @@ async def ask_quantity(
         )
         await _persist_step(state, services)
         return state
+    if _requires_product_variant(state.selected_product_code) and not state.selected_chicken_part:
+        state.current_step = ConversationState.ASK_PRODUCT_VARIANT
+        state.response_text = BotMessageFactory.ask_product_variant(
+            state.selected_product_name,
+            VARIANT_OPTIONS_BY_PRODUCT[state.selected_product_code],
+        )
+        await _persist_step(state, services)
+        return state
+    if state.selected_chicken_part:
+        product = await services.find_product(state.selected_product_code or "")
+        if product is not None:
+            availability = await _evaluate_product_availability(
+                product,
+                services,
+                state.selected_chicken_part,
+            )
+            if not availability.is_available:
+                state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+                state.response_text = BotMessageFactory.product_unavailable(
+                    availability.product_name,
+                    availability.alternatives,
+                    availability.reason,
+                )
+                return state
     state.current_step = ConversationState.ASK_QUANTITY
     state.response_text = BotMessageFactory.ask_quantity(
         _display_product_name(state.selected_product_name, state.selected_chicken_part),
@@ -370,6 +447,18 @@ async def add_to_cart(
     product = await services.find_product(state.selected_product_code)
     if product is None:
         state.response_text = BotMessageFactory.product_not_found()
+        return state
+    availability = await _evaluate_product_availability(
+        product,
+        services,
+        state.selected_chicken_part or session.selected_chicken_part,
+    )
+    if not availability.is_available:
+        state.response_text = BotMessageFactory.product_unavailable(
+            availability.product_name,
+            availability.alternatives,
+            availability.reason,
+        )
         return state
     if state.selected_chicken_part:
         session.selected_chicken_part = state.selected_chicken_part
@@ -460,7 +549,15 @@ async def ask_customer_data(
         await _persist_step(state, services)
         return state
     state.current_step = ConversationState.ASK_CUSTOMER_DATA
-    state.response_text = BotMessageFactory.ask_customer_data()
+    soup_available = await _soup_is_available(services)
+    if state.fulfillment_type == "PICKUP":
+        state.response_text = BotMessageFactory.ask_pickup_customer_data(
+            soup_available=soup_available
+        )
+    else:
+        state.response_text = BotMessageFactory.ask_customer_data(
+            soup_available=soup_available
+        )
     await _persist_step(state, services)
     return state
 
@@ -503,7 +600,7 @@ async def extract_customer_data(
         }:
             customer.observations = value
     if free_lines:
-        _extract_customer_data_from_free_lines(customer, free_lines)
+        _extract_customer_data_from_free_lines(customer, free_lines, state.fulfillment_type)
     state.customer = customer
     return state
 
@@ -517,6 +614,19 @@ async def validate_customer_data(
         missing.append("nombre completo")
     if not state.customer.phone:
         missing.append("telefono")
+    if state.fulfillment_type == "PICKUP":
+        state.customer.address = "Recoge en local"
+        state.customer.neighborhood = "No aplica"
+        state.customer.payment_method = "No aplica"
+    if state.fulfillment_type == "PICKUP" and missing:
+        state.errors = missing
+        state.current_step = ConversationState.ASK_CUSTOMER_DATA
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        _copy_checkout_state_to_session(state, session)
+        session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+        await services.persist_session(session)
+        state.response_text = BotMessageFactory.missing_customer_data(missing)
+        return state
     if not state.customer.address:
         missing.append("direccion")
     if not state.customer.neighborhood:
@@ -543,12 +653,19 @@ async def validate_customer_data(
 def _extract_customer_data_from_free_lines(
     customer: CustomerDataState,
     lines: list[str],
+    fulfillment_type: str = "DELIVERY",
 ) -> None:
     # Customers usually send checkout data as loose lines, not as a strict form.
     # Detect strong signals first, then assign the remaining human text by order.
     remaining: list[str] = []
     for line in lines:
         normalized = normalize_text(line)
+        if fulfillment_type == "PICKUP":
+            if not customer.phone and _looks_like_phone(line):
+                customer.phone = line
+            else:
+                remaining.append(line)
+            continue
         if not customer.address and _looks_like_address(normalized):
             customer.address = line
         elif not customer.phone and _looks_like_phone(line):
@@ -560,6 +677,10 @@ def _extract_customer_data_from_free_lines(
 
     if not customer.name and remaining:
         customer.name = remaining.pop(0)
+    if fulfillment_type == "PICKUP":
+        if not customer.observations and remaining:
+            customer.observations = " ".join(remaining)
+        return
     if not customer.observations and remaining and _looks_like_empty_note(normalize_text(remaining[0])):
         customer.observations = remaining.pop(0)
     if not customer.neighborhood and remaining:
@@ -649,6 +770,7 @@ def _copy_checkout_state_to_session(
     session.customer_neighborhood = state.customer.neighborhood
     session.payment_method = state.customer.payment_method
     session.observations = state.customer.observations
+    session.fulfillment_type = state.fulfillment_type
 
 
 def _copy_checkout_session_to_state(
@@ -663,6 +785,7 @@ def _copy_checkout_session_to_state(
     customer.payment_method = customer.payment_method or session.payment_method
     customer.observations = customer.observations or session.observations
     state.customer = customer
+    state.fulfillment_type = session.fulfillment_type or state.fulfillment_type or "DELIVERY"
 
 
 def _clear_checkout_session(session) -> None:
@@ -672,12 +795,14 @@ def _clear_checkout_session(session) -> None:
     session.customer_neighborhood = None
     session.payment_method = None
     session.observations = None
+    session.fulfillment_type = "DELIVERY"
 
 
 def _admin_order_payload_from_state(state: ConversationGraphState) -> AdminOrderPayload:
     return AdminOrderPayload(
         external_bot_id=f"whatsapp-{state.chat_id}-{datetime.now(ZoneInfo('UTC')).isoformat()}",
         chat_id=str(state.chat_id),
+        fulfillment_type=state.fulfillment_type,
         customer=AdminOrderCustomerPayload(
             full_name=state.customer.name or "",
             phone=state.customer.phone or "",
@@ -709,7 +834,9 @@ async def calculate_delivery(
 ) -> ConversationGraphState:
     # Delivery calculation may use manual zones or ORS distance behind the service.
     # The graph only stores the resulting integer COP price in conversation state.
-    if state.customer.address and state.customer.neighborhood:
+    if state.fulfillment_type == "PICKUP":
+        state.delivery_price_cop = 0
+    elif state.customer.address and state.customer.neighborhood:
         result = await services.calculate_delivery(
             address=state.customer.address,
             neighborhood=state.customer.neighborhood,
@@ -769,7 +896,12 @@ async def confirm_order(
         session.move_to(ConversationState.ASK_CUSTOMER_DATA)
         await services.persist_session(session)
         return state
-    if state.customer.address and state.customer.neighborhood:
+    if state.fulfillment_type == "PICKUP":
+        state.customer.address = "Recoge en local"
+        state.customer.neighborhood = "No aplica"
+        state.customer.payment_method = "No aplica"
+        state.delivery_price_cop = 0
+    elif state.customer.address and state.customer.neighborhood:
         delivery = await services.calculate_delivery(
             address=state.customer.address,
             neighborhood=state.customer.neighborhood,
@@ -790,6 +922,7 @@ async def confirm_order(
     state.current_step = ConversationState.MAIN_MENU
     state.cart = []
     state.customer = CustomerDataState()
+    state.fulfillment_type = "DELIVERY"
     state.subtotal_cop = 0
     state.total_cop = 0
     state.response_text = BotMessageFactory.confirmed()
@@ -804,6 +937,8 @@ def _missing_checkout_fields(state: ConversationGraphState) -> list[str]:
         missing.append("nombre completo")
     if not state.customer.phone:
         missing.append("telefono")
+    if state.fulfillment_type == "PICKUP":
+        return missing
     if not state.customer.address:
         missing.append("direccion")
     if not state.customer.neighborhood:
@@ -826,6 +961,7 @@ async def cancel_order(
     state.current_step = ConversationState.MAIN_MENU
     state.cart = []
     state.customer = CustomerDataState()
+    state.fulfillment_type = "DELIVERY"
     state.response_text = BotMessageFactory.cancelled()
     return state
 
@@ -899,6 +1035,28 @@ async def show_schedules(
     return state
 
 
+async def show_outside_business_hours(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state.response_text = BotMessageFactory.outside_business_hours()
+    return state
+
+
+async def start_delivery_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.fulfillment_type = "DELIVERY"
+    session.move_to(ConversationState.PRODUCT_CATEGORY)
+    await services.persist_session(session)
+    state.fulfillment_type = "DELIVERY"
+    state.current_step = ConversationState.PRODUCT_CATEGORY
+    state.response_text = BotMessageFactory.start_delivery_order()
+    return state
+
+
 async def answer_query(
     state: ConversationGraphState,
     services: ConversationGraphServices,
@@ -941,6 +1099,8 @@ async def go_back(
         ConversationState.SELECT_ADICIONAL,
         ConversationState.SELECT_ESPECIAL,
         ConversationState.ASK_CHICKEN_PART,
+        ConversationState.ASK_PRODUCT_VARIANT,
+        ConversationState.ASK_SIDE_EXTRA,
         ConversationState.ASK_QUANTITY,
         ConversationState.POST_ADD,
     }:
@@ -1034,13 +1194,44 @@ async def _add_natural_order_to_cart(
     session = await services.load_or_create_session(ChatId(state.chat_id))
     added_lines: list[CartLineState] = []
     restricted_product_name: str | None = None
+    restricted_alternatives: tuple[str, ...] = ()
+    restricted_reason = "out_of_stock"
+    sauce_note = _extract_sauce_note(state.normalized_text)
+    if sauce_note:
+        session.observations = _append_observation(session.observations, sauce_note)
+        state.customer.observations = session.observations
     for item in parsed.items:
         product = await services.find_product(item.code)
         if product is None:
             continue
-        if not _is_product_available(product):
-            restricted_product_name = product.name.value
+        availability = await _evaluate_product_availability(product, services)
+        if not availability.is_available:
+            restricted_product_name = availability.product_name
+            restricted_alternatives = availability.alternatives
+            restricted_reason = availability.reason
             continue
+        product_variant = _extract_product_variant(item.code, state.normalized_text)
+        if _requires_product_variant(item.code) and not product_variant:
+            session.selected_product_code = product.code
+            session.selected_chicken_part = None
+            session.move_to(ConversationState.ASK_PRODUCT_VARIANT)
+            await services.persist_session(session)
+            state.selected_product_code = product.code.value
+            state.selected_product_name = product.name.value
+            state.selected_unit_price_cop = product.price.amount
+            state.current_step = ConversationState.ASK_PRODUCT_VARIANT
+            state.response_text = BotMessageFactory.ask_product_variant(
+                product.name.value,
+                VARIANT_OPTIONS_BY_PRODUCT[item.code],
+            )
+            return []
+        if product_variant:
+            availability = await _evaluate_product_availability(product, services, product_variant)
+            if not availability.is_available:
+                restricted_product_name = availability.product_name
+                restricted_alternatives = availability.alternatives
+                restricted_reason = availability.reason
+                continue
         chicken_part = _extract_chicken_selection(item.code, state.normalized_text)
         if _requires_chicken_selection(item.code) and not chicken_part:
             session.selected_product_code = product.code
@@ -1054,7 +1245,15 @@ async def _add_natural_order_to_cart(
             state.current_step = ConversationState.ASK_CHICKEN_PART
             state.response_text = _ask_chicken_selection_message(item.code, product.name.value)
             return []
-        cart_item = _cart_item_from_selected_product(product, item.quantity, chicken_part)
+        if chicken_part:
+            availability = await _evaluate_product_availability(product, services, chicken_part)
+            if not availability.is_available:
+                restricted_product_name = availability.product_name
+                restricted_alternatives = availability.alternatives
+                restricted_reason = availability.reason
+                continue
+        selected_variant = chicken_part or product_variant
+        cart_item = _cart_item_from_selected_product(product, item.quantity, selected_variant)
         session.add_cart_item(cart_item)
         line = CartLineState(
             product_code=cart_item.product_code.value,
@@ -1069,7 +1268,22 @@ async def _add_natural_order_to_cart(
     if not added_lines:
         if restricted_product_name:
             state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-            state.response_text = BotMessageFactory.product_unavailable()
+            state.response_text = BotMessageFactory.product_unavailable(
+                restricted_product_name,
+                restricted_alternatives,
+                restricted_reason,
+            )
+        return []
+    if _needs_side_extra_clarification(state.normalized_text):
+        session.clear_selected_product()
+        session.move_to(ConversationState.ASK_SIDE_EXTRA)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_SIDE_EXTRA
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        state.response_text = BotMessageFactory.natural_order_added_with_side_question(
+            added_lines,
+            state.subtotal_cop,
+        )
         return []
     session.clear_selected_product()
     session.move_to(ConversationState.POST_ADD)
@@ -1103,6 +1317,46 @@ def _looks_like_natural_order(text: str) -> bool:
             "también",
         ]
     )
+
+
+def _extract_sauce_note(text: str) -> str | None:
+    if _contains_any(text, ("extra salsa", "extra salsas", "adicional de salsa", "adicional de salsas")):
+        return None
+    if _contains_any(text, ("sin salsa", "sin salsas")):
+        return "Salsas: sin salsas."
+    mentioned = []
+    sauce_labels = {
+        "aji": "ají",
+        "tartara": "tártara",
+        "tomate": "tomate",
+        "miel": "miel",
+    }
+    for key, label in sauce_labels.items():
+        if key in text:
+            mentioned.append(label)
+    if not mentioned:
+        return None
+    if "broaster" in text or "broasted" in text or "broster" in text:
+        return "Salsas broaster solicitadas: " + ", ".join(mentioned) + "."
+    if "asado" in text:
+        return "Salsas asado solicitadas: " + ", ".join(mentioned) + "."
+    return "Salsas solicitadas: " + ", ".join(mentioned) + "."
+
+
+def _append_observation(current: str | None, addition: str) -> str:
+    if not current or _looks_like_empty_note(normalize_text(current)):
+        return addition
+    if addition in current:
+        return current
+    return f"{current}. {addition}"
+
+
+def _needs_side_extra_clarification(text: str) -> bool:
+    if not _contains_any(text, ("broaster", "broasted", "broster")):
+        return False
+    if "yuca" not in text:
+        return False
+    return not _contains_any(text, ("yuca frita", "yuca salada", "papa o yuca salada"))
 
 
 def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
@@ -1193,6 +1447,10 @@ def _requires_chicken_selection(product_code: str | None) -> bool:
     return _requires_chicken_part(product_code) or _requires_chicken_composition(product_code)
 
 
+def _requires_product_variant(product_code: str | None) -> bool:
+    return product_code in VARIANT_OPTIONS_BY_PRODUCT
+
+
 def _requires_chicken_part(product_code: str | None) -> bool:
     return product_code in {"ASADO_CUARTO", "BROASTER_CUARTO"}
 
@@ -1211,6 +1469,44 @@ def _extract_chicken_selection(product_code: str | None, text: str) -> str | Non
     if _requires_chicken_composition(product_code):
         return _extract_chicken_composition(text)
     return _extract_chicken_part(text)
+
+
+def _extract_product_variant(product_code: str | None, text: str) -> str | None:
+    if product_code not in VARIANT_OPTIONS_BY_PRODUCT:
+        return None
+    options = VARIANT_OPTIONS_BY_PRODUCT[product_code]
+    cleaned = text.strip()
+    if cleaned.isdigit():
+        index = int(cleaned) - 1
+        if 0 <= index < len(options):
+            return options[index]
+    normalized = normalize_text(text)
+    for option in options:
+        if normalize_text(option) in normalized:
+            return option
+    if product_code == "GASEOSA_25":
+        if "pina" in normalized:
+            return "Piña"
+    if product_code == "ADICIONAL_SALSAS":
+        if "tartara" in normalized:
+            return "Tártara"
+        if "aji" in normalized:
+            return "Ají"
+    return None
+
+
+def _extract_side_extra_product_code(text: str) -> str | None:
+    cleaned = text.strip()
+    if cleaned == "1":
+        return "YUCA_FRITA"
+    if cleaned == "2":
+        return "PAPA_SALADA"
+    normalized = normalize_text(text)
+    if "frita" in normalized:
+        return "YUCA_FRITA"
+    if "salada" in normalized or "cocida" in normalized:
+        return "PAPA_SALADA"
+    return None
 
 
 def _extract_chicken_part(text: str) -> str | None:
@@ -1308,9 +1604,76 @@ def _business_today() -> date:
     return datetime.now(ZoneInfo("America/Bogota")).date()
 
 
-def _is_product_available(product: Product, business_date: date | None = None) -> bool:
+def _looks_like_pickup_request(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "paso a recoger",
+            "paso por el",
+            "paso por mi",
+            "lo recojo",
+            "lo recogemos",
+            "recogerlo",
+            "recoger en el local",
+            "para recoger",
+            "voy a recoger",
+            "yo paso",
+        ),
+    )
+
+
+def _looks_like_delivery_request(text: str) -> bool:
+    return _contains_any(text, ("domicilio", "envio", "envío", "me lo llevan", "para llevar a"))
+
+
+def _looks_like_delivery_order_start(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    if not _contains_any(normalized, ("domicilio", "envio", "envío")):
+        return False
+    return _contains_any(
+        normalized,
+        (
+            "me colabora",
+            "me colaboras",
+            "me ayuda",
+            "me ayudas",
+            "buenas",
+            "hola",
+            "quiero pedir",
+            "necesito",
+        ),
+    )
+
+
+async def _evaluate_product_availability(
+    product: Product,
+    services: ConversationGraphServices,
+    variant_label: str | None = None,
+):
+    if hasattr(services, "evaluate_product_availability"):
+        return await services.evaluate_product_availability(
+            product,
+            _business_today(),
+            variant_label,
+        )
     availability = ProductAvailabilitySpecification(is_holiday=lambda _: False)
-    return availability.is_satisfied_by(product, business_date or _business_today())
+    is_available = availability.is_satisfied_by(product, _business_today())
+    return type(
+        "AvailabilityResult",
+        (),
+        {
+            "is_available": is_available,
+            "product_name": _display_product_name(product.name.value, variant_label),
+            "alternatives": (),
+            "reason": "available" if is_available else "restricted",
+        },
+    )()
+
+
+async def _soup_is_available(services: ConversationGraphServices) -> bool:
+    if hasattr(services, "soup_is_available"):
+        return await services.soup_is_available()
+    return True
 
 
 def _is_menu_request(text: str) -> bool:
@@ -1415,9 +1778,7 @@ def _short_product_reference(text: str) -> str:
     if cleaned in {"agua", "aguita", "botella de agua"}:
         return "agua botella"
     if cleaned in {"personal", "la personal", "400", "400 ml"}:
-        return "personal 400"
-    if cleaned in {"lata", "la lata"}:
-        return "lata gaseosa"
+        return "coca cola personal 400"
     return ""
 
 

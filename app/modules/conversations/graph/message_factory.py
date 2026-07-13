@@ -110,11 +110,45 @@ class BotMessageFactory:
         )
 
     @classmethod
-    def product_unavailable(cls) -> str:
-        return (
-            "⚠️ Ese producto solo esta disponible fines de semana o festivos. "
-            "Puedes elegir otra opcion del menu."
+    def ask_product_variant(cls, product_name: str, options: tuple[str, ...]) -> str:
+        lines = [f"🛒 {product_name}", "", "Elige una opcion:"]
+        lines.extend(f"{index}. {option}" for index, option in enumerate(options, start=1))
+        lines.append("0. ⬅️ Volver a categorias")
+        return "\n".join(lines)
+
+    @classmethod
+    def ask_side_extra(cls) -> str:
+        return "\n".join(
+            [
+                "La yuca para broaster seria un adicional.",
+                "",
+                "¿Cual quieres agregar?",
+                "",
+                "1. Yuca frita - $5000",
+                "2. Papa o yuca salada - $5000",
+                "0. ⬅️ Volver a categorias",
+            ]
         )
+
+    @classmethod
+    def product_unavailable(
+        cls,
+        product_name: str | None = None,
+        alternatives: tuple[str, ...] = (),
+        reason: str = "out_of_stock",
+    ) -> str:
+        label = product_name or "Ese producto"
+        if reason == "restricted":
+            lines = [f"⚠️ {label} solo esta disponible fines de semana o lunes festivos."]
+        else:
+            lines = [f"⚠️ {label} no esta disponible en este momento."]
+        if alternatives:
+            lines.append("")
+            lines.append("Puedo ofrecerte estas alternativas disponibles:")
+            lines.extend(f"- {alternative}" for alternative in alternatives)
+        else:
+            lines.append("Puedes elegir otra opcion disponible del menu.")
+        return "\n".join(lines)
 
     @classmethod
     def product_not_found(cls) -> str:
@@ -182,6 +216,24 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def natural_order_added_with_side_question(
+        cls,
+        lines: list[CartLineState],
+        total_cop: int,
+    ) -> str:
+        added_lines = "\n".join(
+            f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in lines
+        )
+        return "\n\n".join(
+            [
+                "✅ Agregado al carrito.",
+                added_lines,
+                f"🧾 Total acumulado: ${total_cop}",
+                cls.ask_side_extra(),
+            ]
+        )
+
+    @classmethod
     def cart(cls, cart: list[CartLineState], total_cop: int) -> str:
         if not cart:
             return "🛒 Tu carrito esta vacio. Escribe menu para ver opciones."
@@ -221,25 +273,52 @@ class BotMessageFactory:
         )
 
     @classmethod
-    def ask_customer_data(cls) -> str:
-        return "\n\n".join(
+    def ask_customer_data(cls, soup_available: bool = True) -> str:
+        sections = [
+            "📦 Para finalizar tu pedido necesito los datos de envio:",
+            "\n".join(
+                [
+                    "Nombre completo",
+                    "Telefono",
+                    "Direccion",
+                    "Barrio",
+                    "Nota o especificacion (opcional)",
+                    "Metodo de pago",
+                ]
+            ),
+            "💳 Metodos de pago: Efectivo, Datafono, Nequi o Transferencia Bancolombia.",
+        ]
+        if not soup_available:
+            sections.append("Lo sentimos, en este momento no tenemos sopa disponible.")
+        sections.extend(
             [
-                "📦 Para finalizar tu pedido necesito los datos de envio:",
-                "\n".join(
-                    [
-                        "Nombre completo",
-                        "Telefono",
-                        "Direccion",
-                        "Barrio",
-                        "Nota o especificacion (opcional)",
-                        "Metodo de pago",
-                    ]
-                ),
-                "💳 Metodos de pago: Efectivo, Datafono, Nequi o Transferencia Bancolombia.",
                 "Puedes enviarlos en un solo mensaje, en lineas separadas o como te quede mas facil.",
                 "0. ⬅️ Volver al carrito",
             ]
         )
+        return "\n\n".join(sections)
+
+    @classmethod
+    def ask_pickup_customer_data(cls, soup_available: bool = True) -> str:
+        sections = [
+            "📦 Para dejar tu pedido listo para recoger necesito estos datos:",
+            "\n".join(
+                [
+                    "Nombre completo",
+                    "Telefono",
+                    "Nota o especificacion (opcional)",
+                ]
+            ),
+        ]
+        if not soup_available:
+            sections.append("Lo sentimos, en este momento no tenemos sopa disponible.")
+        sections.extend(
+            [
+                "Puedes enviarlos en un solo mensaje, en lineas separadas o como te quede mas facil.",
+                "0. ⬅️ Volver al carrito",
+            ]
+        )
+        return "\n\n".join(sections)
 
     @classmethod
     def missing_customer_data(cls, missing: list[str]) -> str:
@@ -252,6 +331,29 @@ class BotMessageFactory:
 
     @classmethod
     def order_created(cls, state: ConversationGraphState) -> str:
+        if state.fulfillment_type == "PICKUP":
+            return "\n\n".join(
+                [
+                    "✅ Datos recibidos. Revisa tu pedido para recoger:",
+                    cls.cart(state.cart, state.subtotal_cop),
+                    "\n".join(
+                        [
+                            f"👤 Cliente: {state.customer.name}",
+                            f"📞 Telefono: {state.customer.phone}",
+                            f"📝 Nota: {state.customer.observations or 'Sin nota'}",
+                            "📍 Entrega: Recoge en local",
+                        ]
+                    ),
+                    "\n".join(
+                        [
+                            f"Subtotal: ${state.subtotal_cop}",
+                            "Domicilio: $0",
+                            f"Total: ${state.total_cop}",
+                        ]
+                    ),
+                    "¿Confirmas tu pedido? Responde SI para confirmar o NO para cancelar.",
+                ]
+            )
         return "\n\n".join(
             [
                 "✅ Datos recibidos. Revisa tu pedido:",
@@ -350,8 +452,36 @@ class BotMessageFactory:
                 "🕒 Horario de atencion",
                 "",
                 "Lunes a domingo",
-                "11:00 a.m. a 4:00 p.m.",
+                "10:00 a.m. a 4:00 p.m.",
                 "",
                 "0. ⬅️ Volver al inicio",
             ]
+        )
+
+    @classmethod
+    def outside_business_hours(cls) -> str:
+        return "\n".join(
+            [
+                "Gracias por escribirnos.",
+                "En este momento estamos fuera del horario de atencion.",
+                "",
+                "Nuestro horario es de lunes a domingo de 10:00 a.m. a 4:00 p.m.",
+                "Para poder atender bien tu pedido, por favor escribenos dentro de ese horario.",
+            ]
+        )
+
+    @classmethod
+    def start_delivery_order(cls) -> str:
+        return "\n\n".join(
+            [
+                "Claro, te colaboro con un domicilio. Puedes escribirme tu pedido completo o elegir desde el menu:",
+                cls.product_categories(),
+            ]
+        )
+
+    @classmethod
+    def audio_not_supported(cls) -> str:
+        return (
+            "Gracias por el audio. Por ahora no puedo procesar notas de voz. "
+            "Para atenderte mejor, por favor escribeme tu pedido o usa las opciones del menu."
         )

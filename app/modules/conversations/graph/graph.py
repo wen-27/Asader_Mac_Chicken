@@ -108,6 +108,8 @@ _NODE_REGISTRY: dict[str, NodeFn] = {
     "send_telegram_response": nodes.send_telegram_response,
     "fallback_natural_language": nodes.fallback_natural_language,
     "show_schedules": nodes.show_schedules,
+    "show_outside_business_hours": nodes.show_outside_business_hours,
+    "start_delivery_order": nodes.start_delivery_order,
     "go_back": nodes.go_back,
     "answer_query": nodes.answer_query,
 }

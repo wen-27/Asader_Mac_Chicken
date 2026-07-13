@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.modules.admin.infrastructure.models import AdminUserORM
-from app.modules.catalog.infrastructure.models import ProductAliasORM, ProductORM
+from app.modules.catalog.infrastructure.models import ProductAliasORM, ProductORM, StockControlORM
 from app.modules.conversations.infrastructure.models import TelegramSessionORM
 from app.modules.customers.infrastructure.models import CustomerORM
 from app.modules.delivery.infrastructure.models import DeliveryZoneORM
@@ -18,6 +18,7 @@ __all__ = [
     "OrderORM",
     "ProductAliasORM",
     "ProductORM",
+    "StockControlORM",
     "TelegramMessageORM",
     "TelegramSessionORM",
 ]

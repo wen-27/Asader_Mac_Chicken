@@ -6,11 +6,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from app.config.settings import Settings, get_settings
+from app.modules.catalog.application.stock_controls import OperationalAvailabilityService
+from app.modules.catalog.infrastructure.redis_catalog_cache import CachedProductRepository
+from app.modules.catalog.infrastructure.sqlalchemy_stock_control_repository import (
+    SqlAlchemyStockControlRepository,
+)
 from app.modules.telegram.infrastructure.models import TelegramMessageORM
 from app.modules.whatsapp.infrastructure.media_cache import get_cached_or_fetch_whatsapp_media
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
 from app.shared.domain.value_object import ChatId
 from app.shared.infrastructure.database.session import get_async_session
+from app.shared.infrastructure.redis.cache import RedisTextCache
 from app.shared.utils.text_normalizer import normalize_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +27,10 @@ class SendMessageRequest(BaseModel):
     chat_id: str = Field(alias="chatId")
     body: str
     with_buttons: bool = Field(default=False, alias="withButtons")
+
+
+class UpdateStockControlRequest(BaseModel):
+    is_available: bool = Field(alias="isAvailable")
 
 
 def validate_internal_api_key(
@@ -61,6 +71,55 @@ async def send_internal_message(
     )
     await session.commit()
     return {"ok": True}
+
+
+@router.get("/catalog/stock-controls")
+async def list_stock_controls(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _: Annotated[None, Depends(validate_internal_api_key)],
+) -> dict[str, object]:
+    service = OperationalAvailabilityService(SqlAlchemyStockControlRepository(session), settings)
+    controls = await service.list_controls()
+    return {
+        "data": [
+            {
+                "code": control.code,
+                "label": control.label,
+                "groupLabel": control.group_label,
+                "productCode": control.product_code,
+                "variantLabel": control.variant_label,
+                "isAvailable": control.is_available,
+            }
+            for control in controls
+        ]
+    }
+
+
+@router.patch("/catalog/stock-controls/{code}")
+async def update_stock_control(
+    code: str,
+    payload: UpdateStockControlRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _: Annotated[None, Depends(validate_internal_api_key)],
+) -> dict[str, object]:
+    service = OperationalAvailabilityService(SqlAlchemyStockControlRepository(session), settings)
+    control = await service.set_available(code, payload.is_available)
+    if control is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="stock control not found")
+    await RedisTextCache(settings).delete(CachedProductRepository.LIST_ACTIVE_KEY)
+    await session.commit()
+    return {
+        "data": {
+            "code": control.code,
+            "label": control.label,
+            "groupLabel": control.group_label,
+            "productCode": control.product_code,
+            "variantLabel": control.variant_label,
+            "isAvailable": control.is_available,
+        }
+    }
 
 
 @router.get("/media/{media_id}")

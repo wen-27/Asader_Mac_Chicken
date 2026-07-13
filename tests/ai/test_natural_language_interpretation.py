@@ -59,11 +59,11 @@ class FakeProductRepository:
                 category=ProductCategory.ESPECIALES,
                 price=MoneyCOP(20000),
             ),
-            "LITRO_MEDIO": Product(
-                code=ProductCode("LITRO_MEDIO"),
-                name=ProductName("Litro y Medio"),
+            "JUGO_HIT_PERSONAL": Product(
+                code=ProductCode("JUGO_HIT_PERSONAL"),
+                name=ProductName("Jugos Hit personal"),
                 category=ProductCategory.BEBIDAS,
-                price=MoneyCOP(8500),
+                price=MoneyCOP(3000),
             ),
         }
 
@@ -153,13 +153,13 @@ def test_rule_based_parser_understands_additional_papas_fritas() -> None:
 
 def test_rule_based_parser_ignores_polite_greeting_and_extracts_all_products() -> None:
     parsed = parse_natural_order_rules(
-        "hola buenos dias me regala medio broaster una sopa y una gatorade"
+        "hola buenos dias me regala medio broaster una sopa y un hit de mango"
     )
 
     assert [(item.code, item.quantity) for item in parsed.items] == [
         ("BROASTER_MEDIO", 1),
+        ("JUGO_HIT_PERSONAL", 1),
         ("SOPA_ADICIONAL", 1),
-        ("GATORADE", 1),
     ]
 
 

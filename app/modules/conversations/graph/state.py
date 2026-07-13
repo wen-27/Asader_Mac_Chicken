@@ -44,6 +44,7 @@ class ConversationGraphState(BaseModel):
     cart: List[CartLineState] = Field(default_factory=list)
     customer: CustomerDataState = Field(default_factory=CustomerDataState)
     delivery_price_cop: Optional[int] = None
+    fulfillment_type: str = "DELIVERY"
     subtotal_cop: int = 0
     total_cop: int = 0
     order_number: Optional[str] = None

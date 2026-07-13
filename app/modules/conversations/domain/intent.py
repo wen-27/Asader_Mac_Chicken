@@ -26,6 +26,8 @@ class ConversationIntent(str, Enum):
     PRODUCTO_RESTRINGIDO = "producto_restringido"
     PRODUCTO_INEXISTENTE = "producto_inexistente"
     HORARIOS = "horarios"
+    FUERA_HORARIO = "fuera_horario"
+    INICIAR_DOMICILIO = "iniciar_domicilio"
     LENGUAJE_NATURAL = "lenguaje_natural"
     GENERAR_FACTURA = "generar_factura"
     VOLVER = "volver"

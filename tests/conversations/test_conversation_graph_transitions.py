@@ -29,11 +29,29 @@ class FakeConversationServices:
         self.fail_sync = False
         self.created_orders: list[str] = []
         self.products = {
-            "GASEOSA": Product(
-                code=ProductCode("GASEOSA"),
-                name=ProductName("Gaseosa"),
+            "JUGO_HIT_PERSONAL": Product(
+                code=ProductCode("JUGO_HIT_PERSONAL"),
+                name=ProductName("Jugos Hit personal"),
                 category=ProductCategory.BEBIDAS,
                 price=MoneyCOP(3000),
+            ),
+            "PERSONAL_400": Product(
+                code=ProductCode("PERSONAL_400"),
+                name=ProductName("Coca-Cola personal 400 ml"),
+                category=ProductCategory.BEBIDAS,
+                price=MoneyCOP(3500),
+            ),
+            "GASEOSA_25": Product(
+                code=ProductCode("GASEOSA_25"),
+                name=ProductName("Gaseosa 2.5 L"),
+                category=ProductCategory.BEBIDAS,
+                price=MoneyCOP(8500),
+            ),
+            "AGUA_BOTELLA": Product(
+                code=ProductCode("AGUA_BOTELLA"),
+                name=ProductName("Agua botella"),
+                category=ProductCategory.BEBIDAS,
+                price=MoneyCOP(2600),
             ),
             "ASADO_MEDIO": Product(
                 code=ProductCode("ASADO_MEDIO"),
@@ -77,6 +95,24 @@ class FakeConversationServices:
                 category=ProductCategory.ESPECIALES,
                 price=MoneyCOP(20000),
                 restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+            ),
+            "PAPA_SALADA": Product(
+                code=ProductCode("PAPA_SALADA"),
+                name=ProductName("Papa o yuca salada"),
+                category=ProductCategory.ADICIONALES,
+                price=MoneyCOP(5000),
+            ),
+            "YUCA_FRITA": Product(
+                code=ProductCode("YUCA_FRITA"),
+                name=ProductName("Yuca frita"),
+                category=ProductCategory.ADICIONALES,
+                price=MoneyCOP(5000),
+            ),
+            "ADICIONAL_SALSAS": Product(
+                code=ProductCode("ADICIONAL_SALSAS"),
+                name=ProductName("Adicional de Salsas"),
+                category=ProductCategory.ADICIONALES,
+                price=MoneyCOP(900),
             ),
         }
 
@@ -330,7 +366,7 @@ async def test_schedules_show_real_hours() -> None:
     state = await nodes.show_schedules(state, services)
 
     assert "Lunes a domingo" in state.response_text
-    assert "11:00 a.m. a 4:00 p.m." in state.response_text
+    assert "10:00 a.m. a 4:00 p.m." in state.response_text
     assert "0." in state.response_text
 
 
@@ -876,6 +912,43 @@ async def test_customer_data_accepts_free_line_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pickup_customer_data_only_requires_name_and_phone() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    services.session.fulfillment_type = "PICKUP"
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Angel David\n3153327502\nsin cebolla",
+        fulfillment_type="PICKUP",
+        cart=[
+            CartLineState(
+                product_code="ASADO_MEDIO",
+                product_name="1/2 Asado",
+                unit_price_cop=22300,
+                quantity=1,
+                subtotal_cop=22300,
+            )
+        ],
+    )
+
+    state = await nodes.extract_customer_data(state, services)
+    state = await nodes.validate_customer_data(state, services)
+    state = await nodes.calculate_delivery(state, services)
+    state = await nodes.create_order(state, services)
+
+    assert not state.errors
+    assert state.current_step == ConversationState.CHECKOUT_REVIEW
+    assert state.customer.name == "Angel David"
+    assert state.customer.phone == "3153327502"
+    assert state.customer.address == "Recoge en local"
+    assert state.customer.neighborhood == "No aplica"
+    assert state.customer.payment_method == "No aplica"
+    assert state.delivery_price_cop == 0
+    assert "Recoge en local" in state.response_text
+    assert "Domicilio: $0" in state.response_text
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_checkout_without_optional_note() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
@@ -1120,7 +1193,8 @@ async def test_question_about_gaseosas_lists_products_without_adding_to_cart() -
     result = await graph.ainvoke(state)
 
     assert "🥤 Bebidas" in result["response_text"]
-    assert "Gaseosa: $3000" in result["response_text"]
+    assert "Jugos Hit personal: $3000" in result["response_text"]
+    assert "Coca-Cola personal 400 ml: $3500" in result["response_text"]
     assert "Coca-Cola 1.5 L: $8500" in result["response_text"]
     assert len(services.session.cart) == 0
 
@@ -1152,7 +1226,8 @@ async def test_ambiguous_gaseosa_price_question_lists_bebidas() -> None:
     result = await graph.ainvoke(state)
 
     assert "🥤 Bebidas" in result["response_text"]
-    assert "Gaseosa: $3000" in result["response_text"]
+    assert "Jugos Hit personal: $3000" in result["response_text"]
+    assert "Coca-Cola personal 400 ml: $3500" in result["response_text"]
     assert "Coca-Cola 1.5 L: $8500" in result["response_text"]
     assert "Gaseosa vale $3000" not in result["response_text"]
     assert len(services.session.cart) == 0
@@ -1384,6 +1459,64 @@ async def test_graph_adds_natural_order_additional_items_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_broaster_with_generic_yuca_asks_extra_type() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero medio broaster con yuca")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_SIDE_EXTRA
+    assert "La yuca para broaster seria un adicional" in result["response_text"]
+    assert "1. Yuca frita" in result["response_text"]
+    assert "2. Papa o yuca salada" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_MEDIO"]
+
+
+@pytest.mark.asyncio
+async def test_side_extra_selection_asks_quantity() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.ASK_SIDE_EXTRA)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="1")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_QUANTITY
+    assert "Yuca frita" in result["response_text"]
+    assert "Cuantas unidades" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_extra_sauce_asks_sauce_type() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.PRODUCT_CATEGORY)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="adicional de salsa")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_PRODUCT_VARIANT
+    assert "Adicional de Salsas" in result["response_text"]
+    assert "1. Tártara" in result["response_text"]
+    assert "2. Ají" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_sauce_change_is_saved_as_observation_without_cost() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero medio broaster con aji")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_MEDIO"]
+    assert "Salsas broaster solicitadas: ají." in (services.session.observations or "")
+    assert "$25500" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_graph_polite_greeting_order_goes_directly_to_cart() -> None:
     services = FakeConversationServices()
     services.products["SOPA_ADICIONAL"] = Product(
@@ -1392,16 +1525,10 @@ async def test_graph_polite_greeting_order_goes_directly_to_cart() -> None:
         category=ProductCategory.ADICIONALES,
         price=MoneyCOP(3500),
     )
-    services.products["GATORADE"] = Product(
-        code=ProductCode("GATORADE"),
-        name=ProductName("Gatorade"),
-        category=ProductCategory.BEBIDAS,
-        price=MoneyCOP(3500),
-    )
     graph = build_conversation_graph(services)
     state = ConversationGraphState(
         chat_id=123,
-        raw_text="hola buenos dias me regala medio broaster una sopa y una gatorade",
+        raw_text="hola buenos dias me regala medio broaster una sopa y un hit de mango",
     )
 
     result = await graph.ainvoke(state)
@@ -1410,7 +1537,7 @@ async def test_graph_polite_greeting_order_goes_directly_to_cart() -> None:
     assert "Bienvenido" not in result["response_text"]
     assert "1 x 1/2 Broasted" in result["response_text"]
     assert "1 x Sopa Adicional" in result["response_text"]
-    assert "1 x Gatorade" in result["response_text"]
+    assert "1 x Jugos Hit personal" in result["response_text"]
     assert len(services.session.cart) == 3
 
 

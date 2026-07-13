@@ -23,6 +23,7 @@ class TelegramSession:
     customer_neighborhood: str | None = None
     payment_method: str | None = None
     observations: str | None = None
+    fulfillment_type: str = "DELIVERY"
 
     @property
     def phone(self) -> str | None:
@@ -75,6 +76,7 @@ class TelegramSession:
         neighborhood: str | None = None,
         payment_method: str | None = None,
         observations: str | None = None,
+        fulfillment_type: str | None = None,
     ) -> None:
         self.customer_name = customer_name
         self.phone = phone
@@ -82,9 +84,11 @@ class TelegramSession:
         self.neighborhood = neighborhood
         self.payment_method = payment_method
         self.observations = observations
+        if fulfillment_type is not None:
+            self.fulfillment_type = fulfillment_type
 
     def clear_customer_data(self) -> None:
-        self.update_customer_data()
+        self.update_customer_data(fulfillment_type="DELIVERY")
 
     def remove_last_cart_item(self) -> CartItem | None:
         if not self.cart:

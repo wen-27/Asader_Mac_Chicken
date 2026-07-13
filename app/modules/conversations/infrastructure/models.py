@@ -34,3 +34,4 @@ class TelegramSessionORM(TimestampMixin, Base):
     neighborhood: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     payment_method: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     observations: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    fulfillment_type: Mapped[str] = mapped_column(String(20), default="DELIVERY", nullable=False)

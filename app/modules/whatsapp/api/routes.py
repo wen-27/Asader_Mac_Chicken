@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from time import perf_counter, time
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
@@ -13,9 +14,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings, get_settings
+from app.modules.catalog.application.stock_controls import OperationalAvailabilityService
 from app.modules.catalog.infrastructure.redis_catalog_cache import CachedProductRepository
 from app.modules.catalog.infrastructure.sqlalchemy_product_repository import (
     SqlAlchemyProductRepository,
+)
+from app.modules.catalog.infrastructure.sqlalchemy_stock_control_repository import (
+    SqlAlchemyStockControlRepository,
 )
 from app.modules.conversations.application.graph_services import DefaultConversationGraphServices
 from app.modules.conversations.application.langgraph_handler import (
@@ -158,7 +163,9 @@ async def whatsapp_webhook(
                 duplicated += 1
                 await idempotency.mark_processed(idempotency_key, 86_400)
                 continue
-            media_text = inbound_media.caption or "Imagen recibida"
+            media_text = inbound_media.caption or (
+                "Audio recibido" if inbound_media.media_type == "audio" else "Imagen recibida"
+            )
             session.add(
                 TelegramMessageORM(
                     update_id=inbound_media.update_id,
@@ -205,6 +212,21 @@ async def whatsapp_webhook(
                 )
             except Exception:
                 logger.exception("failed to sync incoming whatsapp media to admin backend")
+            if inbound_media.media_type == "audio":
+                response_text = BotMessageFactory.audio_not_supported()
+                try:
+                    await WhatsAppCloudClient(settings).send_text_message(
+                        ChatId(inbound_media.chat_id),
+                        response_text,
+                    )
+                    await message_client.record_bot_message(
+                        chat_id=str(inbound_media.chat_id),
+                        body=response_text,
+                        external_message_id=f"bot:{inbound_media.external_message_id}",
+                        sent_at=datetime.now(timezone.utc).isoformat(),
+                    )
+                except Exception:
+                    logger.exception("failed to answer whatsapp audio message")
             processed += 1
             logger.info(
                 "stored whatsapp media chat_id=%s media_type=%s media_id=%s delivery_lag_ms=%s",
@@ -277,6 +299,10 @@ async def whatsapp_webhook(
             DefaultConversationGraphServices(
                 sessions=session_repository,
                 products=product_repository,
+                availability=OperationalAvailabilityService(
+                    SqlAlchemyStockControlRepository(session),
+                    settings,
+                ),
                 orders=SqlAlchemyOrderRepository(session),
                 delivery_calculator=delivery_calculator,
             )
@@ -329,6 +355,21 @@ async def whatsapp_webhook(
                 delivery_lag_ms,
                 normalize_text(inbound.text),
             )
+            continue
+        if (
+            settings.business_hours_enforced
+            and not _is_business_open_now()
+            and normalize_text(inbound.text) not in {"horario", "horarios"}
+        ):
+            try:
+                if await _answer_outside_business_hours(session, settings, idempotency, message_client, inbound):
+                    processed += 1
+                else:
+                    duplicated += 1
+            except Exception:
+                failed += 1
+                logger.exception("failed to answer whatsapp outside business hours")
+                await session.rollback()
             continue
         try:
             control = await message_client.get_conversation_control(chat_id=str(inbound.chat_id))
@@ -427,6 +468,82 @@ def _message_datetime(sent_at_epoch: int | None) -> datetime:
     if sent_at_epoch is None:
         return datetime.now(timezone.utc)
     return datetime.fromtimestamp(sent_at_epoch, tz=timezone.utc)
+
+
+def _is_business_open_now() -> bool:
+    now = datetime.now(ZoneInfo("America/Bogota"))
+    return 10 <= now.hour < 16
+
+
+async def _answer_outside_business_hours(
+    session: AsyncSession,
+    settings: Settings,
+    idempotency: RedisIdempotency,
+    message_client: AdminBackendMessageClient,
+    inbound,
+) -> bool:
+    idempotency_key = f"telegram:update:{inbound.update_id}:message:{inbound.message_id}"
+    if await idempotency.is_processed(idempotency_key):
+        return False
+    if not await idempotency.mark_processing(idempotency_key, 86_400):
+        return False
+
+    existing = await session.execute(
+        select(TelegramMessageORM).where(
+            TelegramMessageORM.update_id == inbound.update_id,
+            TelegramMessageORM.direction == "inbound",
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        await idempotency.mark_processed(idempotency_key, 86_400)
+        return False
+
+    inbound_datetime = _message_datetime(inbound.sent_at_epoch)
+    session.add(
+        TelegramMessageORM(
+            update_id=inbound.update_id,
+            chat_id=inbound.chat_id,
+            direction="inbound",
+            message_text=inbound.text,
+            normalized_message_text=normalize_text(inbound.text),
+            message_type="text",
+            telegram_message_id=inbound.message_id,
+            created_at=inbound_datetime,
+        )
+    )
+
+    response_text = BotMessageFactory.outside_business_hours()
+    sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(inbound.chat_id), response_text)
+    session.add(
+        TelegramMessageORM(
+            update_id=0,
+            chat_id=sent_message.chat_id.value,
+            direction="outbound",
+            message_text=sent_message.text_raw,
+            normalized_message_text=sent_message.text_normalized,
+            message_type="text",
+            telegram_message_id=sent_message.message_id,
+            created_at=sent_message.received_at,
+        )
+    )
+    await idempotency.mark_processed(idempotency_key, 86_400)
+    try:
+        await message_client.record_incoming_message(
+            chat_id=str(inbound.chat_id),
+            phone=inbound.phone,
+            body=inbound.text,
+            external_message_id=inbound.external_message_id,
+            sent_at=inbound_datetime.isoformat(),
+        )
+        await message_client.record_bot_message(
+            chat_id=str(inbound.chat_id),
+            body=response_text,
+            external_message_id=f"bot:{inbound.external_message_id}",
+            sent_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync whatsapp outside-hours autoresponse to admin backend")
+    return True
 
 
 async def _answer_whatsapp_call_event(

@@ -29,6 +29,7 @@ class OrderORM(TimestampMixin, Base):
         UniqueConstraint("order_number", name="uq_orders_order_number"),
         Index("ix_orders_chat_id", "chat_id"),
         Index("ix_orders_order_number", "order_number"),
+        Index("ix_orders_fulfillment_status_created_at", "fulfillment_type", "status", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -43,6 +44,7 @@ class OrderORM(TimestampMixin, Base):
     subtotal_cop: Mapped[int] = mapped_column(Integer, nullable=False)
     delivery_price_cop: Mapped[int] = mapped_column(Integer, nullable=False)
     total_cop: Mapped[int] = mapped_column(Integer, nullable=False)
+    fulfillment_type: Mapped[str] = mapped_column(String(20), default="DELIVERY", nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     payment_proof_received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     payment_proof_reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -155,6 +155,49 @@ def test_whatsapp_payload_maps_image_message_to_media() -> None:
     assert media_messages[0].first_name == "Wendy"
 
 
+def test_whatsapp_payload_maps_audio_message_to_media() -> None:
+    payload = WhatsAppWebhookPayload.model_validate(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "573153327502",
+                                        "id": "wamid.AUDIO",
+                                        "timestamp": "1783710000",
+                                        "type": "audio",
+                                        "audio": {
+                                            "id": "audio123",
+                                            "mime_type": "audio/ogg",
+                                            "sha256": "hash-audio",
+                                            "voice": True,
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    text_messages = payload.iter_text_messages()
+    media_messages = payload.iter_media_messages()
+
+    assert text_messages == []
+    assert len(media_messages) == 1
+    assert media_messages[0].chat_id == 573153327502
+    assert media_messages[0].media_id == "audio123"
+    assert media_messages[0].media_type == "audio"
+    assert media_messages[0].mime_type == "audio/ogg"
+    assert media_messages[0].sha256 == "hash-audio"
+    assert media_messages[0].caption is None
+
+
 def test_whatsapp_payload_maps_call_event() -> None:
     payload = WhatsAppWebhookPayload.model_validate(
         {

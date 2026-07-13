@@ -37,6 +37,8 @@ def route_after_intent(state: ConversationGraphState) -> str:
         ConversationIntent.CONFIRMAR_PEDIDO: "confirm_order",
         ConversationIntent.CANCELAR: "cancel_order",
         ConversationIntent.HORARIOS: "show_schedules",
+        ConversationIntent.FUERA_HORARIO: "show_outside_business_hours",
+        ConversationIntent.INICIAR_DOMICILIO: "start_delivery_order",
         ConversationIntent.PEDIR_CANTIDAD: "ask_quantity",
         ConversationIntent.AGREGAR_PRODUCTO: "add_to_cart",
         ConversationIntent.VOLVER: "go_back",

@@ -29,6 +29,13 @@ class WhatsAppImageSchema(BaseModel):
     caption: str | None = None
 
 
+class WhatsAppAudioSchema(BaseModel):
+    id: str
+    mime_type: str | None = None
+    sha256: str | None = None
+    voice: bool | None = None
+
+
 class WhatsAppCallSchema(BaseModel):
     id: str | None = None
     from_phone: str | None = Field(default=None, alias="from")
@@ -53,6 +60,7 @@ class WhatsAppMessageSchema(BaseModel):
     text: WhatsAppTextSchema | None = None
     interactive: WhatsAppInteractiveSchema | None = None
     image: WhatsAppImageSchema | None = None
+    audio: WhatsAppAudioSchema | None = None
 
     @property
     def body(self) -> str:
@@ -189,7 +197,15 @@ class WhatsAppWebhookPayload(BaseModel):
                     if contact.wa_id and contact.profile and contact.profile.name
                 }
                 for message in change.value.messages or []:
-                    if message.type != "image" or message.image is None:
+                    if message.type == "image" and message.image is not None:
+                        media = message.image
+                        media_type = "image"
+                        caption = (message.image.caption or "").strip() or None
+                    elif message.type == "audio" and message.audio is not None:
+                        media = message.audio
+                        media_type = "audio"
+                        caption = None
+                    else:
                         continue
                     phone_digits = _digits_only(message.from_phone)
                     inbound_messages.append(
@@ -199,11 +215,11 @@ class WhatsAppWebhookPayload(BaseModel):
                             chat_id=int(phone_digits),
                             external_message_id=message.id,
                             phone=phone_digits,
-                            media_id=message.image.id,
-                            media_type="image",
-                            mime_type=message.image.mime_type,
-                            sha256=message.image.sha256,
-                            caption=(message.image.caption or "").strip() or None,
+                            media_id=media.id,
+                            media_type=media_type,
+                            mime_type=media.mime_type,
+                            sha256=media.sha256,
+                            caption=caption,
                             sent_at_epoch=_parse_epoch(message.timestamp),
                             first_name=contacts_by_phone.get(message.from_phone)
                             or contacts_by_phone.get(phone_digits),
