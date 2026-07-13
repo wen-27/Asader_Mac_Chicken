@@ -633,9 +633,17 @@ async def _answer_whatsapp_call_event(
 def _whatsapp_call_response_text() -> str:
     return "\n\n".join(
         [
-            "Gracias por comunicarte con ASADERO MC CHICKEN EXPRESS. En este momento solo estamos tomando pedidos por mensaje de WhatsApp.",
-            "Puedes escribir tu pedido directamente, por ejemplo: quiero un pollo asado con una Coca-Cola.",
-            BotMessageFactory.main_menu(),
+            "Gracias por comunicarte con ASADERO MC CHICKEN EXPRESS.",
+            "En este momento no estamos recibiendo llamadas por WhatsApp, pero con gusto te atendemos por este chat.",
+            "Puedes escribir tu pedido directamente o elegir una opcion:",
+            "\n".join(
+                [
+                    "1. Pedir por menu 📋",
+                    "2. Pedir escribiendo ✍️",
+                    "3. Ver carrito 🧾",
+                    "4. Horarios 🕒",
+                ]
+            ),
         ]
     )
 

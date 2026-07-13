@@ -32,6 +32,7 @@ from app.modules.conversations.graph.state import (
     ConversationGraphState,
     CustomerDataState,
 )
+from app.modules.orders.application.payment_proofs import payment_requires_proof
 from app.shared.domain.value_object import ChatId, ProductCode, ProductName
 from app.shared.utils.text_normalizer import normalize_text
 
@@ -924,6 +925,7 @@ async def confirm_order(
             neighborhood=state.customer.neighborhood,
         )
         state.delivery_price_cop = delivery.delivery_price_cop
+    requires_payment_proof = payment_requires_proof(state.customer.payment_method or "")
     try:
         await services.sync_confirmed_order(_admin_order_payload_from_state(state))
     except Exception:
@@ -942,7 +944,7 @@ async def confirm_order(
     state.fulfillment_type = "DELIVERY"
     state.subtotal_cop = 0
     state.total_cop = 0
-    state.response_text = BotMessageFactory.confirmed()
+    state.response_text = BotMessageFactory.confirmed(requires_payment_proof)
     return state
 
 

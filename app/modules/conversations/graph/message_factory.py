@@ -409,8 +409,15 @@ class BotMessageFactory:
         )
 
     @classmethod
-    def confirmed(cls) -> str:
-        return "✅ Pedido confirmado. Gracias por tu compra."
+    def confirmed(cls, requires_payment_proof: bool = False) -> str:
+        if not requires_payment_proof:
+            return "✅ Pedido confirmado. Gracias por tu compra."
+        return "\n\n".join(
+            [
+                "✅ Pedido confirmado. Gracias por tu compra.",
+                "Para poder preparar tu pedido, por favor envianos el comprobante de pago por este mismo chat.",
+            ]
+        )
 
     @classmethod
     def order_confirmation_failed(cls) -> str:
