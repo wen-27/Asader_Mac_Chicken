@@ -26,6 +26,7 @@ NUMBER_WORDS = {
     "un": 1,
     "una": 1,
     "uno": 1,
+    "par": 2,
     "dos": 2,
     "tres": 3,
     "cuatro": 4,
@@ -61,7 +62,17 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "ASADO_ENTERO",
-        ("asado",),
+        (
+            "pollo asado",
+            "pollos asados",
+            "pollito asado",
+            "pollitos asados",
+            "pollitos",
+            "asado",
+            "asados",
+            "asadito",
+            "asaditos",
+        ),
         ("entero", "completo", "uno", "un"),
         ("broaster", "broasted", "broster", "medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
@@ -136,13 +147,25 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "porción de francesas",
             "papa frita",
             "papas fritas",
+            "papita",
+            "papitas",
+            "papitas fritas",
             "fritas",
             "adicional de papas",
             "adicional de papas fritas",
         ),
     ),
     NaturalProductRule("PAPA_SALADA", ("papa salada", "papas saladas", "papa cocida", "yuca salada", "papa o yuca salada")),
-    NaturalProductRule("YUCA_FRITA", ("yuca frita", "yucas fritas", "adicional de yuca frita")),
+    NaturalProductRule(
+        "YUCA_FRITA",
+        (
+            "yuca frita",
+            "yucas fritas",
+            "adicional de yuca frita",
+            "porcion de yuca frita",
+            "porción de yuca frita",
+        ),
+    ),
     NaturalProductRule("BOTELLA_VIDRIO", ("botella vidrio", "botella de vidrio", "envase vidrio")),
     NaturalProductRule("ICOPOR", ("icopor", "icopores", "caja icopor", "cajas icopor")),
     NaturalProductRule(
@@ -246,9 +269,53 @@ def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
         return False
     if not any(_contains_term(text, term) for term in rule.product_terms):
         return False
+    if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(text):
+        return True
     if not rule.size_terms:
         return True
     return any(_contains_term(text, term) for term in rule.size_terms)
+
+
+def _looks_like_whole_roasted_chicken(text: str) -> bool:
+    if not _contains_any_terms(
+        text,
+        (
+            "pollo asado",
+            "pollos asados",
+            "pollito asado",
+            "pollitos asados",
+            "pollitos",
+            "asado",
+            "asados",
+            "asadito",
+            "asaditos",
+        ),
+    ):
+        return False
+    if _contains_any_terms(text, ("medio", "media", "mitad", "cuarto", "cuartos", "3/4", "1/2", "1/4")):
+        return False
+    return _contains_any_terms(
+        text,
+        (
+            "vende",
+            "venden",
+            "regala",
+            "regalas",
+            "necesito",
+            "quiero",
+            "deme",
+            "dame",
+            "me da",
+            "me das",
+            "me hace",
+            "favor",
+            "porfa",
+        ),
+    )
+
+
+def _contains_any_terms(text: str, terms: tuple[str, ...]) -> bool:
+    return any(_contains_term(text, term) for term in terms)
 
 
 def _contains_term(text: str, term: str) -> bool:
@@ -261,6 +328,10 @@ def _contains_term(text: str, term: str) -> bool:
 def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
     # Quantities are interpreted as units before the matched product phrase:
     # "dos papas" => quantity 2, while "medio pollo" remains one ASADO_MEDIO.
+    for term in rule.product_terms + rule.size_terms:
+        normalized_term = _normalize_for_matching(term)
+        if normalized_term and _contains_term(text, f"par de {normalized_term}"):
+            return 2
     positions = [
         text.find(_normalize_for_matching(term))
         for term in rule.product_terms + rule.size_terms
@@ -271,7 +342,14 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
     tokens = prefix.split()
     if not tokens:
         return 1
-    last = tokens[-1]
-    if last.isdigit():
-        return max(1, int(last))
-    return NUMBER_WORDS.get(last, 1)
+    if "par" in tokens[max(0, len(tokens) - 5) :]:
+        return 2
+    for token in reversed(tokens[-4:]):
+        if token in {"con", "y", "mas", "más"}:
+            return 1
+        if token.isdigit():
+            return max(1, int(token))
+        value = NUMBER_WORDS.get(token)
+        if value is not None:
+            return value
+    return 1

@@ -107,6 +107,9 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if _looks_like_customer_gave_up(text):
+        state.intent = ConversationIntent.CANCELAR
+        return state
     if _looks_like_pickup_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "PICKUP"
@@ -124,6 +127,17 @@ async def detect_intent(
     # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
     if _is_back_request(text):
         state.intent = ConversationIntent.VOLVER
+        return state
+    query = _classify_business_query(text)
+    if query is not None and _looks_like_question(text):
+        # Questions such as "les queda lasagna?" must be answered from the
+        # catalog instead of being treated as a greeting.
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = query[0]
+        state.query_value = query[1]
+        return state
+    if parsed_rules.items:
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if state.current_step == ConversationState.POST_ADD and _is_main_menu_request(text):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
@@ -180,17 +194,6 @@ async def detect_intent(
         state.quantity = _extract_positive_integer(text) or 0
         return state
     if _detect_numbered_menu_intent(state):
-        return state
-    query = _classify_business_query(text)
-    if query is not None and _looks_like_question(text):
-        # Questions such as "cuanto vale medio pollo" must answer information,
-        # not mutate the cart just because they mention a product.
-        state.intent = ConversationIntent.RESPONDER_CONSULTA
-        state.query_type = query[0]
-        state.query_value = query[1]
-        return state
-    if parsed_rules.items:
-        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if state.current_step == ConversationState.POST_ADD:
         # After adding an item, short commands such as "3" or "finalizar" should
@@ -675,9 +678,17 @@ def _extract_customer_data_from_free_lines(
 ) -> None:
     # Customers usually send checkout data as loose lines, not as a strict form.
     # Detect strong signals first, then assign the remaining human text by order.
+    if customer.name and _is_greeting_only(normalize_text(customer.name)):
+        customer.name = None
+    if customer.neighborhood and _is_greeting_only(normalize_text(customer.neighborhood)):
+        customer.neighborhood = None
+    if customer.observations and _is_greeting_only(normalize_text(customer.observations)):
+        customer.observations = None
     remaining: list[str] = []
     for line in lines:
         normalized = normalize_text(line)
+        if _is_ignorable_checkout_line(normalized):
+            continue
         if fulfillment_type == "PICKUP":
             if not customer.phone and _looks_like_phone(line):
                 customer.phone = line
@@ -763,6 +774,15 @@ def _looks_like_empty_note(normalized: str) -> bool:
         "no",
         "n/a",
         "na",
+    }
+
+
+def _is_ignorable_checkout_line(normalized: str) -> bool:
+    return _is_greeting_only(normalized) or normalized in {
+        "gracias",
+        "muchas gracias",
+        "por favor",
+        "porfa",
     }
 
 
@@ -1526,11 +1546,11 @@ def _is_close_word(value: str, expected: str) -> bool:
 
 
 def _is_main_menu_request(text: str) -> bool:
-    return text in {"hola", "inicio", "empezar"} or _contains_any(
+    if _is_greeting_only(text):
+        return True
+    return text in {"inicio", "empezar"} or _contains_any(
         text,
         (
-            "hola buenas",
-            "buenas",
             "menu principal",
             "menú principal",
             "menu inicial",
@@ -1538,6 +1558,45 @@ def _is_main_menu_request(text: str) -> bool:
             "menu de inicio",
             "menú de inicio",
             "inicio",
+        ),
+    )
+
+
+def _is_greeting_only(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "hola",
+        "buenas",
+        "buenos dias",
+        "buen dia",
+        "buenas tardes",
+        "buenas noches",
+        "hola buenos dias",
+        "hola buen dia",
+        "hola buenas",
+        "hola buenas tardes",
+        "hola buenas noches",
+    }
+
+
+def _looks_like_customer_gave_up(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return _contains_any(
+        normalized,
+        (
+            "ya no",
+            "ya lo pedi",
+            "ya lo pedí",
+            "lo pedi por telefono",
+            "lo pedí por teléfono",
+            "pedi por telefono",
+            "pedí por teléfono",
+            "ya llame",
+            "ya llamé",
+            "no gracias",
+            "cancele",
+            "cancelar",
+            "cancela",
         ),
     )
 
@@ -1840,7 +1899,10 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
         return ("price", text)
-    if any(word in text for word in ["tienes", "tiene", "hay", "venden", "manejan"]):
+    if any(
+        word in text
+        for word in ["tienes", "tiene", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
+    ):
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
         if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
@@ -1849,7 +1911,7 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("category", "asado")
         if any(word in text for word in ["broaster", "broasted", "broster"]):
             return ("category", "broaster")
-        if any(word in text for word in ["especial", "especiales", "lasagna", "maduro"]):
+        if any(word in text for word in ["especial", "especiales", "lasagna", "lasana", "lasaña", "maduro"]):
             return ("category", "especiales")
     return None
 
@@ -1940,6 +2002,12 @@ def _looks_like_question(text: str) -> bool:
             "precio",
             "valor",
             "domicilio",
+            "queda",
+            "quedan",
+            "quedo",
+            "quedó",
+            "venden",
+            "manejan",
         ]
     )
 

@@ -428,7 +428,10 @@ class BotMessageFactory:
 
     @classmethod
     def cancelled(cls) -> str:
-        return "Listo, cancele el pedido actual. Cuando quieras empezamos de nuevo."
+        return (
+            "Listo, cancele el pedido actual. Gracias por avisarnos. "
+            "Cuando quieras hacer un pedido nuevo, aqui estoy para atenderte con mucho gusto."
+        )
 
     @classmethod
     def natural_language_fallback(cls) -> str:

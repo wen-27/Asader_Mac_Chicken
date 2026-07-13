@@ -53,6 +53,12 @@ class FakeProductRepository:
                 category=ProductCategory.BEBIDAS,
                 price=MoneyCOP(8500),
             ),
+            "YUCA_FRITA": Product(
+                code=ProductCode("YUCA_FRITA"),
+                name=ProductName("Yuca frita"),
+                category=ProductCategory.ADICIONALES,
+                price=MoneyCOP(5000),
+            ),
             "LASAGNA_MIXTA": Product(
                 code=ProductCode("LASAGNA_MIXTA"),
                 name=ProductName("Lasagna Mixta"),
@@ -161,6 +167,39 @@ def test_rule_based_parser_ignores_polite_greeting_and_extracts_all_products() -
         ("JUGO_HIT_PERSONAL", 1),
         ("SOPA_ADICIONAL", 1),
     ]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Me hace el favor y me vende 2 pollos asados", [("ASADO_ENTERO", 2)]),
+        ("me vendes dos pollos asados por favor", [("ASADO_ENTERO", 2)]),
+        ("deme dos asados", [("ASADO_ENTERO", 2)]),
+        ("me regalas un par de pollos asados", [("ASADO_ENTERO", 2)]),
+        ("buenas me das dos pollitos asados", [("ASADO_ENTERO", 2)]),
+        ("porfa un asadito con papitas", [("ASADO_ENTERO", 1), ("PAPA_FRANCESA", 1)]),
+        ("necesito 1 asado y dos porciones de yuca frita", [("ASADO_ENTERO", 1), ("YUCA_FRITA", 2)]),
+        (
+            "Buenas tardes me regalas porfa un pollo asado con yuca frita",
+            [("ASADO_ENTERO", 1), ("YUCA_FRITA", 1)],
+        ),
+        (
+            "hola buen dia seria un pollo asado una coca cola 1.5 y papitas",
+            [("ASADO_ENTERO", 1), ("COCA_COLA_15", 1), ("PAPA_FRANCESA", 1)],
+        ),
+        (
+            "me colabora con medio broaster y una sopita",
+            [("BROASTER_MEDIO", 1), ("SOPA_ADICIONAL", 1)],
+        ),
+    ],
+)
+def test_rule_based_parser_understands_real_customer_polite_orders(
+    message: str,
+    expected: list[tuple[str, int]],
+) -> None:
+    parsed = parse_natural_order_rules(message)
+
+    assert [(item.code, item.quantity) for item in parsed.items] == expected
 
 
 def test_rule_based_parser_understands_generic_papas_as_francesa() -> None:
