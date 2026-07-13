@@ -51,7 +51,10 @@ from app.modules.telegram.infrastructure.sqlalchemy_message_repository import (
     SqlAlchemyTelegramMessageRepository,
 )
 from app.modules.admin.realtime import admin_realtime_hub
-from app.modules.orders.application.payment_proofs import mark_payment_proof_received_for_chat
+from app.modules.orders.application.payment_proofs import (
+    PAYMENT_PROOF_RECEIVED_TEXT,
+    mark_payment_proof_received_for_chat,
+)
 from app.modules.orders.infrastructure.admin_backend_order_client import AdminBackendOrderClient
 from app.modules.orders.infrastructure.models import OrderORM
 from app.modules.orders.infrastructure.sqlalchemy_order_repository import SqlAlchemyOrderRepository
@@ -184,7 +187,7 @@ async def whatsapp_webhook(
             )
             await session.flush()
             await idempotency.mark_processed(idempotency_key, 86_400)
-            await mark_payment_proof_received_for_chat(
+            payment_proof_count = await mark_payment_proof_received_for_chat(
                 session,
                 settings,
                 inbound_media.chat_id,
@@ -210,6 +213,13 @@ async def whatsapp_webhook(
                         "url": f"/api/media/whatsapp/{inbound_media.media_id}",
                     },
                 )
+                if payment_proof_count:
+                    await message_client.record_bot_message(
+                        chat_id=str(inbound_media.chat_id),
+                        body=PAYMENT_PROOF_RECEIVED_TEXT,
+                        external_message_id=f"bot:proof:{inbound_media.external_message_id}",
+                        sent_at=datetime.now(timezone.utc).isoformat(),
+                    )
             except Exception:
                 logger.exception("failed to sync incoming whatsapp media to admin backend")
             if inbound_media.media_type == "audio":

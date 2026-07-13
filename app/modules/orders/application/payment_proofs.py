@@ -76,10 +76,9 @@ async def mark_payment_proof_received_for_chat(
     client = _whatsapp_client_or_none(settings)
     for order in orders:
         order.payment_proof_received_at = received_at
-        if client is None:
-            continue
+    if client is not None:
         try:
-            sent_message = await client.send_text_message(ChatId(order.chat_id), PAYMENT_PROOF_RECEIVED_TEXT)
+            sent_message = await client.send_text_message(ChatId(chat_id), PAYMENT_PROOF_RECEIVED_TEXT)
             session.add(
                 TelegramMessageORM(
                     update_id=0,
@@ -93,7 +92,7 @@ async def mark_payment_proof_received_for_chat(
                 )
             )
         except Exception:
-            logger.exception("failed to send payment proof received message order_id=%s", order.id)
+            logger.exception("failed to send payment proof received message chat_id=%s", chat_id)
     await session.flush()
     await admin_realtime_hub.broadcast({"type": "orders.changed"})
     await admin_realtime_hub.broadcast({"type": "conversations.changed", "chatId": str(chat_id)})

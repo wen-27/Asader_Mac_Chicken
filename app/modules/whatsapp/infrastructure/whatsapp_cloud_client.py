@@ -31,6 +31,8 @@ class WhatsAppCloudClient:
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
         payload = _confirmation_buttons_payload(chat_id, text)
         if payload is None:
+            payload = _stock_alternative_buttons_payload(chat_id, text)
+        if payload is None:
             payload = {
                 "messaging_product": "whatsapp",
                 "to": str(chat_id.value),
@@ -130,6 +132,32 @@ def _confirmation_body_text(text: str) -> str:
         "",
     )
     return body.strip()
+
+
+def _stock_alternative_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "¿Quieres seguir con esta opcion o prefieres ver el menu?" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "stock_alternative_yes", "title": "Sí"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "stock_alternative_menu", "title": "Ver menú"},
+                    },
+                ]
+            },
+        },
+    }
 
 
 def _yes_no_buttons_payload(chat_id: ChatId, text: str, yes_id: str, no_id: str) -> dict[str, object]:

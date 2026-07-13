@@ -162,6 +162,18 @@ async def detect_intent(
         state.selected_chicken_part = None
         state.intent = ConversationIntent.PEDIR_CANTIDAD
         return state
+    if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE:
+        if _is_yes_reply(text):
+            state.intent = ConversationIntent.PEDIR_CANTIDAD
+            return state
+        if text in {"0", "no"} or _contains_command(text, ("ver menu", "ver menú", "menu", "menú", "otra opcion", "otra opción")):
+            state.intent = ConversationIntent.VER_MENU
+            return state
+        state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+        state.response_text = BotMessageFactory.stock_alternative_invalid(
+            _display_product_name(state.selected_product_name, state.selected_chicken_part)
+        )
+        return state
     if state.current_step == ConversationState.ASK_QUANTITY:
         state.intent = ConversationIntent.AGREGAR_PRODUCTO
         state.quantity = _extract_positive_integer(text) or 0
@@ -391,12 +403,7 @@ async def validate_product_availability(
         return state
     availability = await _evaluate_product_availability(product, services)
     if not availability.is_available:
-        state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-        state.response_text = BotMessageFactory.product_unavailable(
-            availability.product_name,
-            availability.alternatives,
-            availability.reason,
-        )
+        await _prepare_unavailable_response(state, services, availability)
     return state
 
 
@@ -439,12 +446,7 @@ async def ask_quantity(
                 state.selected_chicken_part,
             )
             if not availability.is_available:
-                state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-                state.response_text = BotMessageFactory.product_unavailable(
-                    availability.product_name,
-                    availability.alternatives,
-                    availability.reason,
-                )
+                await _prepare_unavailable_response(state, services, availability)
                 return state
     state.current_step = ConversationState.ASK_QUANTITY
     state.response_text = BotMessageFactory.ask_quantity(
@@ -473,11 +475,7 @@ async def add_to_cart(
         state.selected_chicken_part or session.selected_chicken_part,
     )
     if not availability.is_available:
-        state.response_text = BotMessageFactory.product_unavailable(
-            availability.product_name,
-            availability.alternatives,
-            availability.reason,
-        )
+        await _prepare_unavailable_response(state, services, availability)
         return state
     if state.selected_chicken_part:
         session.selected_chicken_part = state.selected_chicken_part
@@ -1120,6 +1118,7 @@ async def go_back(
         ConversationState.ASK_CHICKEN_PART,
         ConversationState.ASK_PRODUCT_VARIANT,
         ConversationState.ASK_SIDE_EXTRA,
+        ConversationState.ASK_STOCK_ALTERNATIVE,
         ConversationState.ASK_QUANTITY,
         ConversationState.POST_ADD,
     }:
@@ -1261,6 +1260,7 @@ async def _add_natural_order_to_cart(
     added_lines: list[CartLineState] = []
     restricted_product_name: str | None = None
     restricted_alternatives: tuple[str, ...] = ()
+    restricted_recommendation = None
     restricted_reason = "out_of_stock"
     sauce_note = _extract_sauce_note(state.normalized_text)
     if sauce_note:
@@ -1274,6 +1274,7 @@ async def _add_natural_order_to_cart(
         if not availability.is_available:
             restricted_product_name = availability.product_name
             restricted_alternatives = availability.alternatives
+            restricted_recommendation = getattr(availability, "recommended_alternative", None)
             restricted_reason = availability.reason
             continue
         product_variant = _extract_product_variant(item.code, state.normalized_text)
@@ -1296,6 +1297,7 @@ async def _add_natural_order_to_cart(
             if not availability.is_available:
                 restricted_product_name = availability.product_name
                 restricted_alternatives = availability.alternatives
+                restricted_recommendation = getattr(availability, "recommended_alternative", None)
                 restricted_reason = availability.reason
                 continue
         chicken_part = _extract_chicken_selection(item.code, state.normalized_text)
@@ -1316,6 +1318,7 @@ async def _add_natural_order_to_cart(
             if not availability.is_available:
                 restricted_product_name = availability.product_name
                 restricted_alternatives = availability.alternatives
+                restricted_recommendation = getattr(availability, "recommended_alternative", None)
                 restricted_reason = availability.reason
                 continue
         selected_variant = chicken_part or product_variant
@@ -1333,12 +1336,17 @@ async def _add_natural_order_to_cart(
 
     if not added_lines:
         if restricted_product_name:
-            state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-            state.response_text = BotMessageFactory.product_unavailable(
-                restricted_product_name,
-                restricted_alternatives,
-                restricted_reason,
-            )
+            fallback_availability = type(
+                "AvailabilityResult",
+                (),
+                {
+                    "product_name": restricted_product_name,
+                    "alternatives": restricted_alternatives,
+                    "recommended_alternative": restricted_recommendation,
+                    "reason": restricted_reason,
+                },
+            )()
+            await _prepare_unavailable_response(state, services, fallback_availability)
         return []
     if _needs_side_extra_clarification(state.normalized_text):
         session.clear_selected_product()
@@ -1501,6 +1509,10 @@ def _contains_command(text: str, commands: tuple[str, ...]) -> bool:
             if all(_is_close_word(word, expected) for word, expected in zip(window, command_tokens)):
                 return True
     return False
+
+
+def _is_yes_reply(text: str) -> bool:
+    return text.strip() in {"1", "si", "sí", "s", "ok", "dale", "listo", "confirmo"}
 
 
 def _is_close_word(value: str, expected: str) -> bool:
@@ -1754,9 +1766,47 @@ async def _evaluate_product_availability(
             "is_available": is_available,
             "product_name": _display_product_name(product.name.value, variant_label),
             "alternatives": (),
+            "recommended_alternative": None,
             "reason": "available" if is_available else "restricted",
         },
     )()
+
+
+async def _prepare_unavailable_response(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    availability,
+) -> None:
+    state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+    recommended = getattr(availability, "recommended_alternative", None)
+    if recommended is None:
+        state.response_text = BotMessageFactory.product_unavailable(
+            availability.product_name,
+            availability.alternatives,
+            availability.reason,
+        )
+        return
+
+    product = await services.find_product(recommended.product_code)
+    if product is None:
+        state.response_text = BotMessageFactory.product_unavailable(
+            availability.product_name,
+            availability.alternatives,
+            availability.reason,
+        )
+        return
+
+    state.selected_product_code = product.code.value
+    state.selected_product_name = product.name.value
+    state.selected_chicken_part = recommended.variant_label
+    state.selected_unit_price_cop = product.price.amount
+    state.current_step = ConversationState.ASK_STOCK_ALTERNATIVE
+    state.response_text = BotMessageFactory.stock_alternative_prompt(
+        availability.product_name,
+        recommended.label,
+        availability.reason,
+    )
+    await _persist_step(state, services)
 
 
 async def _soup_is_available(services: ConversationGraphServices) -> bool:

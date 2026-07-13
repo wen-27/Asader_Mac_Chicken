@@ -151,6 +151,35 @@ class BotMessageFactory:
         return "\n".join(lines)
 
     @classmethod
+    def stock_alternative_prompt(
+        cls,
+        unavailable_product_name: str,
+        recommended_product_name: str,
+        reason: str = "out_of_stock",
+    ) -> str:
+        if reason == "restricted":
+            first_line = f"⚠️ {unavailable_product_name} solo esta disponible fines de semana o lunes festivos."
+        else:
+            first_line = f"⚠️ {unavailable_product_name} no esta disponible en este momento."
+        return "\n\n".join(
+            [
+                first_line,
+                f"Te puedo ofrecer {recommended_product_name}, que es la opcion mas cercana disponible.",
+                "¿Quieres seguir con esta opcion o prefieres ver el menu?",
+            ]
+        )
+
+    @classmethod
+    def stock_alternative_invalid(cls, recommended_product_name: str | None = None) -> str:
+        option = recommended_product_name or "la opcion recomendada"
+        return "\n\n".join(
+            [
+                f"Responde Si para seguir con {option}.",
+                "Tambien puedes responder Ver menu para escoger otra opcion.",
+            ]
+        )
+
+    @classmethod
     def product_not_found(cls) -> str:
         return "No encontre ese producto. Escribe menu para ver las opciones disponibles."
 

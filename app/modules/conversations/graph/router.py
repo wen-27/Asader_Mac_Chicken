@@ -43,6 +43,8 @@ def route_after_intent(state: ConversationGraphState) -> str:
         ConversationIntent.AGREGAR_PRODUCTO: "add_to_cart",
         ConversationIntent.VOLVER: "go_back",
         ConversationIntent.RESPONDER_CONSULTA: "answer_query",
+        ConversationIntent.PRODUCTO_RESTRINGIDO: "send_telegram_response",
+        ConversationIntent.PRODUCTO_INEXISTENTE: "send_telegram_response",
     }
     route = routes.get(_value(state, "intent"))
     if route is not None:

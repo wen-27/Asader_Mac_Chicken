@@ -27,7 +27,15 @@ class AvailabilityResult:
     is_available: bool
     product_name: str
     alternatives: tuple[str, ...] = ()
+    recommended_alternative: "StockAlternative | None" = None
     reason: str = "available"
+
+
+@dataclass(frozen=True)
+class StockAlternative:
+    product_code: str
+    variant_label: str | None
+    label: str
 
 
 class StockControlRepository(Protocol):
@@ -71,6 +79,12 @@ class OperationalAvailabilityService:
                 is_available=False,
                 product_name=_display_name(product, variant_label),
                 alternatives=self.alternatives_for_controls(controls, product.code.value, variant_label, business_date),
+                recommended_alternative=self.recommended_alternative_for_controls(
+                    controls,
+                    product.code.value,
+                    variant_label,
+                    business_date,
+                ),
                 reason="restricted",
             )
 
@@ -80,6 +94,12 @@ class OperationalAvailabilityService:
                 is_available=False,
                 product_name=_display_name(product, variant_label),
                 alternatives=self.alternatives_for_controls(controls, "ASADO_FAMILY", variant_label, business_date),
+                recommended_alternative=self.recommended_alternative_for_controls(
+                    controls,
+                    "ASADO_FAMILY",
+                    variant_label,
+                    business_date,
+                ),
                 reason="out_of_stock",
             )
 
@@ -89,6 +109,12 @@ class OperationalAvailabilityService:
                 is_available=False,
                 product_name=_display_name(product, variant_label),
                 alternatives=self.alternatives_for_controls(controls, product_code, variant_label, business_date),
+                recommended_alternative=self.recommended_alternative_for_controls(
+                    controls,
+                    product_code,
+                    variant_label,
+                    business_date,
+                ),
                 reason="out_of_stock",
             )
 
@@ -98,6 +124,12 @@ class OperationalAvailabilityService:
                 is_available=False,
                 product_name=_display_name(product, variant_label),
                 alternatives=self.alternatives_for_controls(controls, product_code, variant_label, business_date),
+                recommended_alternative=self.recommended_alternative_for_controls(
+                    controls,
+                    product_code,
+                    variant_label,
+                    business_date,
+                ),
                 reason="out_of_stock",
             )
 
@@ -129,6 +161,29 @@ class OperationalAvailabilityService:
             if _is_effectively_enabled(controls, code)
             and self._is_allowed_by_calendar(code, business_date)
         )
+
+    def recommended_alternative_for_controls(
+        self,
+        controls: dict[str, StockControl],
+        product_code: str,
+        variant_label: str | None = None,
+        business_date: date | None = None,
+    ) -> StockAlternative | None:
+        alternatives = _ALTERNATIVES.get(stock_code_for_variant(product_code, variant_label) or product_code, ())
+        for code, label in alternatives:
+            if not _is_effectively_enabled(controls, code):
+                continue
+            if not self._is_allowed_by_calendar(code, business_date):
+                continue
+            selection = product_selection_for_stock_code(code)
+            if selection is None:
+                continue
+            return StockAlternative(
+                product_code=selection[0],
+                variant_label=selection[1],
+                label=label,
+            )
+        return None
 
     async def soup_is_available(self) -> bool:
         controls = await self._controls_by_code()
@@ -179,6 +234,20 @@ def stock_code_for_variant(product_code: str, variant_label: str | None) -> str 
         if normalized_variant == "2 pechugas y 1 pierna":
             return "BROASTER_34_2PECHUGAS_1PIERNA"
     return None
+
+
+def product_selection_for_stock_code(stock_code: str) -> tuple[str, str | None] | None:
+    stock_selection = {
+        "ASADO_CUARTO_PIERNA": ("ASADO_CUARTO", "Pierna"),
+        "ASADO_CUARTO_PECHUGA": ("ASADO_CUARTO", "Pechuga"),
+        "BROASTER_CUARTO_PIERNA": ("BROASTER_CUARTO", "Pierna"),
+        "BROASTER_CUARTO_PECHUGA": ("BROASTER_CUARTO", "Pechuga"),
+        "ASADO_34_2PIERNAS_1PECHUGA": ("ASADO_34", "2 piernas y 1 pechuga"),
+        "ASADO_34_2PECHUGAS_1PIERNA": ("ASADO_34", "2 pechugas y 1 pierna"),
+        "BROASTER_34_2PIERNAS_1PECHUGA": ("BROASTER_34", "2 piernas y 1 pechuga"),
+        "BROASTER_34_2PECHUGAS_1PIERNA": ("BROASTER_34", "2 pechugas y 1 pierna"),
+    }
+    return stock_selection.get(stock_code) or (stock_code, None)
 
 
 def _is_enabled(controls: dict[str, StockControl], code: str) -> bool:
