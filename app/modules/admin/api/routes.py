@@ -18,6 +18,7 @@ from app.modules.admin.infrastructure.passwords import verify_password
 from app.modules.admin.realtime import admin_realtime_hub
 from app.modules.orders.application.payment_proofs import ensure_payment_proof_status, payment_proof_missing, payment_requires_proof
 from app.modules.orders.infrastructure.models import OrderORM
+from app.modules.orders.infrastructure.thermal_printer import ThermalPrinterError, print_order_receipt
 from app.modules.telegram.infrastructure.models import TelegramMessageORM
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
 from app.shared.domain.value_object import ChatId
@@ -166,6 +167,28 @@ async def get_order(
 ) -> dict[str, object]:
     await _require_admin(request, session)
     order = await _find_order(session, order_id)
+    return {"data": _order_payload(order)}
+
+
+@router.post("/admin/orders/{order_id}/print")
+async def print_order(
+    order_id: str,
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> dict[str, object]:
+    await _require_admin(request, session)
+    order = await _find_order(session, order_id)
+    try:
+        await print_order_receipt(order, settings.thermal_printer_name)
+    except ThermalPrinterError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No se pudo imprimir en {settings.thermal_printer_name}: {exc}",
+        ) from exc
+    order.printed_at = datetime.now(timezone.utc)
+    await session.commit()
+    await admin_realtime_hub.broadcast({"type": "orders.changed", "orderId": order.order_number})
     return {"data": _order_payload(order)}
 
 

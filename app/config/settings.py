@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     admin_backend_sync_enabled: bool = False
     admin_backend_timeout_seconds: float = 3.0
 
+    thermal_printer_name: str = "MCCHICKEN"
+
     log_level: str = "INFO"
 
     @field_validator("bot_database_schema")
