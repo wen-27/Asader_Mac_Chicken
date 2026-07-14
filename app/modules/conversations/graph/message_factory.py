@@ -245,6 +245,21 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def ambiguous_drink_clarification(cls, quantity: int | None = None) -> str:
+        prefix = (
+            f"Veo que tambien quieres {quantity} gaseosas."
+            if quantity and quantity > 1
+            else "Veo que tambien quieres una gaseosa."
+        )
+        return (
+            f"{prefix} Para no agregarte una bebida equivocada, dime cual deseas:\n\n"
+            "1. Coca-Cola personal 400 ml\n"
+            "2. Coca-Cola 1.5 L\n"
+            "3. Gaseosa 2.5 L\n"
+            "4. Jugos Hit personal"
+        )
+
+    @classmethod
     def natural_order_added_with_side_question(
         cls,
         lines: list[CartLineState],

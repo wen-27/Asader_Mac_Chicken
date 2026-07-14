@@ -1419,6 +1419,29 @@ async def test_graph_preserves_free_line_customer_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_graph_extracts_single_line_customer_data_with_address_and_payment() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Gladys 3168552291 carrea28a No 105 33 el Manatial efectivo",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result.get("errors") in (None, [])
+    assert "Datos recibidos" in result["response_text"]
+    assert "Cliente: Gladys" in result["response_text"]
+    assert "Telefono: 3168552291" in result["response_text"]
+    assert "Direccion: carrea28a No 105 33" in result["response_text"]
+    assert "Barrio: el Manatial" in result["response_text"]
+    assert "Pago: Efectivo" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_graph_adds_natural_order_items_to_cart() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -1446,6 +1469,48 @@ async def test_graph_adds_natural_order_items_to_cart() -> None:
     assert "1 x Coca-Cola 1.5 L" in result["response_text"]
     assert "Total acumulado: $53000" in result["response_text"]
     assert len(services.session.cart) == 2
+
+
+@pytest.mark.asyncio
+async def test_natural_order_with_ambiguous_gaseosas_asks_drink_type() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Un pollos asado con 2 gaseosas")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "tambien quieres 2 gaseosas" in result["response_text"]
+    assert "dime cual deseas" in result["response_text"]
+    assert "Coca-Cola 1.5 L" in result["response_text"]
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "En cuanto tiempo me despachan?",
+        "En cuanto tiempo se demora",
+        "cuanto se demora mi pedido",
+    ],
+)
+async def test_order_timing_questions_answer_without_fallback(raw_text: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert "40 minutos o menos" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
 
 
 @pytest.mark.asyncio

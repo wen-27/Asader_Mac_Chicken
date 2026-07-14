@@ -635,7 +635,11 @@ async def extract_customer_data(
         }:
             customer.observations = value
     if free_lines:
-        _extract_customer_data_from_free_lines(customer, free_lines, state.fulfillment_type)
+        _extract_customer_data_from_free_lines(
+            customer,
+            _expand_checkout_free_lines(free_lines),
+            state.fulfillment_type,
+        )
     state.customer = customer
     return state
 
@@ -732,6 +736,67 @@ def _extract_customer_data_from_free_lines(
         customer.observations = " ".join(remaining)
 
 
+def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for line in lines:
+        split_line = _split_composite_checkout_line(line)
+        expanded.extend(split_line or [line])
+    return expanded
+
+
+def _split_composite_checkout_line(line: str) -> list[str] | None:
+    normalized = normalize_text(line)
+    if "\n" in line or not _looks_like_phone(line) and not re.search(r"\b3\d{9}\b", line):
+        return None
+    payment = _extract_payment_from_text(normalized)
+    if payment is None:
+        return None
+    phone_match = re.search(r"\b3\d{9}\b", line)
+    if phone_match is None:
+        return None
+    before_phone = line[: phone_match.start()].strip(" ,.-")
+    after_phone = line[phone_match.end() :].strip(" ,.-")
+    if not before_phone or not after_phone:
+        return None
+    after_without_payment = re.sub(
+        r"\b(efectivo|datafono|datáfono|nequi|transferencia(?:\s+bancolombia)?|bancolombia)\b",
+        "",
+        after_phone,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
+    address, neighborhood = _split_address_and_neighborhood(after_without_payment)
+    if not address or not neighborhood:
+        return None
+    return [before_phone, phone_match.group(0), address, neighborhood, payment]
+
+
+def _extract_payment_from_text(normalized: str) -> str | None:
+    if "nequi" in normalized:
+        return "Nequi"
+    if "datafono" in normalized or "datáfono" in normalized:
+        return "Datafono"
+    if "transferencia" in normalized or "bancolombia" in normalized:
+        return "Transferencia Bancolombia"
+    if "efectivo" in normalized:
+        return "Efectivo"
+    return None
+
+
+def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
+    words = text.split()
+    if len(words) < 3:
+        return (text or None, None)
+    last_number_index = -1
+    for index, word in enumerate(words):
+        if re.search(r"\d", word):
+            last_number_index = index
+    if last_number_index < 0 or last_number_index >= len(words) - 1:
+        return (text, None)
+    address = " ".join(words[: last_number_index + 1]).strip()
+    neighborhood = " ".join(words[last_number_index + 1 :]).strip()
+    return (address or None, neighborhood or None)
+
+
 def _looks_like_phone(text: str) -> bool:
     if _looks_like_address(normalize_text(text)):
         return False
@@ -743,6 +808,7 @@ def _looks_like_address(normalized: str) -> bool:
     address_markers = {
         "cra",
         "carrera",
+        "carrea",
         "calle",
         "cll",
         "cl",
@@ -760,7 +826,11 @@ def _looks_like_address(normalized: str) -> bool:
         "#",
     }
     tokens = set(normalized.replace("#", " # ").split())
-    return bool(tokens & address_markers) or ("#" in normalized and any(ch.isdigit() for ch in normalized))
+    return (
+        bool(tokens & address_markers)
+        or ("#" in normalized and any(ch.isdigit() for ch in normalized))
+        or re.search(r"\b(cra|cr|carrera|carrea|calle|cll|cl)\s*\d", normalized) is not None
+    )
 
 
 def _looks_like_payment_method(normalized: str) -> bool:
@@ -1040,6 +1110,14 @@ async def fallback_natural_language(
                 added_lines,
                 state.subtotal_cop,
             )
+            ambiguous_drink_quantity = _ambiguous_drink_quantity(state.normalized_text)
+            if ambiguous_drink_quantity:
+                state.response_text = "\n\n".join(
+                    [
+                        state.response_text,
+                        BotMessageFactory.ambiguous_drink_clarification(ambiguous_drink_quantity),
+                    ]
+                )
             return state
         if state.response_text:
             return state
@@ -1504,6 +1582,42 @@ def _looks_like_natural_order(text: str) -> bool:
             "también",
         ]
     )
+
+
+def _ambiguous_drink_quantity(text: str) -> int | None:
+    if not _contains_any(text, ("gaseosa", "gaseosas", "bebida", "bebidas")):
+        return None
+    if _contains_any(
+        text,
+        (
+            "coca",
+            "cocacola",
+            "coca cola",
+            "quatro",
+            "kola",
+            "pepsi",
+            "colombiana",
+            "pina",
+            "piña",
+            "hit",
+            "jugo",
+            "agua",
+        ),
+    ):
+        return None
+    match = re.search(r"(?:(\d+)|un|una|dos|tres|cuatro|cinco)\s+(?:gaseosas?|bebidas?)", text)
+    if not match:
+        return 1
+    if match.group(1):
+        return int(match.group(1))
+    return {
+        "un": 1,
+        "una": 1,
+        "dos": 2,
+        "tres": 3,
+        "cuatro": 4,
+        "cinco": 5,
+    }.get(match.group(0).split()[0], 1)
 
 
 def _extract_sauce_note(text: str) -> str | None:
@@ -2065,11 +2179,29 @@ def _looks_like_order_status_query(text: str) -> bool:
         "llegar",
         "despacho",
         "despachar",
+        "despachan",
         "como va",
         "cómo va",
     )
     product_terms = ("pollo", "pedido", "domicilio", "comida")
-    return _contains_any(text, status_terms) and _contains_any(text, product_terms)
+    direct_time_question = _contains_any(
+        text,
+        (
+            "cuanto se demora",
+            "cuánto se demora",
+            "cuanto demora",
+            "cuánto demora",
+            "en cuanto tiempo",
+            "en cuánto tiempo",
+            "cuanto tiempo",
+            "cuánto tiempo",
+            "cuando llega",
+            "cuándo llega",
+        ),
+    )
+    return direct_time_question or (
+        _contains_any(text, status_terms) and _contains_any(text, product_terms)
+    )
 
 
 def _looks_like_new_order_request(text: str) -> bool:

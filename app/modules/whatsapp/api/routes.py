@@ -1047,6 +1047,7 @@ def _is_order_timing_query(text: str) -> bool:
         "estado",
         "despacho",
         "despachado",
+        "despachan",
     )
     order_terms = ("pedido", "domicilio", "orden", "pollo", "comida")
     direct_time_question = any(
@@ -1058,6 +1059,10 @@ def _is_order_timing_query(text: str) -> bool:
             "cuánto se demora",
             "cuánto demora",
             "cuánto tarda",
+            "en cuanto tiempo",
+            "en cuánto tiempo",
+            "cuanto tiempo",
+            "cuánto tiempo",
             "cuando llega",
             "cuándo llega",
         )
