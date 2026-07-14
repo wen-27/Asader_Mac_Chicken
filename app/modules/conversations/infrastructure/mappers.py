@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from app.modules.cart.domain.cart_item import CartItem
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.telegram_session import TelegramSession
@@ -12,7 +10,7 @@ from app.shared.domain.money import MoneyCOP
 from app.shared.domain.value_object import ChatId, ProductCode, ProductName
 
 
-PENDING_ORDER_PREFIX = "__pending_order__:"
+PENDING_ORDER_MARKER = "__pending_order__"
 
 
 def cart_item_to_json(item: CartItem) -> dict[str, object]:
@@ -35,15 +33,14 @@ def cart_item_from_json(data: dict[str, object]) -> CartItem:
 
 
 def session_to_orm(session: TelegramSession) -> TelegramSessionORM:
-    selected_chicken_part = _selected_chicken_part_to_storage(session)
     return TelegramSessionORM(
         chat_id=session.chat_id.value,
         current_step=session.current_step.value,
         selected_product_code=(
             session.selected_product_code.value if session.selected_product_code else None
         ),
-        selected_chicken_part=selected_chicken_part,
-        cart_json=[cart_item_to_json(item) for item in session.cart],
+        selected_chicken_part=session.selected_chicken_part,
+        cart_json=_cart_json_to_storage(session),
         customer_name=session.customer_name,
         phone=session.customer_phone,
         address=session.customer_address,
@@ -59,8 +56,8 @@ def update_session_orm(row: TelegramSessionORM, session: TelegramSession) -> Tel
     row.selected_product_code = (
         session.selected_product_code.value if session.selected_product_code else None
     )
-    row.selected_chicken_part = _selected_chicken_part_to_storage(session)
-    row.cart_json = [cart_item_to_json(item) for item in session.cart]
+    row.selected_chicken_part = session.selected_chicken_part
+    row.cart_json = _cart_json_to_storage(session)
     row.customer_name = session.customer_name
     row.phone = session.customer_phone
     row.address = session.customer_address
@@ -72,17 +69,15 @@ def update_session_orm(row: TelegramSessionORM, session: TelegramSession) -> Tel
 
 
 def session_from_orm(row: TelegramSessionORM) -> TelegramSession:
-    selected_chicken_part, pending_order_json = _selected_chicken_part_from_storage(
-        row.selected_chicken_part
-    )
+    cart, pending_order_json = _cart_json_from_storage(row.cart_json)
     return TelegramSession(
         chat_id=ChatId(row.chat_id),
         current_step=ConversationState(row.current_step),
         selected_product_code=(
             ProductCode(row.selected_product_code) if row.selected_product_code else None
         ),
-        selected_chicken_part=selected_chicken_part,
-        cart=[cart_item_from_json(item) for item in row.cart_json],
+        selected_chicken_part=row.selected_chicken_part,
+        cart=cart,
         pending_order_json=pending_order_json,
         customer_name=row.customer_name,
         customer_phone=row.phone,
@@ -94,24 +89,21 @@ def session_from_orm(row: TelegramSessionORM) -> TelegramSession:
     )
 
 
-def _selected_chicken_part_to_storage(session: TelegramSession) -> str | None:
+def _cart_json_to_storage(session: TelegramSession) -> list[dict[str, object]]:
+    items = [cart_item_to_json(item) for item in session.cart]
     if session.pending_order_json:
-        return PENDING_ORDER_PREFIX + json.dumps(
-            session.pending_order_json,
-            ensure_ascii=True,
-            separators=(",", ":"),
-        )
-    return session.selected_chicken_part
+        items.append({PENDING_ORDER_MARKER: True, "payload": session.pending_order_json})
+    return items
 
 
-def _selected_chicken_part_from_storage(value: str | None) -> tuple[str | None, dict[str, object] | None]:
-    if not value or not value.startswith(PENDING_ORDER_PREFIX):
-        return value, None
-    payload = value[len(PENDING_ORDER_PREFIX):]
-    try:
-        decoded = json.loads(payload)
-    except json.JSONDecodeError:
-        return None, None
-    if isinstance(decoded, dict):
-        return None, decoded
-    return None, None
+def _cart_json_from_storage(values: list[dict[str, object]]) -> tuple[list[CartItem], dict[str, object] | None]:
+    cart: list[CartItem] = []
+    pending_order_json: dict[str, object] | None = None
+    for value in values or []:
+        if value.get(PENDING_ORDER_MARKER):
+            payload = value.get("payload")
+            if isinstance(payload, dict):
+                pending_order_json = payload
+            continue
+        cart.append(cart_item_from_json(value))
+    return cart, pending_order_json
