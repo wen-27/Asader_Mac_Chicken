@@ -28,10 +28,6 @@ class TelegramSessionORM(TimestampMixin, Base):
         default=list,
         nullable=False,
     )
-    pending_order_json: Mapped[Optional[dict[str, object]]] = mapped_column(
-        JSONB().with_variant(JSON, "sqlite"),
-        nullable=True,
-    )
     customer_name: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(240), nullable=True)
