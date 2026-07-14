@@ -152,10 +152,11 @@ async def _find_manual_zone(
 ) -> Optional[DeliveryZone]:
     # Customers rarely type the exact seed name. Compare normalized full names,
     # slash-separated aliases and partial inclusions such as "Manantial".
-    exact = await delivery_zones.get_by_neighborhood(Neighborhood(neighborhood))
+    cleaned_neighborhood = _clean_neighborhood_for_manual_lookup(neighborhood)
+    exact = await delivery_zones.get_by_neighborhood(Neighborhood(cleaned_neighborhood))
     if exact is not None:
         return exact
-    normalized = normalize_alias(neighborhood)
+    normalized = normalize_alias(cleaned_neighborhood)
     if not normalized:
         return None
     for zone in await delivery_zones.list_active():
@@ -174,6 +175,24 @@ async def _find_manual_zone(
         if any(part in normalized or normalized in part for part in zone_parts):
             return zone
     return None
+
+
+def _clean_neighborhood_for_manual_lookup(neighborhood: str) -> str:
+    normalized = normalize_alias(neighborhood)
+    removable_prefixes = (
+        "barrio ",
+        "bario ",
+        "sector ",
+        "conjunto ",
+        "conj ",
+        "urbanizacion ",
+        "urbanización ",
+        "urb ",
+    )
+    for prefix in removable_prefixes:
+        if normalized.startswith(prefix):
+            return normalized[len(prefix) :].strip()
+    return neighborhood.strip()
 
 
 def _municipality_for_neighborhood(neighborhood: str) -> str:

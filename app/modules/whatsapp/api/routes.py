@@ -1048,6 +1048,8 @@ def _is_order_timing_query(text: str) -> bool:
         "despacho",
         "despachado",
         "despachan",
+        "espera",
+        "tiempo de espera",
     )
     order_terms = ("pedido", "domicilio", "orden", "pollo", "comida")
     direct_time_question = any(
@@ -1065,6 +1067,15 @@ def _is_order_timing_query(text: str) -> bool:
             "cuánto tiempo",
             "cuando llega",
             "cuándo llega",
+            "tiempo de espera",
+            "tiempo estimado",
+            "tiempo aproximado",
+            "cuanto tiempo de espera",
+            "cuánto tiempo de espera",
+            "cuanto debo esperar",
+            "cuánto debo esperar",
+            "cuanto hay que esperar",
+            "cuánto hay que esperar",
         )
     )
     return direct_time_question or (
@@ -1105,4 +1116,13 @@ async def _should_ignore_stale_greeting(
         (message for message in recent_messages if message.update_id == 0),
         None,
     )
-    return latest_outbound is not None and latest_outbound.received_at > sent_at
+    if latest_outbound is None:
+        return False
+    if latest_outbound.received_at > sent_at:
+        return True
+    seconds_since_menu = (sent_at - latest_outbound.received_at).total_seconds()
+    latest_text = normalize_text(latest_outbound.text_raw or "")
+    return (
+        0 <= seconds_since_menu <= 120
+        and "hola bienvenido a asadero mc chicken express" in latest_text
+    )

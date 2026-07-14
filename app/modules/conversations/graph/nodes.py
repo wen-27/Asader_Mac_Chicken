@@ -136,7 +136,7 @@ async def detect_intent(
         state.query_type = query[0]
         state.query_value = query[1]
         return state
-    if parsed_rules.items:
+    if parsed_rules.items and state.current_step != ConversationState.ASK_PRODUCT_VARIANT:
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if state.current_step == ConversationState.POST_ADD and _is_main_menu_request(text):
@@ -739,9 +739,25 @@ def _extract_customer_data_from_free_lines(
 def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
     expanded: list[str] = []
     for line in lines:
-        split_line = _split_composite_checkout_line(line)
+        split_line = _split_delimited_checkout_line(line) or _split_composite_checkout_line(line)
         expanded.extend(split_line or [line])
     return expanded
+
+
+def _split_delimited_checkout_line(line: str) -> list[str] | None:
+    parts = [part.strip() for part in re.split(r"\s*[,;|]\s*", line) if part.strip()]
+    if len(parts) <= 1:
+        return None
+    normalized_parts = [normalize_text(part) for part in parts]
+    has_structured_checkout_signal = (
+        len(parts) >= 3
+        or any(_looks_like_phone(part) for part in parts)
+        or any(_looks_like_address(part) for part in normalized_parts)
+        or any(_looks_like_payment_method(part) for part in normalized_parts)
+    )
+    if not has_structured_checkout_signal:
+        return None
+    return parts
 
 
 def _split_composite_checkout_line(line: str) -> list[str] | None:
@@ -1852,8 +1868,14 @@ def _extract_product_variant(product_code: str | None, text: str) -> str | None:
         if normalize_text(option) in normalized:
             return option
     if product_code == "GASEOSA_25":
+        if "kola" in normalized:
+            return "Kola"
+        if "pepsi" in normalized:
+            return "Pepsi"
         if "pina" in normalized:
             return "Piña"
+        if "colombiana" in normalized:
+            return "Colombiana"
     if product_code == "ADICIONAL_SALSAS":
         if "tartara" in normalized:
             return "Tártara"
@@ -2180,6 +2202,10 @@ def _looks_like_order_status_query(text: str) -> bool:
         "despacho",
         "despachar",
         "despachan",
+        "espera",
+        "tiempo de espera",
+        "cuanto tiempo de espera",
+        "cuánto tiempo de espera",
         "como va",
         "cómo va",
     )
@@ -2197,6 +2223,15 @@ def _looks_like_order_status_query(text: str) -> bool:
             "cuánto tiempo",
             "cuando llega",
             "cuándo llega",
+            "tiempo de espera",
+            "tiempo estimado",
+            "tiempo aproximado",
+            "cuanto tiempo de espera",
+            "cuánto tiempo de espera",
+            "cuanto debo esperar",
+            "cuánto debo esperar",
+            "cuanto hay que esperar",
+            "cuánto hay que esperar",
         ),
     )
     return direct_time_question or (

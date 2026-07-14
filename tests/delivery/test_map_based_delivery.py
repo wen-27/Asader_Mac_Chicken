@@ -113,6 +113,23 @@ async def test_map_delivery_matches_el_manantial_manual_price() -> None:
 
 
 @pytest.mark.asyncio
+async def test_map_delivery_ignores_barrio_prefix_for_manual_price() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        FakeDistanceClient(),
+        DeliveryPricingConfig(origin_address="Lagos 2"),
+    )
+
+    manantial = await use_case.execute("Cra 28 a #195-33", "Barrio manantial")
+    lagos = await use_case.execute("Cra 3 #48-06", "Barrio Lagos 2")
+
+    assert manantial.delivery_price_cop == 4000
+    assert manantial.pricing_source == "zone"
+    assert lagos.delivery_price_cop == 2000
+    assert lagos.pricing_source == "zone"
+
+
+@pytest.mark.asyncio
 async def test_map_delivery_uses_distance_for_unknown_neighborhood() -> None:
     use_case = CalculateMapBasedDelivery(
         FakeDeliveryZones(),

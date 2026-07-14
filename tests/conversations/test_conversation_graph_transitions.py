@@ -1494,12 +1494,34 @@ async def test_natural_order_with_ambiguous_gaseosas_asks_drink_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_order_with_gaseosa_kola_adds_25_liter_kola_directly() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Hola un pollo asado con gaseosa kola")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "1 x Gaseosa 2.5 L - Kola" in result["response_text"]
+    assert "dime cual deseas" not in result["response_text"]
+    assert len(services.session.cart) == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raw_text",
     [
         "En cuanto tiempo me despachan?",
         "En cuanto tiempo se demora",
         "cuanto se demora mi pedido",
+        "Tiempo de espera",
     ],
 )
 async def test_order_timing_questions_answer_without_fallback(raw_text: str) -> None:
@@ -1511,6 +1533,28 @@ async def test_order_timing_questions_answer_without_fallback(raw_text: str) -> 
 
     assert "40 minutos o menos" in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_graph_extracts_customer_data_split_by_commas() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Yibeth, Barrio manantial, Efectivo\n3054303858, CRA 28a #195-33",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result.get("errors") in (None, [])
+    assert "Cliente: Yibeth" in result["response_text"]
+    assert "Telefono: 3054303858" in result["response_text"]
+    assert "Direccion: CRA 28a #195-33" in result["response_text"]
+    assert "Barrio: Barrio manantial" in result["response_text"]
+    assert "Pago: Efectivo" in result["response_text"]
 
 
 @pytest.mark.asyncio

@@ -145,6 +145,15 @@ def test_rule_based_parser_does_not_add_ambiguous_litro_medio() -> None:
     assert parsed.items == []
 
 
+def test_rule_based_parser_understands_gaseosa_kola_as_25_liter_variant_product() -> None:
+    parsed = parse_natural_order_rules("Hola un pollo asado con gaseosa kola")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("GASEOSA_25", 1),
+    ]
+
+
 def test_rule_based_parser_understands_additional_papas_fritas() -> None:
     parsed = parse_natural_order_rules(
         "Quiero un pollo asado con adicional de papas fritas y una Cocacola 1.5"

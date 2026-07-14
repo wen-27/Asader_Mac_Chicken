@@ -105,7 +105,20 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "GASEOSA_25",
-        ("kola", "pepsi", "pina", "piña", "colombiana", "gaseosa"),
+        (
+            "kola",
+            "gaseosa kola",
+            "gaseosa de kola",
+            "pepsi",
+            "gaseosa pepsi",
+            "pina",
+            "piña",
+            "gaseosa pina",
+            "gaseosa piña",
+            "colombiana",
+            "gaseosa colombiana",
+            "gaseosa",
+        ),
         ("2.5", "2,5", "2 5", "dos litros y medio", "2 litros y medio"),
     ),
     NaturalProductRule(
@@ -271,6 +284,8 @@ def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
         return False
     if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(text):
         return True
+    if rule.code == "GASEOSA_25" and _looks_like_25_liter_soda_flavor(text):
+        return True
     if not rule.size_terms:
         return True
     return any(_contains_term(text, term) for term in rule.size_terms)
@@ -310,6 +325,25 @@ def _looks_like_whole_roasted_chicken(text: str) -> bool:
             "me hace",
             "favor",
             "porfa",
+        ),
+    )
+
+
+def _looks_like_25_liter_soda_flavor(text: str) -> bool:
+    return _contains_any_terms(
+        text,
+        (
+            "kola",
+            "gaseosa kola",
+            "gaseosa de kola",
+            "pepsi",
+            "gaseosa pepsi",
+            "pina",
+            "piña",
+            "gaseosa pina",
+            "gaseosa piña",
+            "colombiana",
+            "gaseosa colombiana",
         ),
     )
 
