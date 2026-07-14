@@ -659,11 +659,10 @@ async def extract_customer_data(
         }:
             customer.observations = value
     if free_lines:
-        _extract_customer_data_from_free_lines(
-            customer,
-            _expand_checkout_free_lines(free_lines),
-            state.fulfillment_type,
-        )
+        expanded_free_lines = _expand_checkout_free_lines(free_lines)
+        if _looks_like_complete_checkout_payload(expanded_free_lines, state.fulfillment_type):
+            _reset_checkout_customer_data(customer)
+        _extract_customer_data_from_free_lines(customer, expanded_free_lines, state.fulfillment_type)
     state.customer = customer
     return state
 
@@ -900,6 +899,35 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
     address = " ".join(words[: last_number_index + 1]).strip()
     neighborhood = " ".join(words[last_number_index + 1 :]).strip()
     return (address or None, neighborhood or None)
+
+
+def _looks_like_complete_checkout_payload(lines: list[str], fulfillment_type: str = "DELIVERY") -> bool:
+    useful_lines = [
+        line.strip()
+        for line in lines
+        if line.strip() and not _is_ignorable_checkout_line(normalize_text(line.strip()))
+    ]
+    if fulfillment_type == "PICKUP":
+        return (
+            len(useful_lines) >= 3
+            and any(_looks_like_phone(line) for line in useful_lines)
+            and any(_looks_like_payment_method(normalize_text(line)) for line in useful_lines)
+        )
+    return (
+        len(useful_lines) >= 5
+        and any(_looks_like_phone(line) for line in useful_lines)
+        and any(_looks_like_address(normalize_text(line)) for line in useful_lines)
+        and any(_looks_like_payment_method(normalize_text(line)) for line in useful_lines)
+    )
+
+
+def _reset_checkout_customer_data(customer: CustomerDataState) -> None:
+    customer.name = None
+    customer.phone = None
+    customer.address = None
+    customer.neighborhood = None
+    customer.payment_method = None
+    customer.observations = None
 
 
 def _looks_like_phone(text: str) -> bool:
@@ -2041,10 +2069,13 @@ def _extract_sauce_note(text: str) -> str | None:
     sauce_labels = {
         "aji": "ají",
         "tartara": "tártara",
+        "tartar": "tártara",
         "tomate": "tomate",
         "miel": "miel",
     }
     for key, label in sauce_labels.items():
+        if key == "tartar" and "tartara" in text:
+            continue
         if key in text:
             mentioned.append(label)
     if not mentioned:

@@ -1479,6 +1479,45 @@ async def test_zero_from_customer_data_returns_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_complete_customer_data_replaces_bad_cached_checkout_fields() -> None:
+    services = FakeConversationServices()
+    product = services.products["BROASTER_CUARTO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    services.session.customer_name = "0"
+    services.session.customer_neighborhood = "0"
+    services.session.observations = (
+        "Muy buenos días me puedes colaborar con 2 pollos asados con tartar y ají, que valen?. "
+        "Salsas asado solicitadas: ají."
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text=(
+            "Wendy\n"
+            "3022873946\n"
+            "Transversal 29 # 145-84\n"
+            "El Bosque\n"
+            "Con tártara y ají\n"
+            "Efectivo"
+        ),
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Cliente: Wendy" in result["response_text"]
+    assert "Barrio: El Bosque" in result["response_text"]
+    assert "Nota: Con tártara y ají" in result["response_text"]
+    assert "Cliente: 0" not in result["response_text"]
+    assert "Barrio: 0" not in result["response_text"]
+    assert "Muy buenos días me puedes colaborar" not in result["response_text"]
+    assert services.session.customer_name == "Wendy"
+    assert services.session.customer_neighborhood == "El Bosque"
+    assert services.session.observations == "Con tártara y ají"
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_when_user_retries_checkout_data() -> None:
     services = FakeConversationServices()
     product = services.products["ASADO_MEDIO"]
