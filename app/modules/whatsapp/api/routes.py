@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from time import perf_counter, time
 from typing import Annotated
@@ -1107,8 +1108,8 @@ async def _should_ignore_stale_greeting(
     inbound,
     message_repository: SqlAlchemyTelegramMessageRepository,
 ) -> bool:
-    normalized = normalize_text(inbound.text)
-    if normalized not in {"hola", "buenas", "buenos dias", "buenos días", "buenas tardes", "buenas noches"}:
+    normalized = _compact_greeting_text(inbound.text)
+    if not _is_compact_greeting_only(normalized):
         return False
     if inbound.sent_at_epoch is None:
         return False
@@ -1123,8 +1124,33 @@ async def _should_ignore_stale_greeting(
     if latest_outbound.received_at > sent_at:
         return True
     seconds_since_menu = (sent_at - latest_outbound.received_at).total_seconds()
-    latest_text = normalize_text(latest_outbound.text_raw or "")
+    latest_text = _compact_greeting_text(latest_outbound.text_raw or "")
     return (
         0 <= seconds_since_menu <= 120
         and "hola bienvenido a asadero mc chicken express" in latest_text
     )
+
+
+def _compact_greeting_text(text: str) -> str:
+    normalized = normalize_text(text)
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _is_compact_greeting_only(normalized: str) -> bool:
+    greetings = {
+        "hola",
+        "buenas",
+        "buenos dias",
+        "buen dia",
+        "buenas tardes",
+        "buenas noches",
+        "hola buenos dias",
+        "hola buen dia",
+        "hola buenas",
+        "hola buenas tardes",
+        "hola buenas noches",
+    }
+    if normalized in greetings:
+        return True
+    return any(normalized == f"{greeting} {greeting}" for greeting in greetings)

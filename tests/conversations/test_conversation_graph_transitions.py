@@ -290,6 +290,24 @@ async def test_hola_from_natural_order_returns_to_main_menu() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Hola, buenas tardes\nHola, buenas tardes",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert "bienvenido" in result["response_text"].lower()
+    assert "Pedir por menu" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_real_customer_polite_order_does_not_show_welcome_menu() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

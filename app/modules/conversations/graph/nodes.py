@@ -2335,8 +2335,9 @@ def _is_main_menu_request(text: str) -> bool:
 
 
 def _is_greeting_only(text: str) -> bool:
-    normalized = text.strip(" ¿?.,!¡")
-    return normalized in {
+    normalized = re.sub(r"[^\w\s]", " ", text)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    greetings = {
         "hola",
         "buenas",
         "buenos dias",
@@ -2349,6 +2350,9 @@ def _is_greeting_only(text: str) -> bool:
         "hola buenas tardes",
         "hola buenas noches",
     }
+    if normalized in greetings:
+        return True
+    return any(normalized == f"{greeting} {greeting}" for greeting in greetings)
 
 
 def _is_gratitude_only(text: str) -> bool:
