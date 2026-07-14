@@ -183,6 +183,7 @@ def test_rule_based_parser_ignores_polite_greeting_and_extracts_all_products() -
     [
         ("Me hace el favor y me vende 2 pollos asados", [("ASADO_ENTERO", 2)]),
         ("me vendes dos pollos asados por favor", [("ASADO_ENTERO", 2)]),
+        ("Muy buenas tardes me vendes 2 pollos asados con ají y tartara", [("ASADO_ENTERO", 2)]),
         ("deme dos asados", [("ASADO_ENTERO", 2)]),
         ("me regalas un par de pollos asados", [("ASADO_ENTERO", 2)]),
         ("buenas me das dos pollitos asados", [("ASADO_ENTERO", 2)]),

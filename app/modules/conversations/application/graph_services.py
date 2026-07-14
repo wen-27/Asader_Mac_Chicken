@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.config.settings import get_settings
+from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
+from app.modules.ai.application.schemas import NaturalLanguageOrderParse
 from app.modules.cart.domain.cart_item import CartItem
 from app.modules.catalog.application.ports import ProductRepository
 from app.modules.catalog.application.stock_controls import (
@@ -81,6 +83,9 @@ class ConversationGraphServices(Protocol):
     async def create_confirmed_order(self, chat_id: ChatId, delivery_price_cop: int) -> str | None:
         ...
 
+    async def interpret_natural_order(self, message: str) -> NaturalLanguageOrderParse:
+        ...
+
 
 class SeedCatalogService:
     async def list_products_by_category(self, category: ProductCategory) -> list[Product]:
@@ -105,6 +110,12 @@ class SeedCatalogService:
             if product.code.value == normalized or product.name.value.upper() == code_or_text.upper():
                 return product
         return None
+
+    async def get_by_code(self, code: ProductCode) -> Product | None:
+        return await self.find_product(code.value)
+
+    async def list_active(self) -> list[Product]:
+        return await self.list_all_products()
 
     async def list_all_products(self) -> list[Product]:
         products: list[Product] = []
@@ -216,6 +227,42 @@ class DefaultConversationGraphServices:
         )
         saved = await self.orders.add(order, chat_id)
         return saved.order_id.value
+
+    async def interpret_natural_order(self, message: str) -> NaturalLanguageOrderParse:
+        settings = get_settings()
+        rule_parsed = parse_natural_order_rules(message)
+        if rule_parsed.items or not settings.llm_fallback_enabled:
+            return rule_parsed
+
+        try:
+            from app.modules.ai.application.parsers import LangChainNaturalLanguageOrderParser
+            from app.modules.ai.application.semantic_search import CatalogSemanticSearch
+            from app.modules.ai.application.use_cases import (
+                InterpretNaturalOrder,
+                InterpretNaturalOrderCommand,
+            )
+            from app.modules.ai.infrastructure.gemini_llm_client import GeminiLLMClient
+            from app.modules.catalog.infrastructure.chroma.chroma_catalog_vector_store import (
+                ChromaCatalogVectorStore,
+            )
+
+            products = self.products or self.seed_catalog
+            use_case = InterpretNaturalOrder(
+                products=products,
+                parser=LangChainNaturalLanguageOrderParser(GeminiLLMClient(settings)),
+                semantic_search=CatalogSemanticSearch(ChromaCatalogVectorStore(settings)),
+                llm_fallback_enabled=True,
+            )
+            result = await use_case.execute(InterpretNaturalOrderCommand(message))
+            if result.needs_clarification and not result.parsed.items:
+                return NaturalLanguageOrderParse(
+                    intent="unknown",
+                    confidence=result.parsed.confidence,
+                    notes=[*result.parsed.notes, "llm_needs_clarification"],
+                )
+            return result.parsed
+        except Exception:
+            return rule_parsed
 
 
 def cart_item_from_product(product: Product, quantity: int) -> CartItem:

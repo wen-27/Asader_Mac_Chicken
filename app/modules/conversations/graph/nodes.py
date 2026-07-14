@@ -1605,7 +1605,7 @@ async def _add_natural_order_to_cart(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> list[CartLineState]:
-    parsed = parse_natural_order_rules(state.raw_text)
+    parsed = await _interpret_natural_order(state.raw_text, services)
     if not parsed.items:
         return []
 
@@ -1737,6 +1737,19 @@ async def _add_natural_order_to_cart(
         session.move_to(ConversationState.POST_ADD)
     await services.persist_session(session)
     return added_lines
+
+
+async def _interpret_natural_order(
+    message: str,
+    services: ConversationGraphServices,
+):
+    interpreter = getattr(services, "interpret_natural_order", None)
+    if interpreter is None:
+        return parse_natural_order_rules(message)
+    try:
+        return await interpreter(message)
+    except Exception:
+        return parse_natural_order_rules(message)
 
 
 async def _replace_cart_items_from_natural_message(

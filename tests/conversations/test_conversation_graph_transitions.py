@@ -8,6 +8,8 @@ import pytest
 
 from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
 from app.modules.catalog.domain.product import Product
+from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
+from app.modules.ai.application.schemas import NaturalLanguageOrderParse, ParsedOrderItem
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.intent import ConversationIntent
 from app.modules.conversations.domain.telegram_session import TelegramSession
@@ -29,6 +31,8 @@ class FakeConversationServices:
         self.fail_sync = False
         self.soup_available = True
         self.created_orders: list[str] = []
+        self.ai_parsed: NaturalLanguageOrderParse | None = None
+        self.ai_calls: list[str] = []
         self.products = {
             "JUGO_HIT_PERSONAL": Product(
                 code=ProductCode("JUGO_HIT_PERSONAL"),
@@ -145,6 +149,10 @@ class FakeConversationServices:
     ) -> TelegramSession:
         session.move_to(step)
         return await self.persist_session(session)
+
+    async def interpret_natural_order(self, message: str) -> NaturalLanguageOrderParse:
+        self.ai_calls.append(message)
+        return self.ai_parsed or parse_natural_order_rules(message)
 
     async def list_products_by_category(self, category: ProductCategory) -> list[Product]:
         return [product for product in self.products.values() if product.category == category]
@@ -295,6 +303,60 @@ async def test_real_customer_two_roasted_chickens_order_is_added() -> None:
 
     result = await graph.ainvoke(state)
 
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "2 x 1 Asado Entero" in result["response_text"]
+    assert services.session.cart[0].quantity == 2
+
+
+@pytest.mark.asyncio
+async def test_real_customer_two_roasted_chickens_with_sauces_is_added() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Muy buenas tardes me vendes 2 pollos asados con ají y tartara",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "Por ahora no cuento con informacion" not in result["response_text"]
+    assert "2 x 1 Asado Entero" in result["response_text"]
+    assert services.session.cart[0].quantity == 2
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Salsas asado solicitadas: ají, tártara." in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_ai_interpreter_when_rules_do_not_understand_human_order() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.ai_parsed = NaturalLanguageOrderParse(
+        intent="order_items",
+        items=[ParsedOrderItem(code="ASADO_ENTERO", quantity=2)],
+        confidence=0.91,
+        notes=["llm_fallback"],
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="veci me provocan dos pollos doraditos de esos de la casa",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert services.ai_calls == ["veci me provocan dos pollos doraditos de esos de la casa"]
     assert result["current_step"] == ConversationState.POST_ADD
     assert "2 x 1 Asado Entero" in result["response_text"]
     assert services.session.cart[0].quantity == 2

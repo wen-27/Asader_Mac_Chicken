@@ -313,7 +313,9 @@ def _looks_like_whole_roasted_chicken(text: str) -> bool:
         text,
         (
             "vende",
+            "vendes",
             "venden",
+            "vender",
             "regala",
             "regalas",
             "necesito",
