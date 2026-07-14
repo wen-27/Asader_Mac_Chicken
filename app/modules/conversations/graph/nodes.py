@@ -119,7 +119,7 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
-    if state.current_step == ConversationState.ASK_CHICKEN_PART:
+    if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
         session = await services.load_or_create_session(ChatId(state.chat_id))
         if session.pending_order_json:
             state.intent = ConversationIntent.LENGUAJE_NATURAL
@@ -1322,6 +1322,9 @@ async def fallback_natural_language(
     if state.response_text:
         return state
     if state.normalized_text not in {"2", "4", "pedido libre", "pedido libremente"}:
+        corrected = await _correct_quarter_style_in_cart(state, services)
+        if corrected:
+            return state
         replaced = await _replace_cart_items_from_natural_message(state, services)
         if replaced:
             return state
@@ -1527,6 +1530,7 @@ async def go_back(
         ConversationState.SELECT_BEBIDA,
         ConversationState.SELECT_ADICIONAL,
         ConversationState.SELECT_ESPECIAL,
+        ConversationState.ASK_CHICKEN_STYLE,
         ConversationState.ASK_CHICKEN_PART,
         ConversationState.ASK_PRODUCT_VARIANT,
         ConversationState.ASK_SIDE_EXTRA,
@@ -1870,30 +1874,40 @@ async def _maybe_start_pending_quarter_order(
     for index, item in enumerate(parsed_items):
         if not _requires_chicken_part(item.code):
             continue
-        if _extract_chicken_selection(item.code, state.normalized_text):
+        ambiguous_style = _is_ambiguous_quarter_style(item.code, state.normalized_text)
+        if _extract_chicken_selection(item.code, state.normalized_text) and not ambiguous_style:
             continue
         product = await services.find_product(item.code)
         if product is None:
             continue
+        allocations = _extract_chicken_part_allocations(state.normalized_text, int(item.quantity or 1))
         session.pending_order_json = {
             "items": [
                 {"code": parsed_item.code, "quantity": parsed_item.quantity}
                 for parsed_item in parsed_items
             ],
             "current_index": index,
-            "allocations": [],
+            "allocations": allocations,
             "awaiting_part": None,
+            "awaiting_style": ambiguous_style,
             "original_text": state.raw_text,
         }
-        session.selected_product_code = product.code
+        session.selected_product_code = None if ambiguous_style else product.code
         session.selected_chicken_part = None
-        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        session.move_to(ConversationState.ASK_CHICKEN_STYLE if ambiguous_style else ConversationState.ASK_CHICKEN_PART)
         await services.persist_session(session)
-        state.current_step = ConversationState.ASK_CHICKEN_PART
-        state.selected_product_code = product.code.value
-        state.selected_product_name = product.name.value
-        state.selected_unit_price_cop = product.price.amount
-        state.response_text = _ask_pending_quarter_part_message(product.name.value, item.quantity)
+        if ambiguous_style:
+            state.current_step = ConversationState.ASK_CHICKEN_STYLE
+            state.selected_product_code = None
+            state.selected_product_name = None
+            state.selected_unit_price_cop = None
+            state.response_text = BotMessageFactory.ask_chicken_style()
+        else:
+            state.current_step = ConversationState.ASK_CHICKEN_PART
+            state.selected_product_code = product.code.value
+            state.selected_product_name = product.name.value
+            state.selected_unit_price_cop = product.price.amount
+            state.response_text = _ask_pending_quarter_part_message(product.name.value, item.quantity)
         return True
     return False
 
@@ -1915,6 +1929,21 @@ async def _continue_pending_natural_order(
     current = items[index]
     code = str(current.get("code"))
     total_quantity = int(current.get("quantity") or 1)
+    was_awaiting_style = bool(pending.get("awaiting_style"))
+    if was_awaiting_style:
+        style = _extract_chicken_style(state.normalized_text)
+        if style is None:
+            state.current_step = ConversationState.ASK_CHICKEN_STYLE
+            state.response_text = BotMessageFactory.ask_chicken_style()
+            return []
+        code = _quarter_code_for_style(style)
+        current["code"] = code
+        items[index] = current
+        pending["items"] = items
+        pending["awaiting_style"] = False
+        session.selected_product_code = ProductCode(code)
+        session.pending_order_json = pending
+        await services.persist_session(session)
     product = await services.find_product(code)
     if product is None:
         session.clear_pending_order()
@@ -1924,9 +1953,37 @@ async def _continue_pending_natural_order(
     allocations = list(pending.get("allocations") or [])
     allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
     remaining = max(0, total_quantity - allocated_quantity)
+    if was_awaiting_style and remaining > 0:
+        session.pending_order_json = pending
+        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
+        return []
+    if remaining <= 0:
+        added_lines = await _add_pending_order_items_to_cart(session, services, pending)
+        session.clear_pending_order()
+        session.clear_selected_product()
+        session.move_to(ConversationState.POST_ADD)
+        await services.persist_session(session)
+        state.current_step = ConversationState.POST_ADD
+        state.cart = [
+            CartLineState(
+                product_code=item.product_code.value,
+                product_name=item.product_name.value,
+                unit_price_cop=item.unit_price.amount,
+                quantity=item.quantity,
+                subtotal_cop=item.subtotal.amount,
+            )
+            for item in session.cart
+        ]
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        return added_lines
     parsed_allocations = _extract_chicken_part_allocations(state.normalized_text, remaining)
     part = _extract_chicken_part(state.normalized_text)
     quantity = _extract_positive_integer(state.normalized_text)
+    if not parsed_allocations and part and remaining <= 1:
+        parsed_allocations = [{"part": part, "quantity": remaining}]
 
     awaiting_part = pending.get("awaiting_part")
     if awaiting_part and quantity is not None:
@@ -2110,6 +2167,68 @@ async def _replace_cart_items_from_natural_message(
     state.current_step = ConversationState.POST_ADD
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     removed_names = [item.product_name.value for item in removed_items]
+    state.response_text = BotMessageFactory.cart_replaced_items(
+        removed_names,
+        added_lines,
+        state.subtotal_cop,
+    )
+    return True
+
+
+async def _correct_quarter_style_in_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> bool:
+    if not _contains_any(state.normalized_text, ("no", "corrige", "corrija", "cambia", "cambiar", "era", "es")):
+        return False
+    if not _contains_any(state.normalized_text, ("cuarto", "1/4")):
+        return False
+    style = _extract_chicken_style(state.normalized_text)
+    if style is None:
+        return False
+    target_code = _quarter_code_for_style(style)
+    source_code = "ASADO_CUARTO" if target_code == "BROASTER_CUARTO" else "BROASTER_CUARTO"
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    if not session.cart:
+        return False
+    product = await services.find_product(target_code)
+    if product is None:
+        return False
+
+    corrected = False
+    updated_cart = []
+    added_lines: list[CartLineState] = []
+    removed_names: list[str] = []
+    for item in session.cart:
+        if not corrected and item.product_code.value == source_code:
+            part = _extract_chicken_part_from_product_name(item.product_name.value)
+            new_item = _cart_item_from_selected_product(product, item.quantity, part)
+            updated_cart.append(new_item)
+            added_lines.append(_cart_line_from_cart_item(new_item))
+            removed_names.append(item.product_name.value)
+            corrected = True
+            continue
+        updated_cart.append(item)
+    if not corrected:
+        return False
+
+    session.cart = updated_cart
+    session.clear_pending_order()
+    session.clear_selected_product()
+    session.move_to(ConversationState.POST_ADD)
+    await services.persist_session(session)
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
+    state.current_step = ConversationState.POST_ADD
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     state.response_text = BotMessageFactory.cart_replaced_items(
         removed_names,
         added_lines,
@@ -2696,6 +2815,53 @@ def _requires_chicken_composition(product_code: str | None) -> bool:
     return product_code in {"ASADO_34", "BROASTER_34"}
 
 
+def _extract_chicken_style(text: str) -> str | None:
+    cleaned = text.strip()
+    if cleaned == "1":
+        return "asado"
+    if cleaned == "2":
+        return "broster"
+    if _contains_any(text, ("broaster", "broasted", "broster", "brosters")):
+        return "broster"
+    if _contains_any(text, ("asado", "asados", "asadito", "asaditos")):
+        return "asado"
+    return None
+
+
+def _quarter_code_for_style(style: str) -> str:
+    return "BROASTER_CUARTO" if style == "broster" else "ASADO_CUARTO"
+
+
+def _is_ambiguous_quarter_style(product_code: str | None, text: str) -> bool:
+    if product_code != "ASADO_CUARTO":
+        return False
+    for segment in _natural_order_segments(text):
+        if not _contains_any(segment, ("cuarto", "cuartos", "1/4", "1 4")):
+            continue
+        if _extract_chicken_style(segment) is None:
+            return True
+    return False
+
+
+def _natural_order_segments(text: str) -> list[str]:
+    item_start = (
+        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+    )
+    boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
+    segments: list[str] = []
+    start = 0
+    for match in boundary.finditer(text):
+        segment = text[start:match.start()].strip()
+        if segment:
+            segments.append(segment)
+        start = match.end() if match.group(0).strip() == "y" else match.start() + 1
+    tail = text[start:].strip()
+    if tail:
+        segments.append(tail)
+    return segments or [text]
+
+
 def _ask_chicken_selection_message(product_code: str | None, product_name: str) -> str:
     if _requires_chicken_composition(product_code):
         return BotMessageFactory.ask_chicken_composition(product_name)
@@ -2763,6 +2929,15 @@ def _extract_chicken_part(text: str) -> str | None:
             return "Pierna"
         if _is_close_word(token, "pechuga") or _is_close_word(token, "pechga"):
             return "Pechuga"
+    return None
+
+
+def _extract_chicken_part_from_product_name(product_name: str) -> str | None:
+    normalized = normalize_text(product_name)
+    if "pierna" in normalized:
+        return "Pierna"
+    if "pechuga" in normalized:
+        return "Pechuga"
     return None
 
 

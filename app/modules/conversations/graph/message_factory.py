@@ -113,6 +113,20 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def ask_chicken_style(cls) -> str:
+        return "\n".join(
+            [
+                "🍗 Cuarto de pollo",
+                "",
+                "¿Lo quieres asado o broster?",
+                "",
+                "1. Asado",
+                "2. Broster",
+                "0. ⬅️ Volver a categorias",
+            ]
+        )
+
+    @classmethod
     def ask_quarter_distribution(cls, product_name: str, remaining: int) -> str:
         return "\n".join(
             [
