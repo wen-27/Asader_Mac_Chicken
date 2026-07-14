@@ -2586,6 +2586,31 @@ async def test_question_about_delivery_answers_without_ai() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "Para un domicilio",
+        "Para un domicilio, por favor",
+        "Tienen disponibilidad?",
+        "Están atendiendo?",
+        "Hay servicio a domicilio?",
+    ],
+)
+async def test_generic_service_or_delivery_question_answers_yes_with_menu(raw_text: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert "estamos atendiendo" in result["response_text"].lower()
+    assert "servicio a domicilio" in result["response_text"].lower()
+    assert "Elige una categoria" in result["response_text"]
+    assert "cuesta $" not in result["response_text"]
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
 async def test_question_about_order_delay_gets_friendly_answer() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="Por que no llega mi pedido de pollo?")

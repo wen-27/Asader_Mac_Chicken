@@ -623,9 +623,12 @@ class BotMessageFactory:
 
     @classmethod
     def service_available_answer(cls) -> str:
-        return (
-            "Muy buenas tardes, si claro, contamos con servicio. "
-            "Dime como te puedo ayudar: puedes pedirme por menu o escribirme tu pedido de una vez."
+        return "\n\n".join(
+            [
+                "Muy buenas tardes, si claro, contamos con servicio a domicilio y estamos atendiendo.",
+                "Dime como te puedo ayudar: puedes escribirme tu pedido completo o elegir desde el menu:",
+                cls.product_categories(),
+            ]
         )
 
     @classmethod

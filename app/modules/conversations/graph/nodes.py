@@ -2771,7 +2771,9 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return None
     if any(word in text for word in ["domicilio", "envio", "envío", "llevar", "lleva"]):
         neighborhood = _extract_delivery_neighborhood(text)
-        return ("delivery", neighborhood or text)
+        if neighborhood:
+            return ("delivery", neighborhood)
+        return ("service", text)
     if any(word in text for word in ["vale", "valor", "precio", "cuanto cuesta", "cuánto cuesta"]):
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
@@ -2821,9 +2823,21 @@ def _looks_like_service_question(text: str) -> bool:
     return _contains_any(
         text,
         (
+            "tienen disponibilidad",
+            "tiene disponibilidad",
+            "hay disponibilidad",
+            "disponibilidad",
             "tiene servicio",
             "tienen servicio",
             "hay servicio",
+            "servicio a domicilio",
+            "tienen domicilio",
+            "tiene domicilio",
+            "hay domicilio",
+            "para un domicilio",
+            "para domicilio",
+            "necesito domicilio",
+            "quiero domicilio",
             "cuentan con servicio",
             "todavia hay servicio",
             "todavía hay servicio",
@@ -3106,9 +3120,25 @@ def _extract_delivery_neighborhood(text: str) -> str:
         if match:
             value = match.group(1).strip(" ?.,")
             value = re.sub(r"\b(cuanto|cuánto|vale|cuesta|es|el|la|un|una)\b", "", value).strip()
-            if value:
+            if value and not _is_generic_delivery_neighborhood(value):
                 return value
     return ""
+
+
+def _is_generic_delivery_neighborhood(value: str) -> bool:
+    normalized = _normalize_intent_text(value)
+    return normalized in {
+        "",
+        "domicilio",
+        "un domicilio",
+        "para domicilio",
+        "por favor",
+        "porfavor",
+        "favor",
+        "servicio",
+        "servicio domicilio",
+        "domicilios",
+    }
 
 
 def _category_from_query_value(value: str) -> ProductCategory | None:
