@@ -429,8 +429,8 @@ class BotMessageFactory:
     @classmethod
     def cancelled(cls) -> str:
         return (
-            "Listo, cancele el pedido actual. Gracias por avisarnos. "
-            "Cuando quieras hacer un pedido nuevo, aqui estoy para atenderte con mucho gusto."
+            "Muchas gracias por elegirnos. cancele el pedido actual y vamos a estar pendientes "
+            "por si quieres volver a pedir. Aqui estoy para atenderte con mucho gusto."
         )
 
     @classmethod
@@ -464,6 +464,77 @@ class BotMessageFactory:
     @classmethod
     def product_price_answer(cls, product: Product) -> str:
         return f"{product.name.value} vale ${product.price.amount}."
+
+    @classmethod
+    def product_contents_answer(cls, product: Product | None, soup_available: bool = True) -> str:
+        if product is None:
+            return (
+                "Claro. Dime de que producto quieres saber que trae: pollo asado, "
+                "pollo broaster, adicionales o especiales."
+            )
+        normalized_name = product.name.value.lower()
+        if "broast" in normalized_name:
+            soup_text = cls._included_soup_text(product.code.value, soup_available)
+            return (
+                f"{product.name.value} trae pollo broaster. {soup_text}"
+            )
+        if "asado" in normalized_name:
+            soup_text = cls._included_soup_text(product.code.value, soup_available)
+            return (
+                f"{product.name.value} trae pollo asado. {soup_text}"
+            )
+        return (
+            f"{product.name.value} esta disponible en el menu. "
+            "Si quieres, puedes pedirlo escribiendo el nombre del producto."
+        )
+
+    @classmethod
+    def _included_soup_text(cls, product_code: str, soup_available: bool) -> str:
+        if not soup_available:
+            return (
+                "En este momento no contamos con sopas porque ya se agotaron, "
+                "pero con gusto podemos seguir con tu pedido sin sopa."
+            )
+        if product_code in {"ASADO_ENTERO", "BROASTER_ENTERO", "ASADO_34", "BROASTER_34"}:
+            return "Mientras haya sopa disponible, esta presentacion incluye 2 sopas sin costo."
+        if product_code in {"ASADO_MEDIO", "BROASTER_MEDIO", "ASADO_CUARTO", "BROASTER_CUARTO"}:
+            return "Mientras haya sopa disponible, esta presentacion incluye 1 sopa sin costo."
+        return "La sopa depende de la presentacion del pollo."
+
+    @classmethod
+    def soup_unavailable_prompt(cls) -> str:
+        return "\n\n".join(
+            [
+                "En este momento no contamos con sopas debido a que ya se agotaron.",
+                "Podemos seguir con tu pedido sin sopa o, si prefieres, lo cancelamos sin problema.",
+                "¿Quieres seguir con tu pedido o prefieres cancelarlo?",
+            ]
+        )
+
+    @classmethod
+    def generic_soup_inclusion_answer(cls) -> str:
+        return (
+            "Si, mientras haya sopa disponible el pollo incluye sopa segun la presentacion: "
+            "1 pollo entero o 3/4 incluyen 2 sopas sin costo; medio pollo o 1/4 incluyen 1 sopa sin costo."
+        )
+
+    @classmethod
+    def continue_without_soup_menu(cls) -> str:
+        return "\n\n".join(
+            [
+                "Listo, seguimos con tu pedido sin sopa.",
+                "¿Deseas pedir algo mas del menu?",
+                cls.product_categories(),
+            ]
+        )
+
+    @classmethod
+    def product_combination_answer(cls) -> str:
+        return (
+            "Si, puedes pedir medio asado y medio broaster en el mismo pedido. "
+            "Te los agrego como productos separados: 1/2 Asado y 1/2 Broasted.\n\n"
+            "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?"
+        )
 
     @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:

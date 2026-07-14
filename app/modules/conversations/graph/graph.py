@@ -95,6 +95,8 @@ _NODE_REGISTRY: dict[str, NodeFn] = {
     "validate_product_availability": nodes.validate_product_availability,
     "ask_quantity": nodes.ask_quantity,
     "add_to_cart": nodes.add_to_cart,
+    "add_half_combo_to_cart": nodes.add_half_combo_to_cart,
+    "continue_without_soup": nodes.continue_without_soup,
     "show_cart": nodes.show_cart,
     "clear_cart": nodes.clear_cart,
     "remove_last_item": nodes.remove_last_item,

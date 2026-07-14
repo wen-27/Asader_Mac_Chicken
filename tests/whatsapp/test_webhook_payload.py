@@ -69,6 +69,78 @@ def test_whatsapp_payload_maps_confirmation_button_reply_to_text() -> None:
     assert messages[0].text == "si"
 
 
+def test_whatsapp_payload_maps_soup_continue_button_reply_to_text() -> None:
+    payload = WhatsAppWebhookPayload.model_validate(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "573153327502",
+                                        "id": "wamid.SOUP",
+                                        "type": "interactive",
+                                        "interactive": {
+                                            "type": "button_reply",
+                                            "button_reply": {
+                                                "id": "soup_continue",
+                                                "title": "Seguir",
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    messages = payload.iter_text_messages()
+
+    assert len(messages) == 1
+    assert messages[0].text == "seguir"
+
+
+def test_whatsapp_payload_maps_half_combo_order_button_reply_to_text() -> None:
+    payload = WhatsAppWebhookPayload.model_validate(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "573153327502",
+                                        "id": "wamid.COMBO",
+                                        "type": "interactive",
+                                        "interactive": {
+                                            "type": "button_reply",
+                                            "button_reply": {
+                                                "id": "half_combo_order",
+                                                "title": "Pedir",
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    messages = payload.iter_text_messages()
+
+    assert len(messages) == 1
+    assert messages[0].text == "pedir"
+
+
 def test_whatsapp_payload_maps_admin_preparing_button_reply() -> None:
     payload = WhatsAppWebhookPayload.model_validate(
         {

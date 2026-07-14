@@ -27,6 +27,7 @@ class FakeConversationServices:
         self.persisted_steps: list[ConversationState] = []
         self.synced_orders: list[AdminOrderPayload] = []
         self.fail_sync = False
+        self.soup_available = True
         self.created_orders: list[str] = []
         self.products = {
             "JUGO_HIT_PERSONAL": Product(
@@ -76,6 +77,12 @@ class FakeConversationServices:
                 name=ProductName("1/2 Broasted"),
                 category=ProductCategory.POLLO_BROASTER,
                 price=MoneyCOP(25500),
+            ),
+            "BROASTER_ENTERO": Product(
+                code=ProductCode("BROASTER_ENTERO"),
+                name=ProductName("Broasted Entero"),
+                category=ProductCategory.POLLO_BROASTER,
+                price=MoneyCOP(51000),
             ),
             "BROASTER_CUARTO": Product(
                 code=ProductCode("BROASTER_CUARTO"),
@@ -146,6 +153,9 @@ class FakeConversationServices:
             distance_km=0.0,
             pricing_source="test",
         )
+
+    async def soup_is_available(self) -> bool:
+        return self.soup_available
 
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
         if self.fail_sync:
@@ -1512,6 +1522,154 @@ async def test_ambiguous_gaseosa_price_question_lists_bebidas() -> None:
     assert "Coca-Cola 1.5 L: $8500" in result["response_text"]
     assert "Gaseosa vale $3000" not in result["response_text"]
     assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+async def test_quantity_step_soup_question_does_not_add_soup_to_cart() -> None:
+    services = FakeConversationServices()
+    services.session.selected_product_code = ProductCode("BROASTER_MEDIO")
+    services.session.move_to(ConversationState.ASK_QUANTITY)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Trae sopa?")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye 1 sopa sin costo" in result["response_text"].lower()
+    assert result["current_step"] == ConversationState.ASK_QUANTITY
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_unavailable_soup_question_prompts_continue_or_cancel() -> None:
+    services = FakeConversationServices()
+    services.soup_available = False
+    services.session.selected_product_code = ProductCode("BROASTER_MEDIO")
+    services.session.move_to(ConversationState.ASK_QUANTITY)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Trae sopa?")
+
+    result = await graph.ainvoke(state)
+
+    assert "no contamos con sopas" in result["response_text"].lower()
+    assert "¿Quieres seguir con tu pedido o prefieres cancelarlo?" in result["response_text"]
+    assert result["current_step"] == ConversationState.ASK_SOUP_UNAVAILABLE
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_continue_without_soup_shows_menu_and_keeps_cart() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_SOUP_UNAVAILABLE)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="seguir")
+
+    result = await graph.ainvoke(state)
+
+    assert "seguimos con tu pedido sin sopa" in result["response_text"].lower()
+    assert "Elige una categoria" in result["response_text"]
+    assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_unavailable_soup_clears_cart() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_SOUP_UNAVAILABLE)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="cancelar")
+
+    result = await graph.ainvoke(state)
+
+    assert "muchas gracias por elegirnos" in result["response_text"].lower()
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_product_contents_question_does_not_add_product_to_cart() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Que trae el pollo a la broster entero")
+
+    result = await graph.ainvoke(state)
+
+    assert "Broasted Entero trae pollo broaster" in result["response_text"]
+    assert "Agregado al carrito" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_combination_question_does_not_add_half_broaster_to_cart() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Puedo pedir medio asado y medio a la broster?")
+
+    result = await graph.ainvoke(state)
+
+    assert "puedes pedir medio asado y medio broaster" in result["response_text"].lower()
+    assert "Agregado al carrito" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_half_combo_order_button_adds_both_halves_to_cart() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.ASK_HALF_COMBO)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="pedir")
+
+    result = await graph.ainvoke(state)
+
+    assert "1 x 1/2 Asado" in result["response_text"]
+    assert "1 x 1/2 Broasted" in result["response_text"]
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == [
+        "ASADO_MEDIO",
+        "BROASTER_MEDIO",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_half_combo_menu_button_shows_menu_without_adding_cart() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.ASK_HALF_COMBO)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="ver menu")
+
+    result = await graph.ainvoke(state)
+
+    assert "Elige una categoria" in result["response_text"]
+    assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_lazania_price_typo_answers_product_price() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Que precio tiene la lazaña")
+
+    result = await graph.ainvoke(state)
+
+    assert "Lasagna Mixta vale $20000" in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_contents_question_without_product_asks_for_product_context() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Que trae?")
+
+    result = await graph.ainvoke(state)
+
+    assert "Dime de que producto" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+    assert services.session.cart == []
 
 
 @pytest.mark.asyncio

@@ -41,6 +41,8 @@ def route_after_intent(state: ConversationGraphState) -> str:
         ConversationIntent.INICIAR_DOMICILIO: "start_delivery_order",
         ConversationIntent.PEDIR_CANTIDAD: "ask_quantity",
         ConversationIntent.AGREGAR_PRODUCTO: "add_to_cart",
+        ConversationIntent.AGREGAR_MEDIO_COMBO: "add_half_combo_to_cart",
+        ConversationIntent.CONTINUAR_SIN_SOPA: "continue_without_soup",
         ConversationIntent.VOLVER: "go_back",
         ConversationIntent.RESPONDER_CONSULTA: "answer_query",
         ConversationIntent.PRODUCTO_RESTRINGIDO: "send_telegram_response",

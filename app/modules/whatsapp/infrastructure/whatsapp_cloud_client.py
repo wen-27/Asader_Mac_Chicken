@@ -33,6 +33,10 @@ class WhatsAppCloudClient:
         if payload is None:
             payload = _stock_alternative_buttons_payload(chat_id, text)
         if payload is None:
+            payload = _soup_unavailable_buttons_payload(chat_id, text)
+        if payload is None:
+            payload = _half_combo_buttons_payload(chat_id, text)
+        if payload is None:
             payload = {
                 "messaging_product": "whatsapp",
                 "to": str(chat_id.value),
@@ -153,6 +157,58 @@ def _stock_alternative_buttons_payload(chat_id: ChatId, text: str) -> dict[str, 
                     {
                         "type": "reply",
                         "reply": {"id": "stock_alternative_menu", "title": "Ver menú"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _soup_unavailable_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "¿Quieres seguir con tu pedido o prefieres cancelarlo?" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "soup_continue", "title": "Seguir"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "soup_cancel", "title": "Cancelar"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _half_combo_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "half_combo_order", "title": "Pedir"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "half_combo_menu", "title": "Menú"},
                     },
                 ]
             },

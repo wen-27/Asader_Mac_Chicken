@@ -189,6 +189,20 @@ async def detect_intent(
             _display_product_name(state.selected_product_name, state.selected_chicken_part)
         )
         return state
+    if state.current_step == ConversationState.ASK_SOUP_UNAVAILABLE:
+        if _contains_command(text, ("seguir", "continuar", "pedir", "menu", "menú", "ver menu", "ver menú")):
+            state.intent = ConversationIntent.CONTINUAR_SIN_SOPA
+            return state
+        if _contains_command(text, ("cancelar", "cancela", "cancelar pedido", "no")):
+            state.intent = ConversationIntent.CANCELAR
+            return state
+    if state.current_step == ConversationState.ASK_HALF_COMBO:
+        if _contains_command(text, ("pedir", "agregar", "si", "sí")):
+            state.intent = ConversationIntent.AGREGAR_MEDIO_COMBO
+            return state
+        if _contains_command(text, ("menu", "menú", "ver menu", "ver menú")):
+            state.intent = ConversationIntent.VER_MENU
+            return state
     if state.current_step == ConversationState.ASK_QUANTITY:
         state.intent = ConversationIntent.AGREGAR_PRODUCTO
         state.quantity = _extract_positive_integer(text) or 0
@@ -1103,6 +1117,30 @@ async def answer_query(
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
         return state
+    if state.query_type == "contents":
+        product = await _find_product_for_query(state.query_value or state.raw_text, services)
+        if product is None and state.selected_product_code:
+            product = await services.find_product(state.selected_product_code)
+        soup_available = await _soup_is_available(services)
+        if _is_soup_contents_question(state.normalized_text) and not soup_available:
+            session = await services.load_or_create_session(ChatId(state.chat_id))
+            session.move_to(ConversationState.ASK_SOUP_UNAVAILABLE)
+            await services.persist_session(session)
+            state.current_step = ConversationState.ASK_SOUP_UNAVAILABLE
+            state.response_text = BotMessageFactory.soup_unavailable_prompt()
+            return state
+        if _is_soup_contents_question(state.normalized_text) and product is None:
+            state.response_text = BotMessageFactory.generic_soup_inclusion_answer()
+            return state
+        state.response_text = BotMessageFactory.product_contents_answer(product, soup_available)
+        return state
+    if state.query_type == "combination":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.move_to(ConversationState.ASK_HALF_COMBO)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_HALF_COMBO
+        state.response_text = BotMessageFactory.product_combination_answer()
+        return state
     if state.query_type == "category":
         category = _category_from_query_value(state.query_value or "")
         if category is not None:
@@ -1152,6 +1190,59 @@ async def go_back(
     }:
         return await show_cart(state, services)
     return await show_main_menu(state, services)
+
+
+async def continue_without_soup(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.clear_selected_product()
+    session.move_to(ConversationState.PRODUCT_CATEGORY)
+    await services.persist_session(session)
+    state.current_step = ConversationState.PRODUCT_CATEGORY
+    state.response_text = BotMessageFactory.continue_without_soup_menu()
+    return state
+
+
+async def add_half_combo_to_cart(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    added_lines: list[CartLineState] = []
+    for code in ("ASADO_MEDIO", "BROASTER_MEDIO"):
+        product = await services.find_product(code)
+        if product is None:
+            continue
+        item = cart_item_from_product(product, 1)
+        session.add_cart_item(item)
+        added_lines.append(
+            CartLineState(
+                product_code=item.product_code.value,
+                product_name=item.product_name.value,
+                unit_price_cop=item.unit_price.amount,
+                quantity=item.quantity,
+                subtotal_cop=item.subtotal.amount,
+            )
+        )
+    session.move_to(ConversationState.POST_ADD)
+    session.clear_selected_product()
+    await services.persist_session(session)
+    state.current_step = ConversationState.POST_ADD
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.response_text = BotMessageFactory.natural_order_added(added_lines, state.subtotal_cop)
+    return state
 
 
 async def _show_category(
@@ -1887,6 +1978,10 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("unknown", text)
     if _looks_like_order_status_query(text):
         return ("order_status", text)
+    if _looks_like_combination_question(text):
+        return ("combination", text)
+    if _looks_like_contents_question(text):
+        return ("contents", text)
     short_product_reference = _short_product_reference(text)
     if short_product_reference:
         return ("price", short_product_reference)
@@ -1898,6 +1993,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
     if any(word in text for word in ["vale", "valor", "precio", "cuanto cuesta", "cuánto cuesta"]):
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
+        if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
+            return ("price", "lasagna mixta")
         return ("price", text)
     if any(
         word in text
@@ -1911,9 +2008,48 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("category", "asado")
         if any(word in text for word in ["broaster", "broasted", "broster"]):
             return ("category", "broaster")
-        if any(word in text for word in ["especial", "especiales", "lasagna", "lasana", "lasaña", "maduro"]):
+        if any(word in text for word in ["especial", "especiales", "lasagna", "lasana", "lasaña", "lazana", "lazaña", "maduro"]):
             return ("category", "especiales")
     return None
+
+
+def _looks_like_contents_question(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "que trae",
+            "qué trae",
+            "que incluye",
+            "qué incluye",
+            "trae sopa",
+            "incluye sopa",
+            "viene con sopa",
+            "con que viene",
+            "con qué viene",
+        ),
+    )
+
+
+def _is_soup_contents_question(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "trae sopa",
+            "incluye sopa",
+            "viene con sopa",
+            "dan sopa",
+            "tiene sopa",
+        ),
+    )
+
+
+def _looks_like_combination_question(text: str) -> bool:
+    if not _contains_any(text, ("puedo pedir", "se puede pedir", "puedo llevar", "me pueden vender")):
+        return False
+    return _contains_any(text, ("asado", "broaster", "broster", "broasted")) and _contains_any(
+        text,
+        (" y ", "con", "mitad", "medio"),
+    )
 
 
 def _looks_like_order_status_query(text: str) -> bool:
@@ -1995,9 +2131,12 @@ def _looks_like_question(text: str) -> bool:
             "cuánto",
             "cual",
             "cuál",
+            "puedo",
             "tienes",
             "tiene",
             "hay",
+            "trae",
+            "incluye",
             "vale",
             "precio",
             "valor",
@@ -2074,10 +2213,45 @@ async def _find_product_for_query(
         "valor de",
         "que vale",
         "qué vale",
+        "que precio tiene",
+        "qué precio tiene",
+        "precio",
+        "que trae",
+        "qué trae",
+        "que incluye",
+        "qué incluye",
         "vale",
     ]:
         normalized = normalized.replace(removable, " ")
+    normalized = _normalize_common_product_alias(normalized.strip())
     return await services.find_product(normalized.strip())
+
+
+def _normalize_common_product_alias(text: str) -> str:
+    normalized = text
+    replacements = {
+        "lazana": "lasagna",
+        "lazaña": "lasagna",
+        "lasana": "lasagna",
+        "lasaña": "lasagna",
+        "broster": "broasted",
+        "broaster": "broasted",
+        "pollo a la broasted": "broasted",
+        "pollo broasted": "broasted",
+    }
+    for source, target in replacements.items():
+        normalized = normalized.replace(source, target)
+    if "lasagna" in normalized:
+        return "LASAGNA_MIXTA"
+    if "broasted" in normalized and "entero" in normalized:
+        return "BROASTER_ENTERO"
+    if "broasted" in normalized and "medio" in normalized:
+        return "BROASTER_MEDIO"
+    if "asado" in normalized and "entero" in normalized:
+        return "ASADO_ENTERO"
+    if "asado" in normalized and "medio" in normalized:
+        return "ASADO_MEDIO"
+    return normalized
 
 
 async def _find_numbered_product(

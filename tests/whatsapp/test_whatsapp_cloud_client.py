@@ -1,4 +1,8 @@
-from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import _confirmation_buttons_payload
+from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import (
+    _confirmation_buttons_payload,
+    _half_combo_buttons_payload,
+    _soup_unavailable_buttons_payload,
+)
 from app.shared.domain.value_object import ChatId
 
 
@@ -31,3 +35,33 @@ def test_inline_confirmation_text_uses_reply_buttons_without_instruction() -> No
     assert "¿Deseas confirmar el pedido?" in body
     assert buttons[0]["reply"]["title"] == "Sí"
     assert buttons[1]["reply"]["title"] == "No"
+
+
+def test_soup_unavailable_prompt_uses_continue_cancel_buttons() -> None:
+    payload = _soup_unavailable_buttons_payload(
+        ChatId(573153327502),
+        "En este momento no contamos con sopas debido a que ya se agotaron.\n\n"
+        "¿Quieres seguir con tu pedido o prefieres cancelarlo?",
+    )
+
+    assert payload is not None
+    buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
+    assert buttons[0]["reply"]["id"] == "soup_continue"
+    assert buttons[0]["reply"]["title"] == "Seguir"
+    assert buttons[1]["reply"]["id"] == "soup_cancel"
+    assert buttons[1]["reply"]["title"] == "Cancelar"
+
+
+def test_half_combo_prompt_uses_order_menu_buttons() -> None:
+    payload = _half_combo_buttons_payload(
+        ChatId(573153327502),
+        "Si, puedes pedir medio asado y medio broaster.\n\n"
+        "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?",
+    )
+
+    assert payload is not None
+    buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
+    assert buttons[0]["reply"]["id"] == "half_combo_order"
+    assert buttons[0]["reply"]["title"] == "Pedir"
+    assert buttons[1]["reply"]["id"] == "half_combo_menu"
+    assert buttons[1]["reply"]["title"] == "Menú"
