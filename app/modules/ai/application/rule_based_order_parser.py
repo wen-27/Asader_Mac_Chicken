@@ -237,6 +237,8 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         if rule.code in matched_codes:
             continue
         if _matches_rule(normalized, rule):
+            if rule.code == "SOPA_ADICIONAL" and _looks_like_soup_or_contents_question(normalized):
+                continue
             items.append(
                 ParsedOrderItem(
                     code=rule.code,
@@ -289,6 +291,24 @@ def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
     if not rule.size_terms:
         return True
     return any(_contains_term(text, term) for term in rule.size_terms)
+
+
+def _looks_like_soup_or_contents_question(text: str) -> bool:
+    return _contains_any_terms(
+        text,
+        (
+            "trae sopa",
+            "viene con sopa",
+            "incluye sopa",
+            "tiene sopa",
+            "con que viene",
+            "con qué viene",
+            "que trae",
+            "qué trae",
+            "que incluye",
+            "qué incluye",
+        ),
+    )
 
 
 def _looks_like_whole_roasted_chicken(text: str) -> bool:

@@ -1291,6 +1291,9 @@ async def fallback_natural_language(
                 added_lines,
                 state.subtotal_cop,
             )
+            contents_answer = await _contents_answer_for_added_order_question(state, services, added_lines)
+            if contents_answer:
+                state.response_text = "\n\n".join([state.response_text, contents_answer])
             ambiguous_drink_quantity = _ambiguous_drink_quantity(state.normalized_text)
             if ambiguous_drink_quantity:
                 state.response_text = "\n\n".join(
@@ -1402,6 +1405,8 @@ async def answer_query(
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
         if _is_soup_contents_question(state.normalized_text):
             product = await _product_for_soup_question(state, services, product)
+        elif product is None:
+            product = await _product_for_contents_question(state, services)
         if product is None and state.selected_product_code:
             product = await services.find_product(state.selected_product_code)
         soup_available = await _soup_is_available(services)
@@ -3059,6 +3064,47 @@ async def _product_for_soup_question(
             product = await services.find_product(line.product_code)
             if product is not None:
                 return product
+    return None
+
+
+async def _contents_answer_for_added_order_question(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    added_lines: list[CartLineState],
+) -> str | None:
+    if not (_looks_like_contents_question(state.normalized_text) or _is_soup_contents_question(state.normalized_text)):
+        return None
+    product = None
+    for line in added_lines:
+        if _is_chicken_product_code(line.product_code):
+            product = await services.find_product(line.product_code)
+            break
+    if product is None:
+        product = await _product_for_contents_question(state, services)
+    if product is None:
+        return None
+    soup_available = await _soup_is_available(services)
+    return BotMessageFactory.product_contents_answer(product, soup_available)
+
+
+async def _product_for_contents_question(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+):
+    if state.selected_product_code and _is_chicken_product_code(state.selected_product_code):
+        selected = await services.find_product(state.selected_product_code)
+        if selected is not None:
+            return selected
+    for line in reversed(state.cart):
+        if _is_chicken_product_code(line.product_code):
+            product = await services.find_product(line.product_code)
+            if product is not None:
+                return product
+    normalized = state.normalized_text
+    if _contains_any(normalized, ("broaster", "broasted", "broster")):
+        return await services.find_product("BROASTER_ENTERO")
+    if _contains_any(normalized, ("asado", "pollo")):
+        return await services.find_product("ASADO_ENTERO")
     return None
 
 

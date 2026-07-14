@@ -235,6 +235,12 @@ def test_rule_based_parser_tolerates_repeated_vowel_typo() -> None:
     assert [(item.code, item.quantity) for item in parsed.items] == [("LASAGNA_MIXTA", 1)]
 
 
+def test_rule_based_parser_does_not_charge_soup_when_customer_asks_if_included() -> None:
+    parsed = parse_natural_order_rules("Me regalas un pollo asado, con que viene? Trae sopa?")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
+
+
 def test_rule_based_parser_understands_lasagna_typos() -> None:
     examples = [
         "quiero agregar una lasaña",
