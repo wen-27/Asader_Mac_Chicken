@@ -20,6 +20,18 @@ def _value(state: ConversationGraphState | dict, key: str):
 def route_after_intent(state: ConversationGraphState) -> str:
     # Explicit intents win first. If an intent is missing here, the graph falls
     # back to product selection only while the user is inside a category menu.
+    if _value(state, "intent") == ConversationIntent.LENGUAJE_NATURAL:
+        current_step = _value(state, "current_step")
+        normalized_text = (_value(state, "normalized_text") or "").strip()
+        if current_step in {
+            ConversationState.SELECT_ASADO,
+            ConversationState.SELECT_BROASTER,
+            ConversationState.SELECT_BEBIDA,
+            ConversationState.SELECT_ADICIONAL,
+            ConversationState.SELECT_ESPECIAL,
+        } and normalized_text.isdigit():
+            return "select_product"
+        return "fallback_natural_language"
     routes = {
         ConversationIntent.MOSTRAR_MENU: "show_main_menu",
         ConversationIntent.VER_MENU: "show_product_categories",

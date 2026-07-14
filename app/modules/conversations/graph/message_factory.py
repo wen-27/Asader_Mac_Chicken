@@ -536,10 +536,16 @@ class BotMessageFactory:
         normalized_name = product.name.value.lower()
         if "broast" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
-            return f"Si claro. {product.name.value} es pollo broaster y vale ${product.price.amount}. {soup_text}"
+            return (
+                f"Si claro. {product.name.value} vale ${product.price.amount} y viene con papa, "
+                f"yuca cocida y ají. {soup_text}"
+            )
         if "asado" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
-            return f"Si claro. {product.name.value} es pollo asado y vale ${product.price.amount}. {soup_text}"
+            return (
+                f"Si claro. {product.name.value} vale ${product.price.amount} y viene con papa, "
+                f"yuca cocida y ají. {soup_text}"
+            )
         return (
             f"{product.name.value} esta disponible en el menu. "
             "Si quieres, puedes pedirlo escribiendo el nombre del producto."

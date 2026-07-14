@@ -26,6 +26,7 @@ from app.modules.conversations.application.graph_services import DefaultConversa
 from app.modules.conversations.application.langgraph_handler import (
     LangGraphConversationMessageHandler,
 )
+from app.modules.conversations.application.outbound_messages import split_outbound_messages
 from app.modules.conversations.graph.message_factory import BotMessageFactory
 from app.modules.conversations.infrastructure.redis_session_cache import (
     CachedTelegramSessionRepository,
@@ -428,15 +429,16 @@ async def whatsapp_webhook(
         if result.processed:
             processed += 1
             if result.response_text:
-                try:
-                    await message_client.record_bot_message(
-                        chat_id=str(inbound.chat_id),
-                        body=result.response_text,
-                        external_message_id=f"bot:{inbound.external_message_id}",
-                        sent_at=datetime.now(timezone.utc).isoformat(),
-                    )
-                except Exception:
-                    logger.exception("failed to sync outgoing whatsapp message to admin backend")
+                for index, outbound_text in enumerate(split_outbound_messages(result.response_text), start=1):
+                    try:
+                        await message_client.record_bot_message(
+                            chat_id=str(inbound.chat_id),
+                            body=outbound_text,
+                            external_message_id=f"bot:{inbound.external_message_id}:{index}",
+                            sent_at=datetime.now(timezone.utc).isoformat(),
+                        )
+                    except Exception:
+                        logger.exception("failed to sync outgoing whatsapp message to admin backend")
         if result.duplicated:
             duplicated += 1
 

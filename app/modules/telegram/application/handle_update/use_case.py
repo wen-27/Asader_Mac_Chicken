@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import logging
 from time import perf_counter
 
+from app.modules.conversations.application.outbound_messages import split_outbound_messages
 from app.modules.conversations.application.ports import ConversationMessageHandler
 from app.modules.telegram.application.ports import TelegramClient, TelegramMessageRepository
 from app.modules.telegram.domain.telegram_message import TelegramMessage
@@ -119,9 +120,13 @@ class HandleTelegramUpdateUseCase:
         # breaks, and checkout data often arrives as several human-written lines.
         conversation_started_at = perf_counter()
         response_text = await self._conversation_handler.handle(inbound.text, chat_id)
+        response_texts = split_outbound_messages(response_text)
         conversation_ms = round((perf_counter() - conversation_started_at) * 1000, 2)
         send_started_at = perf_counter()
-        sent_message = await self._telegram_client.send_text_message(chat_id, response_text)
+        sent_messages = [
+            await self._telegram_client.send_text_message(chat_id, outbound_text)
+            for outbound_text in response_texts
+        ]
         send_ms = round((perf_counter() - send_started_at) * 1000, 2)
         if self._idempotency is not None:
             # Once WhatsApp/Telegram accepted the outbound message, mark the
@@ -133,7 +138,8 @@ class HandleTelegramUpdateUseCase:
                 self._idempotency_ttl_seconds,
             )
         save_started_at = perf_counter()
-        await self._messages.add(sent_message, direction="outbound")
+        for sent_message in sent_messages:
+            await self._messages.add(sent_message, direction="outbound")
         save_ms = round((perf_counter() - save_started_at) * 1000, 2)
         total_ms = round((perf_counter() - started_at) * 1000, 2)
         logger.info(

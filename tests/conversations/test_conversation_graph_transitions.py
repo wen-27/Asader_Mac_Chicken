@@ -393,7 +393,7 @@ async def test_full_order_phrase_inside_asado_menu_adds_quantity_directly() -> N
         category=ProductCategory.POLLO_ASADO,
         price=MoneyCOP(44500),
     )
-    services.session.current_state = ConversationState.SELECT_ASADO
+    services.session.move_to(ConversationState.SELECT_ASADO)
     graph = build_conversation_graph(services)
     state = ConversationGraphState(
         chat_id=123,
@@ -405,6 +405,32 @@ async def test_full_order_phrase_inside_asado_menu_adds_quantity_directly() -> N
     assert result["current_step"] == ConversationState.POST_ADD
     assert "¿Cuantas unidades deseas agregar?" not in result["response_text"]
     assert "2 x 1 Asado Entero: $89000" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_order_with_contents_question_inside_asado_menu_does_not_ask_quantity() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.session.move_to(ConversationState.SELECT_ASADO)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Me regalas un pollo asado, con que viene? Trae sopa?")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "¿Cuantas unidades deseas agregar?" not in result["response_text"]
+    assert "1 x 1 Asado Entero: $44500" in result["response_text"]
+    assert "Sopa Adicional" not in result["response_text"]
+    assert "papa" in result["response_text"].lower()
+    assert "yuca cocida" in result["response_text"].lower()
+    assert "ají" in result["response_text"]
+    assert "incluye 2 sopas sin costo" in result["response_text"].lower()
+    assert len(services.session.cart) == 1
 
 
 @pytest.mark.asyncio
@@ -874,21 +900,15 @@ async def test_natural_product_selection_inside_specials_menu_reports_restrictio
     monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 1))
     services = FakeConversationServices()
     services.session.move_to(ConversationState.SELECT_ESPECIAL)
-    state = ConversationGraphState(chat_id=123, raw_text="quiero una lasagna")
 
-    state = await nodes.normalize_message(state, services)
-    state = await nodes.load_or_create_session(state, services)
-    state = await nodes.detect_intent(state, services)
+    result = await build_conversation_graph(services).ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="quiero una lasagna")
+    )
 
-    assert route_after_intent(state) == "select_product"
-
-    state = await nodes.select_product(state, services)
-    state = await nodes.validate_product_availability(state, services)
-
-    assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
-    assert state.selected_product_code == "MADURO_QUESO"
-    assert "Lasagna Mixta no esta disponible en este momento" in state.response_text
-    assert "Te puedo ofrecer Maduro con Queso" in state.response_text
+    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
+    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
+    assert services.session.cart == []
 
 
 @pytest.mark.asyncio
@@ -2160,6 +2180,9 @@ async def test_order_with_soup_question_adds_chicken_only_and_answers_contents()
     assert result["current_step"] == ConversationState.POST_ADD
     assert "1 x 1 Asado Entero: $44500" in result["response_text"]
     assert "Sopa Adicional" not in result["response_text"]
+    assert "papa" in result["response_text"].lower()
+    assert "yuca cocida" in result["response_text"].lower()
+    assert "ají" in result["response_text"]
     assert "incluye 2 sopas sin costo" in result["response_text"].lower()
     assert len(services.session.cart) == 1
     assert services.session.cart[0].product_code == ProductCode("ASADO_ENTERO")
@@ -2182,7 +2205,10 @@ async def test_contents_question_after_cart_uses_last_chicken_product() -> None:
     result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Con que viene?"))
 
     assert result["current_step"] == ConversationState.POST_ADD
-    assert "1 Asado Entero es pollo asado" in result["response_text"]
+    assert "1 Asado Entero vale $44500" in result["response_text"]
+    assert "papa" in result["response_text"].lower()
+    assert "yuca cocida" in result["response_text"].lower()
+    assert "ají" in result["response_text"]
     assert "incluye 2 sopas sin costo" in result["response_text"].lower()
     assert "Dime de que producto" not in result["response_text"]
     assert len(services.session.cart) == 1
@@ -2201,7 +2227,10 @@ async def test_contents_question_for_asado_defaults_to_whole_roasted_chicken() -
 
     result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Que trae el asado"))
 
-    assert "1 Asado Entero es pollo asado" in result["response_text"]
+    assert "1 Asado Entero vale $44500" in result["response_text"]
+    assert "papa" in result["response_text"].lower()
+    assert "yuca cocida" in result["response_text"].lower()
+    assert "ají" in result["response_text"]
     assert "incluye 2 sopas sin costo" in result["response_text"].lower()
     assert "Dime de que producto" not in result["response_text"]
     assert services.session.cart == []
@@ -2290,7 +2319,10 @@ async def test_product_contents_question_does_not_add_product_to_cart() -> None:
 
     result = await graph.ainvoke(state)
 
-    assert "Broasted Entero es pollo broaster" in result["response_text"]
+    assert "Broasted Entero vale $51000" in result["response_text"]
+    assert "papa" in result["response_text"].lower()
+    assert "yuca cocida" in result["response_text"].lower()
+    assert "ají" in result["response_text"]
     assert "Agregado al carrito" not in result["response_text"]
     assert services.session.cart == []
 

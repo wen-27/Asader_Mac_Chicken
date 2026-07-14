@@ -24,6 +24,7 @@ from app.modules.conversations.application.graph_services import (
     ConversationGraphServices,
     cart_item_from_product,
 )
+from app.modules.conversations.application.outbound_messages import join_outbound_messages
 from app.modules.conversations.domain.conversation_state import ConversationState
 from app.modules.conversations.domain.intent import ConversationIntent
 from app.modules.conversations.graph.message_factory import BotMessageFactory
@@ -1293,7 +1294,7 @@ async def fallback_natural_language(
             )
             contents_answer = await _contents_answer_for_added_order_question(state, services, added_lines)
             if contents_answer:
-                state.response_text = "\n\n".join([state.response_text, contents_answer])
+                state.response_text = join_outbound_messages([state.response_text, contents_answer])
             ambiguous_drink_quantity = _ambiguous_drink_quantity(state.normalized_text)
             if ambiguous_drink_quantity:
                 state.response_text = "\n\n".join(
