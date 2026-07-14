@@ -1978,6 +1978,26 @@ async def test_graph_adds_natural_order_items_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_graph_adds_whole_broster_order_like_whole_asado() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Muy buenas tardes veci me vendes 2 pollos broster con adicional de miel porfavor",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "2 x Broasted Entero" in result["response_text"]
+    assert "Total acumulado: $102000" in result["response_text"]
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
+    assert services.session.cart[0].quantity == 2
+    assert services.session.observations == "Salsas broaster solicitadas: miel."
+
+
+@pytest.mark.asyncio
 async def test_natural_order_with_ambiguous_gaseosas_asks_drink_type() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

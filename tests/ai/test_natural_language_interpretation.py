@@ -111,6 +111,17 @@ def test_rule_based_parser_understands_asado_and_coca_litro_medio() -> None:
     assert parsed.confidence >= 0.9
 
 
+def test_rule_based_parser_understands_whole_broster_like_whole_asado() -> None:
+    parsed = parse_natural_order_rules(
+        "Muy buenas tardes veci me vendes 2 pollos broster con adicional de miel porfavor"
+    )
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("BROASTER_ENTERO", 2),
+    ]
+    assert parsed.confidence >= 0.9
+
+
 def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
     parsed = parse_natural_order_rules("quiero un pollo")
 

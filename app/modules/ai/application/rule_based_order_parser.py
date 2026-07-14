@@ -288,6 +288,8 @@ def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
         return False
     if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(text):
         return True
+    if rule.code == "BROASTER_ENTERO" and _looks_like_whole_broaster_chicken(text):
+        return True
     if rule.code == "GASEOSA_25" and _looks_like_25_liter_soda_flavor(text):
         return True
     if not rule.size_terms:
@@ -329,6 +331,8 @@ def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
             continue
         if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(segment):
             return True
+        if rule.code == "BROASTER_ENTERO" and _looks_like_whole_broaster_chicken(segment):
+            return True
         if not rule.size_terms or any(_contains_term(segment, term) for term in rule.size_terms):
             return True
     return False
@@ -347,6 +351,69 @@ def _looks_like_whole_roasted_chicken(text: str) -> bool:
             "asados",
             "asadito",
             "asaditos",
+        ),
+    ):
+        return False
+    if _contains_any_terms(text, ("medio", "media", "mitad", "cuarto", "cuartos", "3/4", "1/2", "1/4")):
+        return False
+    return _contains_any_terms(
+        text,
+        (
+            "vende",
+            "vendes",
+            "venden",
+            "vender",
+            "regala",
+            "regalas",
+            "colabora",
+            "colaboras",
+            "colaborar",
+            "colaborarme",
+            "me colabora",
+            "me colaboras",
+            "me puede colaborar",
+            "me puedes colaborar",
+            "puede colaborar",
+            "puedes colaborar",
+            "necesito",
+            "quiero",
+            "deme",
+            "dame",
+            "me da",
+            "me das",
+            "me hace",
+            "favor",
+            "porfa",
+        ),
+    )
+
+
+def _looks_like_whole_broaster_chicken(text: str) -> bool:
+    if _contains_any_terms(
+        text,
+        (
+            "otro pedido",
+            "nuevo pedido",
+            "hacer pedido",
+            "hacer otro pedido",
+            "hacer un pedido",
+            "pedir otra vez",
+            "pedir de nuevo",
+        ),
+    ):
+        return False
+    if not _contains_any_terms(
+        text,
+        (
+            "pollo broaster",
+            "pollos broaster",
+            "pollo broasted",
+            "pollos broasted",
+            "pollo broster",
+            "pollos broster",
+            "broaster",
+            "broasted",
+            "broster",
         ),
     ):
         return False
