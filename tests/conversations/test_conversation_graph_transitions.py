@@ -1321,6 +1321,30 @@ async def test_ambiguous_quarter_with_part_asks_style_before_adding() -> None:
         "ASADO_MEDIO",
         "BROASTER_CUARTO",
     ]
+    assert services.session.cart[0].product_name == ProductName("1/2 Asado")
+    assert services.session.cart[1].product_name == ProductName("1/4 Broasted - Pierna")
+
+
+@pytest.mark.asyncio
+async def test_part_applies_only_to_matching_quarter_segment() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Quiero un cuarto d pollo pierna y medio asado",
+        )
+    )
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="broster"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/2 Asado: $22300" in result["response_text"]
+    assert "1 x 1/2 Asado - Pierna" not in result["response_text"]
+    assert [item.product_name.value for item in services.session.cart] == [
+        "1/2 Asado",
+        "1/4 Broasted - Pierna",
+    ]
 
 
 @pytest.mark.asyncio

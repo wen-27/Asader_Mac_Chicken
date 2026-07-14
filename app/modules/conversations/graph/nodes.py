@@ -1764,7 +1764,8 @@ async def _add_natural_order_to_cart(
             if restricted_recommendation is None:
                 restricted_recommendation = _default_recommended_alternative(item.code)
             continue
-        product_variant = _extract_product_variant(item.code, state.normalized_text)
+        item_text = _text_for_parsed_item(item.code, state.normalized_text)
+        product_variant = _extract_product_variant(item.code, item_text)
         if _requires_product_variant(item.code) and not product_variant:
             session.selected_product_code = product.code
             session.selected_chicken_part = None
@@ -1787,7 +1788,7 @@ async def _add_natural_order_to_cart(
                 restricted_recommendation = getattr(availability, "recommended_alternative", None)
                 restricted_reason = availability.reason
                 continue
-        chicken_part = _extract_chicken_selection(item.code, state.normalized_text)
+        chicken_part = _extract_chicken_selection(item.code, item_text)
         if _requires_chicken_selection(item.code) and not chicken_part:
             session.selected_product_code = product.code
             session.selected_chicken_part = None
@@ -2860,6 +2861,39 @@ def _natural_order_segments(text: str) -> list[str]:
     if tail:
         segments.append(tail)
     return segments or [text]
+
+
+def _text_for_parsed_item(product_code: str, text: str) -> str:
+    segments = _natural_order_segments(text)
+    if len(segments) <= 1:
+        return text
+    for segment in segments:
+        if _segment_mentions_product_code(segment, product_code):
+            return segment
+    return text
+
+
+def _segment_mentions_product_code(segment: str, product_code: str) -> bool:
+    if product_code.startswith("BROASTER"):
+        if not _contains_any(segment, ("broaster", "broasted", "broster", "brosters")):
+            return False
+    elif product_code.startswith("ASADO"):
+        if _contains_any(segment, ("broaster", "broasted", "broster", "brosters")):
+            return False
+        if not _contains_any(segment, ("asado", "asados", "asadito", "pollo", "pollos", "cuarto", "cuartos", "medio", "media")):
+            return False
+    elif product_code in {"COCA_COLA_15", "GASEOSA_25", "QUATRO_15", "PERSONAL_400"}:
+        return _contains_any(segment, ("coca", "cocacola", "coca cola", "gaseosa", "quatro", "kola", "pepsi", "personal"))
+    else:
+        return normalize_text(product_code).replace("_", " ") in segment
+
+    if product_code.endswith("_CUARTO"):
+        return _contains_any(segment, ("cuarto", "cuartos", "1/4", "1 4"))
+    if product_code.endswith("_MEDIO"):
+        return _contains_any(segment, ("medio", "media", "mitad", "1/2", "1 2"))
+    if product_code.endswith("_34"):
+        return _contains_any(segment, ("3/4", "3 4", "tres cuartos"))
+    return True
 
 
 def _ask_chicken_selection_message(product_code: str | None, product_name: str) -> str:
