@@ -307,6 +307,35 @@ class BotMessageFactory:
         return f"Listo, quite {removed_name} del carrito."
 
     @classmethod
+    def cart_replaced_items(
+        cls,
+        removed_names: list[str],
+        added_lines: list[CartLineState],
+        total_cop: int,
+    ) -> str:
+        removed_text = ", ".join(removed_names) if removed_names else "el producto indicado"
+        added_text = "\n".join(
+            f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in added_lines
+        )
+        return "\n\n".join(
+            [
+                f"Listo, quite {removed_text} del carrito y agregue lo que prefieres.",
+                added_text,
+                f"🧾 Total acumulado: ${total_cop}",
+                "¿Que quieres hacer ahora?",
+                "\n".join(
+                    [
+                        "1. Agregar mas productos ➕",
+                        "2. Ver carrito 🛒",
+                        "3. Finalizar pedido ✅",
+                        "4. Vaciar carrito 🗑️",
+                        "0. Volver a categorias ⬅️",
+                    ]
+                ),
+            ]
+        )
+
+    @classmethod
     def checkout_summary(cls, state: ConversationGraphState) -> str:
         if not state.cart:
             return "🛒 Tu carrito esta vacio. Primero agrega productos al pedido."
@@ -556,6 +585,13 @@ class BotMessageFactory:
     @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:
         return f"El domicilio para {neighborhood} cuesta ${price_cop}."
+
+    @classmethod
+    def service_available_answer(cls) -> str:
+        return (
+            "Muy buenas tardes, si claro, contamos con servicio. "
+            "Dime como te puedo ayudar: puedes pedirme por menu o escribirme tu pedido de una vez."
+        )
 
     @classmethod
     def order_status_answer(cls) -> str:

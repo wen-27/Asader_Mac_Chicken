@@ -157,24 +157,50 @@ async def _find_manual_zone(
     if exact is not None:
         return exact
     normalized = normalize_alias(cleaned_neighborhood)
+    normalized_relaxed = _relaxed_neighborhood_alias(cleaned_neighborhood)
     if not normalized:
         return None
     for zone in await delivery_zones.list_active():
         if zone.code == "DOMICILIO_ADICIONAL":
             continue
         zone_normalized = normalize_alias(zone.neighborhood.value)
+        zone_normalized_relaxed = _relaxed_neighborhood_alias(zone.neighborhood.value)
         zone_parts = [
             normalize_alias(part)
             for part in zone.neighborhood.value.replace(",", "/").split("/")
             if normalize_alias(part)
         ]
+        zone_parts_relaxed = [
+            _relaxed_neighborhood_alias(part)
+            for part in zone.neighborhood.value.replace(",", "/").split("/")
+            if _relaxed_neighborhood_alias(part)
+        ]
         if normalized == zone_normalized:
+            return zone
+        if normalized_relaxed == zone_normalized_relaxed:
             return zone
         if normalized in zone_parts:
             return zone
+        if normalized_relaxed in zone_parts_relaxed:
+            return zone
         if any(part in normalized or normalized in part for part in zone_parts):
             return zone
+        if any(
+            part in normalized_relaxed or normalized_relaxed in part
+            for part in zone_parts_relaxed
+        ):
+            return zone
     return None
+
+
+def _relaxed_neighborhood_alias(text: str) -> str:
+    normalized = normalize_alias(text)
+    tokens = [
+        token
+        for token in normalized.split()
+        if token not in {"de", "del", "la", "las", "el", "los"}
+    ]
+    return " ".join(tokens)
 
 
 def _clean_neighborhood_for_manual_lookup(neighborhood: str) -> str:

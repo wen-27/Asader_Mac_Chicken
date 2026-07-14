@@ -24,6 +24,7 @@ DELIVERY_ZONE_SEEDS: tuple[DeliveryZoneSeed, ...] = (
     DeliveryZoneSeed("DOMICILIO_CIUDADELA", "Ciudadela", 11000),
     DeliveryZoneSeed("DOMICILIO_CABECERA", "Cabecera", 12000),
     DeliveryZoneSeed("HOSPITAL_INTERNACIONAL", "Hospital Internacional", 10000),
+    DeliveryZoneSeed("DOMICILIO_GIRON_SAN_ANTONIO_CARRIZAL", "San Antonio Carrizal, Girón", 12000),
     DeliveryZoneSeed("DOMICILIO_ADICIONAL", "Domicilio adicional", 500),
 )
 

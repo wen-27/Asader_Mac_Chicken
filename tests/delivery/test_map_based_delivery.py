@@ -40,6 +40,11 @@ class FakeDeliveryZones:
                 neighborhood=Neighborhood("El Manantial"),
                 delivery_price=MoneyCOP(4000),
             ),
+            DeliveryZone(
+                code="DOMICILIO_GIRON_SAN_ANTONIO_CARRIZAL",
+                neighborhood=Neighborhood("San Antonio Carrizal, Girón"),
+                delivery_price=MoneyCOP(12000),
+            ),
         ]
 
     async def add(self, zone):
@@ -222,4 +227,18 @@ async def test_map_delivery_keeps_lagos_2_base_price() -> None:
     result = await use_case.execute("Cra 28a#195-33", "Lagos 2")
 
     assert result.delivery_price_cop == 2000
+    assert result.pricing_source == "zone"
+
+
+@pytest.mark.asyncio
+async def test_map_delivery_matches_san_antonio_carrizal_manual_price() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        FakeDistanceClient(),
+        DeliveryPricingConfig(origin_address="Lagos 2"),
+    )
+
+    result = await use_case.execute("Transversal 23 #52a-21", "san antonio del carrizal")
+
+    assert result.delivery_price_cop == 12000
     assert result.pricing_source == "zone"
