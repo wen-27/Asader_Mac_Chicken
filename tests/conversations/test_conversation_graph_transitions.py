@@ -1222,6 +1222,67 @@ async def test_single_pending_quarter_response_adds_mixed_order_without_quantity
 
 
 @pytest.mark.asyncio
+async def test_single_pending_quarter_ignores_greeting_then_part_closes_order() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Quiero un cuarto de pollo broster y medio asado",
+        )
+    )
+    greeting = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola"))
+    assert greeting["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "¿Lo quieres en pierna o pechuga?" in greeting["response_text"]
+    assert "Me faltan definir" not in greeting["response_text"]
+
+    final = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pierna"))
+
+    assert final["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/4 Broasted - Pierna" in final["response_text"]
+    assert "1 x 1/2 Asado" in final["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_pending_four_quarters_accepts_quantity_and_part_in_one_message() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="quiero 4 cuartos de pollo asado")
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Me faltan definir 4 cuarto" in first["response_text"]
+
+    final = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="4 piernas"))
+
+    assert final["current_step"] == ConversationState.POST_ADD
+    assert "4 x 1/4 Asado - Pierna" in final["response_text"]
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].quantity == 4
+
+
+@pytest.mark.asyncio
+async def test_pending_five_quarters_accepts_mixed_distribution_in_one_message() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="quiero 5 cuartos de pollo asado")
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Me faltan definir 5 cuarto" in first["response_text"]
+
+    final = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="4 piernas y una pechuga"))
+
+    assert final["current_step"] == ConversationState.POST_ADD
+    assert "4 x 1/4 Asado - Pierna" in final["response_text"]
+    assert "1 x 1/4 Asado - Pechuga" in final["response_text"]
+    assert [item.quantity for item in services.session.cart] == [4, 1]
+
+
+@pytest.mark.asyncio
 async def test_natural_quarter_order_with_part_adds_variant_to_cart() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="quiero un cuarto asado pechuga")

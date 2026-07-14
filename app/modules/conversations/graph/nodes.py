@@ -1924,12 +1924,13 @@ async def _continue_pending_natural_order(
     allocations = list(pending.get("allocations") or [])
     allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
     remaining = max(0, total_quantity - allocated_quantity)
+    parsed_allocations = _extract_chicken_part_allocations(state.normalized_text, remaining)
     part = _extract_chicken_part(state.normalized_text)
     quantity = _extract_positive_integer(state.normalized_text)
 
     awaiting_part = pending.get("awaiting_part")
     if awaiting_part and quantity is not None:
-        part = str(awaiting_part)
+        parsed_allocations = [{"part": str(awaiting_part), "quantity": quantity}]
     elif part and quantity is None and remaining > 1:
         pending["awaiting_part"] = part
         session.pending_order_json = pending
@@ -1939,17 +1940,17 @@ async def _continue_pending_natural_order(
         state.response_text = BotMessageFactory.ask_quarter_distribution_quantity(part, remaining)
         return []
 
-    if not part:
+    if not parsed_allocations:
         state.current_step = ConversationState.ASK_CHICKEN_PART
         state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
-    quantity = quantity or remaining
-    if quantity <= 0 or quantity > remaining:
+    parsed_quantity = sum(int(allocation.get("quantity") or 0) for allocation in parsed_allocations)
+    if parsed_quantity <= 0 or parsed_quantity > remaining:
         state.current_step = ConversationState.ASK_CHICKEN_PART
         state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
 
-    allocations.append({"part": part, "quantity": quantity})
+    allocations.extend(parsed_allocations)
     pending["allocations"] = allocations
     pending["awaiting_part"] = None
     allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
@@ -2765,6 +2766,45 @@ def _extract_chicken_part(text: str) -> str | None:
     return None
 
 
+def _extract_chicken_part_allocations(text: str, remaining: int) -> list[dict[str, object]]:
+    if remaining <= 0:
+        return []
+    parts: list[tuple[str, int | None]] = []
+    tokens = text.split()
+    for index, token in enumerate(tokens):
+        part: str | None = None
+        if _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
+            part = "Pierna"
+        elif _is_close_word(token, "pechuga") or _is_close_word(token, "pechga"):
+            part = "Pechuga"
+        if part is None:
+            continue
+        parts.append((part, _quantity_before_token(tokens, index)))
+
+    if not parts:
+        return []
+    if len(parts) == 1:
+        part, quantity = parts[0]
+        return [{"part": part, "quantity": quantity or remaining}]
+
+    explicit_total = sum(quantity or 0 for _, quantity in parts)
+    missing_indexes = [index for index, (_, quantity) in enumerate(parts) if quantity is None]
+    if len(missing_indexes) == 1:
+        inferred = remaining - explicit_total
+        if inferred <= 0:
+            return []
+        parts[missing_indexes[0]] = (parts[missing_indexes[0]][0], inferred)
+    elif missing_indexes:
+        return []
+
+    allocations: list[dict[str, object]] = []
+    for part, quantity in parts:
+        if quantity is None or quantity <= 0:
+            return []
+        allocations.append({"part": part, "quantity": quantity})
+    return allocations
+
+
 def _extract_chicken_composition(text: str) -> str | None:
     cleaned = text.strip()
     if cleaned == "1":
@@ -2791,6 +2831,34 @@ def _mentions_count(text: str, word: str, count: int) -> bool:
         if any(value in count_words[count] for value in nearby):
             return True
     return False
+
+
+def _quantity_before_token(tokens: list[str], index: int) -> int | None:
+    number_words = {
+        "un": 1,
+        "una": 1,
+        "uno": 1,
+        "dos": 2,
+        "tres": 3,
+        "cuatro": 4,
+        "cinco": 5,
+        "seis": 6,
+        "siete": 7,
+        "ocho": 8,
+        "nueve": 9,
+        "diez": 10,
+    }
+    for token in reversed(tokens[max(0, index - 3) : index]):
+        if token in {"y", "con", "de", "en"}:
+            continue
+        if token in {"cuarto", "cuartos"}:
+            continue
+        if token.isdigit():
+            return int(token)
+        value = number_words.get(token)
+        if value is not None:
+            return value
+    return None
 
 
 def _extract_positive_integer(text: str) -> int | None:
