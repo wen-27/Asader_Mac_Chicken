@@ -38,6 +38,7 @@ def session_to_orm(session: TelegramSession) -> TelegramSessionORM:
         ),
         selected_chicken_part=session.selected_chicken_part,
         cart_json=[cart_item_to_json(item) for item in session.cart],
+        pending_order_json=session.pending_order_json,
         customer_name=session.customer_name,
         phone=session.customer_phone,
         address=session.customer_address,
@@ -55,6 +56,7 @@ def update_session_orm(row: TelegramSessionORM, session: TelegramSession) -> Tel
     )
     row.selected_chicken_part = session.selected_chicken_part
     row.cart_json = [cart_item_to_json(item) for item in session.cart]
+    row.pending_order_json = session.pending_order_json
     row.customer_name = session.customer_name
     row.phone = session.customer_phone
     row.address = session.customer_address
@@ -74,6 +76,7 @@ def session_from_orm(row: TelegramSessionORM) -> TelegramSession:
         ),
         selected_chicken_part=row.selected_chicken_part,
         cart=[cart_item_from_json(item) for item in row.cart_json],
+        pending_order_json=row.pending_order_json,
         customer_name=row.customer_name,
         customer_phone=row.phone,
         customer_address=row.address,

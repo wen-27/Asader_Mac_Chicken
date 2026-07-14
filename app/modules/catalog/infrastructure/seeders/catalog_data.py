@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
+from app.modules.catalog.domain.product_alias import normalize_alias
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,39 @@ class ProductSeed:
 class ProductAliasSeed:
     product_code: str
     aliases: tuple[str, ...] = field(default_factory=tuple)
+
+
+def expanded_aliases(aliases: tuple[str, ...]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        for candidate in (alias, _pluralize_alias(alias)):
+            normalized = normalize_alias(candidate)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            expanded.append(candidate)
+    return tuple(expanded)
+
+
+def _pluralize_alias(alias: str) -> str:
+    words = alias.split()
+    if not words:
+        return alias
+    return " ".join(_pluralize_word(word) for word in words)
+
+
+def _pluralize_word(word: str) -> str:
+    clean = word.strip()
+    if not clean or any(char.isdigit() for char in clean) or "/" in clean or "." in clean:
+        return word
+    if normalize_alias(clean) in {"de", "del", "con", "y", "o", "para", "en"}:
+        return word
+    if clean.endswith("s"):
+        return word
+    if clean.endswith("z"):
+        return clean[:-1] + "ces"
+    return clean + "s"
 
 
 PRODUCT_SEEDS: tuple[ProductSeed, ...] = (

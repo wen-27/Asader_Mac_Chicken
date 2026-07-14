@@ -119,6 +119,11 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if state.current_step == ConversationState.ASK_CHICKEN_PART:
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        if session.pending_order_json:
+            state.intent = ConversationIntent.LENGUAJE_NATURAL
+            return state
     if (
         state.current_step != ConversationState.ASK_CUSTOMER_DATA
         and _looks_like_payment_account_query(text)
@@ -584,6 +589,7 @@ async def clear_cart(
     session = await services.load_or_create_session(ChatId(state.chat_id))
     session.empty_cart()
     session.move_to(ConversationState.MAIN_MENU)
+    session.clear_pending_order()
     await services.persist_session(session)
     state.cart = []
     state.subtotal_cop = 0
@@ -1240,6 +1246,7 @@ async def confirm_order(
         return state
     session.empty_cart()
     session.clear_selected_product()
+    session.clear_pending_order()
     _clear_checkout_session(session)
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
@@ -1279,6 +1286,7 @@ async def cancel_order(
     session = await services.load_or_create_session(ChatId(state.chat_id))
     session.empty_cart()
     session.clear_selected_product()
+    session.clear_pending_order()
     session.clear_customer_data()
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
@@ -1302,6 +1310,17 @@ async def fallback_natural_language(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    pending_lines = await _continue_pending_natural_order(state, services)
+    if pending_lines:
+        state.current_step = ConversationState.POST_ADD
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        state.response_text = BotMessageFactory.natural_order_added(
+            pending_lines,
+            state.subtotal_cop,
+        )
+        return state
+    if state.response_text:
+        return state
     if state.normalized_text not in {"2", "4", "pedido libre", "pedido libremente"}:
         replaced = await _replace_cart_items_from_natural_message(state, services)
         if replaced:
@@ -1699,11 +1718,20 @@ async def _add_natural_order_to_cart(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> list[CartLineState]:
+    pending_lines = await _continue_pending_natural_order(state, services)
+    if pending_lines:
+        return pending_lines
+    if state.response_text:
+        return []
+
     parsed = await _interpret_natural_order(state.raw_text, services)
     if not parsed.items:
         return []
 
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    pending_prompt = await _maybe_start_pending_quarter_order(state, services, session, parsed.items)
+    if pending_prompt:
+        return []
     added_lines: list[CartLineState] = []
     restricted_product_name: str | None = None
     restricted_alternatives: tuple[str, ...] = ()
@@ -1833,6 +1861,157 @@ async def _add_natural_order_to_cart(
     return added_lines
 
 
+async def _maybe_start_pending_quarter_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    session,
+    parsed_items,
+) -> bool:
+    for index, item in enumerate(parsed_items):
+        if not _requires_chicken_part(item.code):
+            continue
+        if _extract_chicken_selection(item.code, state.normalized_text):
+            continue
+        product = await services.find_product(item.code)
+        if product is None:
+            continue
+        session.pending_order_json = {
+            "items": [
+                {"code": parsed_item.code, "quantity": parsed_item.quantity}
+                for parsed_item in parsed_items
+            ],
+            "current_index": index,
+            "allocations": [],
+            "awaiting_part": None,
+            "original_text": state.raw_text,
+        }
+        session.selected_product_code = product.code
+        session.selected_chicken_part = None
+        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.selected_product_code = product.code.value
+        state.selected_product_name = product.name.value
+        state.selected_unit_price_cop = product.price.amount
+        state.response_text = BotMessageFactory.ask_quarter_distribution(
+            product.name.value,
+            item.quantity,
+        )
+        return True
+    return False
+
+
+async def _continue_pending_natural_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> list[CartLineState]:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    pending = session.pending_order_json
+    if not pending:
+        return []
+    items = list(pending.get("items") or [])
+    index = int(pending.get("current_index") or 0)
+    if index >= len(items):
+        session.clear_pending_order()
+        await services.persist_session(session)
+        return []
+    current = items[index]
+    code = str(current.get("code"))
+    total_quantity = int(current.get("quantity") or 1)
+    product = await services.find_product(code)
+    if product is None:
+        session.clear_pending_order()
+        await services.persist_session(session)
+        return []
+
+    allocations = list(pending.get("allocations") or [])
+    allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
+    remaining = max(0, total_quantity - allocated_quantity)
+    part = _extract_chicken_part(state.normalized_text)
+    quantity = _extract_positive_integer(state.normalized_text)
+
+    awaiting_part = pending.get("awaiting_part")
+    if awaiting_part and quantity is not None:
+        part = str(awaiting_part)
+    elif part and quantity is None:
+        pending["awaiting_part"] = part
+        session.pending_order_json = pending
+        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = BotMessageFactory.ask_quarter_distribution_quantity(part, remaining)
+        return []
+
+    if not part:
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        return []
+    quantity = quantity or remaining
+    if quantity <= 0 or quantity > remaining:
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        return []
+
+    allocations.append({"part": part, "quantity": quantity})
+    pending["allocations"] = allocations
+    pending["awaiting_part"] = None
+    allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
+    remaining = max(0, total_quantity - allocated_quantity)
+    if remaining > 0:
+        session.pending_order_json = pending
+        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        return []
+
+    added_lines = await _add_pending_order_items_to_cart(session, services, pending)
+    session.clear_pending_order()
+    session.clear_selected_product()
+    session.move_to(ConversationState.POST_ADD)
+    await services.persist_session(session)
+    state.current_step = ConversationState.POST_ADD
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    return added_lines
+
+
+async def _add_pending_order_items_to_cart(session, services, pending: dict[str, object]) -> list[CartLineState]:
+    added_lines: list[CartLineState] = []
+    items = list(pending.get("items") or [])
+    current_index = int(pending.get("current_index") or 0)
+    allocations = list(pending.get("allocations") or [])
+    for index, item in enumerate(items):
+        code = str(item.get("code"))
+        quantity = int(item.get("quantity") or 1)
+        product = await services.find_product(code)
+        if product is None:
+            continue
+        if index == current_index and _requires_chicken_part(code):
+            for allocation in allocations:
+                part = str(allocation.get("part"))
+                allocation_quantity = int(allocation.get("quantity") or 0)
+                if allocation_quantity <= 0:
+                    continue
+                cart_item = _cart_item_from_selected_product(product, allocation_quantity, part)
+                session.add_cart_item(cart_item)
+                added_lines.append(_cart_line_from_cart_item(cart_item))
+            continue
+        cart_item = cart_item_from_product(product, quantity)
+        session.add_cart_item(cart_item)
+        added_lines.append(_cart_line_from_cart_item(cart_item))
+    return added_lines
+
+
 async def _interpret_natural_order(
     message: str,
     services: ConversationGraphServices,
@@ -1864,11 +2043,35 @@ async def _replace_cart_items_from_natural_message(
 
     kept_items = []
     removed_items = []
+    replace_all = _looks_like_replace_entire_order(state.normalized_text, remove_text)
+    remove_limit = None if replace_all else _replacement_remove_quantity(remove_text)
+    removed_quantity = 0
     for item in session.cart:
         if _cart_item_matches_replacement_removal(item.product_code.value, item.product_name.value, remove_text):
-            removed_items.append(item)
+            if remove_limit is None or removed_quantity < remove_limit:
+                quantity_to_remove = item.quantity if remove_limit is None else min(item.quantity, remove_limit - removed_quantity)
+                removed_quantity += quantity_to_remove
+                removed_items.append(type(item)(
+                    product_code=item.product_code,
+                    product_name=item.product_name,
+                    unit_price=item.unit_price,
+                    quantity=quantity_to_remove,
+                ))
+                remaining_quantity = item.quantity - quantity_to_remove
+                if remaining_quantity > 0:
+                    kept_items.append(type(item)(
+                        product_code=item.product_code,
+                        product_name=item.product_name,
+                        unit_price=item.unit_price,
+                        quantity=remaining_quantity,
+                    ))
+            else:
+                kept_items.append(item)
         else:
             kept_items.append(item)
+    if replace_all:
+        removed_items = list(session.cart)
+        kept_items = []
     if not removed_items:
         return False
 
@@ -1951,6 +2154,47 @@ def _split_cart_replacement_request(text: str) -> tuple[str, str] | None:
         add_text = text[match.end() :].strip(" ,.;")
         if add_text:
             return (remove_text or text, add_text)
+    return None
+
+
+def _looks_like_replace_entire_order(text: str, remove_text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "me equivoque",
+            "me equivoqué",
+            "cambiar todo",
+            "cambia todo",
+            "cambie todo",
+            "cambié todo",
+            "todo el pedido",
+            "todo mi pedido",
+        ),
+    ) or not _contains_any(
+        remove_text,
+        (
+            "asado",
+            "broaster",
+            "broasted",
+            "broster",
+            "pollo",
+            "coca",
+            "gaseosa",
+            "papa",
+            "yuca",
+            "sopa",
+            "lasagna",
+            "maduro",
+        ),
+    )
+
+
+def _replacement_remove_quantity(text: str) -> int | None:
+    quantity = _extract_positive_integer(text)
+    if quantity is not None:
+        return quantity
+    if _contains_any(text, ("un ", "una ")):
+        return 1
     return None
 
 
@@ -2587,6 +2831,16 @@ def _cart_item_from_selected_product(product: Product, quantity: int, chicken_pa
         product_name=ProductName(_display_product_name(item.product_name.value, chicken_part)),
         unit_price=item.unit_price,
         quantity=item.quantity,
+    )
+
+
+def _cart_line_from_cart_item(item) -> CartLineState:
+    return CartLineState(
+        product_code=item.product_code.value,
+        product_name=item.product_name.value,
+        unit_price_cop=item.unit_price.amount,
+        quantity=item.quantity,
+        subtotal_cop=item.subtotal.amount,
     )
 
 

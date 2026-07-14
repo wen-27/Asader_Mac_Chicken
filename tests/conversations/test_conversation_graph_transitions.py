@@ -2072,6 +2072,34 @@ async def test_graph_adds_whole_broster_order_like_whole_asado() -> None:
 
 
 @pytest.mark.asyncio
+async def test_graph_adds_mixed_whole_brosters_and_asado_in_one_message() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Buenos días me vendes dos pollos brosters y un pollo asado",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "2 x Broasted Entero" in result["response_text"]
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Total acumulado: $146500" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "ASADO_ENTERO",
+        "BROASTER_ENTERO",
+    ]
+    assert [item.quantity for item in services.session.cart] == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_natural_order_with_ambiguous_gaseosas_asks_drink_type() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -2988,6 +3016,81 @@ async def test_cart_change_understands_short_por_asado_replacement() -> None:
     assert "quite Broasted Entero" in result["response_text"]
     assert "1 x 1 Asado Entero" in result["response_text"]
     assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+
+
+@pytest.mark.asyncio
+async def test_cart_change_replaces_only_one_asado_when_customer_says_un_asado() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_ENTERO"], 2))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero cambiar un asado por un broster")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO", "BROASTER_ENTERO"]
+    assert [item.quantity for item in services.session.cart] == [1, 1]
+    assert "1 x Broasted Entero" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_cart_change_all_order_with_quarters_waits_for_distribution_then_adds_everything() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
+        category=ProductCategory.BEBIDAS,
+        price=MoneyCOP(8500),
+    )
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Me equivoqué lo quiero cambiar por 4 cuartos de pollo asado un pollo broster y 3 cocacola litro y medio",
+        )
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Me faltan definir 4 cuarto" in first["response_text"]
+    assert services.session.cart == []
+
+    second = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="pierna"))
+    assert second["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Cuantos cuarto(s) quieres en pierna" in second["response_text"]
+
+    third = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="2"))
+    assert third["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Me faltan definir 2 cuarto" in third["response_text"]
+    assert services.session.cart == []
+
+    fourth = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="2 pechugas"))
+    assert fourth["current_step"] == ConversationState.POST_ADD
+    assert "2 x 1/4 Asado - Pierna" in fourth["response_text"]
+    assert "2 x 1/4 Asado - Pechuga" in fourth["response_text"]
+    assert "1 x Broasted Entero" in fourth["response_text"]
+    assert "3 x Coca-Cola 1.5 L" in fourth["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "ASADO_CUARTO",
+        "ASADO_CUARTO",
+        "BROASTER_ENTERO",
+        "COCA_COLA_15",
+    ]
 
 
 @pytest.mark.asyncio

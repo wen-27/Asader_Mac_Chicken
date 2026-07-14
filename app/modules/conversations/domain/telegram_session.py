@@ -24,6 +24,7 @@ class TelegramSession:
     payment_method: str | None = None
     observations: str | None = None
     fulfillment_type: str = "DELIVERY"
+    pending_order_json: dict[str, object] | None = None
 
     @property
     def phone(self) -> str | None:
@@ -60,6 +61,9 @@ class TelegramSession:
     def clear_selected_product(self) -> None:
         self.selected_product_code = None
         self.selected_chicken_part = None
+
+    def clear_pending_order(self) -> None:
+        self.pending_order_json = None
 
     def add_cart_item(self, item: CartItem) -> None:
         self.cart.append(item)

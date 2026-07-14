@@ -94,7 +94,7 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "BROASTER_ENTERO",
-        ("broaster", "broasted", "broster"),
+        ("broaster", "broasters", "broasted", "broasteres", "broster", "brosters"),
         ("entero", "completo", "uno", "un"),
         ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
@@ -280,8 +280,8 @@ def _collapse_repeated_vowels(text: str) -> str:
 
 
 def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
-    if _matches_rule_in_any_segment(text, rule):
-        return True
+    if len(_order_segments(text)) > 1:
+        return _matches_rule_in_any_segment(text, rule)
     if any(_contains_term(text, exclusion) for exclusion in rule.exclusions):
         return False
     if not any(_contains_term(text, term) for term in rule.product_terms):
@@ -319,9 +319,10 @@ def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
     # Mixed orders often put different chicken styles in one sentence:
     # "2 cuartos broaster y 1 cuarto asado". Match each side independently so
     # a broaster term in one item does not suppress the asado item in the next.
-    if " y " not in text:
+    segments = _order_segments(text)
+    if len(segments) <= 1:
         return False
-    for segment in re.split(r"\s+y\s+", text):
+    for segment in segments:
         segment = segment.strip()
         if not segment:
             continue
@@ -332,6 +333,8 @@ def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
         if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(segment):
             return True
         if rule.code == "BROASTER_ENTERO" and _looks_like_whole_broaster_chicken(segment):
+            return True
+        if rule.code == "GASEOSA_25" and _looks_like_25_liter_soda_flavor(segment):
             return True
         if not rule.size_terms or any(_contains_term(segment, term) for term in rule.size_terms):
             return True
@@ -356,6 +359,8 @@ def _looks_like_whole_roasted_chicken(text: str) -> bool:
         return False
     if _contains_any_terms(text, ("medio", "media", "mitad", "cuarto", "cuartos", "3/4", "1/2", "1/4")):
         return False
+    if _has_quantity_before_any_term(text, ("pollo asado", "pollos asados", "asado", "asados")):
+        return True
     return _contains_any_terms(
         text,
         (
@@ -411,14 +416,33 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
             "pollos broasted",
             "pollo broster",
             "pollos broster",
+            "pollo brosters",
+            "pollos brosters",
             "broaster",
+            "broasters",
             "broasted",
             "broster",
+            "brosters",
         ),
     ):
         return False
     if _contains_any_terms(text, ("medio", "media", "mitad", "cuarto", "cuartos", "3/4", "1/2", "1/4")):
         return False
+    if _has_quantity_before_any_term(
+        text,
+        (
+            "pollo broaster",
+            "pollos broaster",
+            "pollo broster",
+            "pollos broster",
+            "pollo brosters",
+            "pollos brosters",
+            "broaster",
+            "broster",
+            "brosters",
+        ),
+    ):
+        return True
     return _contains_any_terms(
         text,
         (
@@ -474,11 +498,35 @@ def _contains_any_terms(text: str, terms: tuple[str, ...]) -> bool:
     return any(_contains_term(text, term) for term in terms)
 
 
+def _has_quantity_before_any_term(text: str, terms: tuple[str, ...]) -> bool:
+    quantity = r"(?:[1-9]\d*|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+    return any(
+        re.search(rf"\b{quantity}\s+{_term_regex(_normalize_for_matching(term))}\b", text)
+        for term in terms
+    )
+
+
 def _contains_term(text: str, term: str) -> bool:
     normalized_term = _normalize_for_matching(term)
     if not normalized_term:
         return False
-    return re.search(rf"(^|\s){re.escape(normalized_term)}(\s|$)", text) is not None
+    return re.search(rf"(^|\s){_term_regex(normalized_term)}(\s|$)", text) is not None
+
+
+def _term_regex(normalized_term: str) -> str:
+    return r"\s+".join(_word_regex(token) for token in normalized_term.split())
+
+
+def _word_regex(token: str) -> str:
+    if not token or any(char.isdigit() for char in token) or "/" in token or "." in token:
+        return re.escape(token)
+    variants = {token}
+    if token.endswith("z") and len(token) > 2:
+        variants.add(token[:-1] + "ces")
+    if not token.endswith("s"):
+        variants.add(token + "s")
+        variants.add(token + "es")
+    return "(?:" + "|".join(re.escape(variant) for variant in sorted(variants, key=len, reverse=True)) + ")"
 
 
 def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
@@ -490,7 +538,8 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
             return 2
     positions = _rule_positions(text, rule)
     product_position = min(positions) if positions else 0
-    prefix = text[:product_position].strip()
+    segment_start = _segment_start_for_position(text, product_position)
+    prefix = text[segment_start:product_position].strip()
     tokens = prefix.split()
     if not tokens:
         return 1
@@ -509,20 +558,45 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
 
 def _rule_positions(text: str, rule: NaturalProductRule) -> list[int]:
     positions: list[int] = []
-    for term in rule.product_terms + rule.size_terms:
-        normalized_term = _normalize_for_matching(term)
-        if not normalized_term:
+    for segment, offset in _order_segments_with_offsets(text):
+        if any(_contains_term(segment, exclusion) for exclusion in rule.exclusions):
             continue
-        start = 0
-        while True:
-            position = text.find(normalized_term, start)
-            if position < 0:
-                break
-            segment_start = text.rfind(" y ", 0, position)
-            segment_start = 0 if segment_start < 0 else segment_start + 3
-            segment_end = text.find(" y ", position)
-            segment = text[segment_start:] if segment_end < 0 else text[segment_start:segment_end]
-            if not any(_contains_term(segment, exclusion) for exclusion in rule.exclusions):
-                positions.append(position)
-            start = position + len(normalized_term)
+        for term in rule.product_terms + rule.size_terms:
+            normalized_term = _normalize_for_matching(term)
+            if not normalized_term:
+                continue
+            for match in re.finditer(rf"(^|\s)({_term_regex(normalized_term)})(\s|$)", segment):
+                positions.append(offset + match.start(2))
     return positions
+
+
+def _order_segments(text: str) -> list[str]:
+    return [segment for segment, _ in _order_segments_with_offsets(text)]
+
+
+def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
+    item_start = (
+        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*)\s+"
+        r"(?:pollo|pollos|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+    )
+    boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
+    segments: list[tuple[str, int]] = []
+    start = 0
+    for match in boundary.finditer(text):
+        segment = text[start:match.start()].strip()
+        if segment:
+            offset = start + len(text[start:match.start()]) - len(text[start:match.start()].lstrip())
+            segments.append((segment, offset))
+        start = match.end() if match.group(0).strip() == "y" else match.start() + 1
+    tail = text[start:].strip()
+    if tail:
+        offset = start + len(text[start:]) - len(text[start:].lstrip())
+        segments.append((tail, offset))
+    return segments or [(text, 0)]
+
+
+def _segment_start_for_position(text: str, position: int) -> int:
+    for segment, offset in _order_segments_with_offsets(text):
+        if offset <= position < offset + len(segment):
+            return offset
+    return 0

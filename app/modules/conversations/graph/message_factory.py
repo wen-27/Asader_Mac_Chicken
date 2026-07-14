@@ -113,6 +113,29 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def ask_quarter_distribution(cls, product_name: str, remaining: int) -> str:
+        return "\n".join(
+            [
+                f"🍗 {product_name}",
+                "",
+                f"Me faltan definir {remaining} cuarto(s).",
+                "Dime como los quieres en pierna o pechuga.",
+                "Ejemplos: 2 pechugas, 2 piernas, o solo pechuga.",
+                "0. ⬅️ Volver a categorias",
+            ]
+        )
+
+    @classmethod
+    def ask_quarter_distribution_quantity(cls, part: str, remaining: int) -> str:
+        return "\n".join(
+            [
+                f"Perfecto, {part.lower()}.",
+                f"¿Cuantos cuarto(s) quieres en {part.lower()}? Me faltan {remaining}.",
+                "0. ⬅️ Volver a categorias",
+            ]
+        )
+
+    @classmethod
     def ask_chicken_composition(cls, product_name: str) -> str:
         return "\n".join(
             [

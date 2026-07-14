@@ -8,6 +8,7 @@ from app.modules.catalog.infrastructure.seeders.catalog_data import (
     EXPECTED_PRICE_BY_CODE,
     PRODUCT_ALIAS_SEEDS,
     PRODUCT_SEEDS,
+    expanded_aliases,
 )
 from app.modules.delivery.infrastructure.seeders.delivery_zone_data import (
     EXPECTED_DELIVERY_PRICE_BY_CODE,
@@ -99,7 +100,7 @@ def test_aliases_normalized() -> None:
     normalized_aliases = {
         normalize_alias(alias)
         for seed in PRODUCT_ALIAS_SEEDS
-        for alias in seed.aliases
+        for alias in expanded_aliases(seed.aliases)
     }
 
     assert "broaster" in normalized_aliases
@@ -118,4 +119,11 @@ def test_aliases_normalized() -> None:
     assert "papa" in normalized_aliases
     assert "papa francesa" in normalized_aliases
     assert "yuca frita" in normalized_aliases
+    assert "brosters" in normalized_aliases
+    assert "pollos broasters" in normalized_aliases
+    assert "medios pollos" in normalized_aliases
+    assert "lasagnas" in normalized_aliases
+    assert "maduros" in normalized_aliases
+    assert "papas francesas" in normalized_aliases
+    assert "botellas de vidrios" in normalized_aliases
     assert normalize_alias("Cañaveral") == "canaveral"

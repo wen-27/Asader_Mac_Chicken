@@ -122,6 +122,32 @@ def test_rule_based_parser_understands_whole_broster_like_whole_asado() -> None:
     assert parsed.confidence >= 0.9
 
 
+def test_rule_based_parser_understands_mixed_whole_brosters_and_asado() -> None:
+    parsed = parse_natural_order_rules("Buenos días me vendes dos pollos brosters y un pollo asado")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("BROASTER_ENTERO", 2),
+    ]
+    assert parsed.confidence >= 0.9
+
+
+def test_rule_based_parser_accepts_plural_aliases_generically() -> None:
+    examples = {
+        "quiero dos lasagnas": [("LASAGNA_MIXTA", 2)],
+        "quiero tres maduros": [("MADURO_QUESO", 3)],
+        "quiero dos aguas": [("AGUA_BOTELLA", 2)],
+        "quiero dos jugos hit personales": [("JUGO_HIT_PERSONAL", 2)],
+        "quiero dos cervezas miller": [("CERVEZA_MILLER_LATA", 2)],
+        "quiero tres paletas dracula": [("PALETA_DRACULA", 3)],
+        "quiero dos botellas de vidrio": [("BOTELLA_VIDRIO", 2)],
+    }
+
+    for message, expected in examples.items():
+        parsed = parse_natural_order_rules(message)
+        assert [(item.code, item.quantity) for item in parsed.items] == expected
+
+
 def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
     parsed = parse_natural_order_rules("quiero un pollo")
 

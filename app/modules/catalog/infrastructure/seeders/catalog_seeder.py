@@ -12,6 +12,7 @@ from app.modules.catalog.infrastructure.models import ProductAliasORM, ProductOR
 from app.modules.catalog.infrastructure.seeders.catalog_data import (
     PRODUCT_ALIAS_SEEDS,
     PRODUCT_SEEDS,
+    expanded_aliases,
 )
 
 
@@ -58,13 +59,13 @@ async def seed_product_aliases(session: AsyncSession) -> int:
     expected_aliases = {
         normalize_alias(alias)
         for seed in PRODUCT_ALIAS_SEEDS
-        for alias in seed.aliases
+        for alias in expanded_aliases(seed.aliases)
     }
     upserted = 0
 
     for seed in PRODUCT_ALIAS_SEEDS:
         product = products_by_code[seed.product_code]
-        for alias in seed.aliases:
+        for alias in expanded_aliases(seed.aliases):
             normalized_alias = normalize_alias(alias)
             result = await session.execute(
                 select(ProductAliasORM).where(
