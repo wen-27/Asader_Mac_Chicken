@@ -118,6 +118,11 @@ async def detect_intent(
     if _looks_like_customer_gave_up(text):
         state.intent = ConversationIntent.CANCELAR
         return state
+    if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
+        text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "ver carrito", "carrito"))
+    ):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
@@ -141,6 +146,9 @@ async def detect_intent(
         return state
     if _looks_like_clear_cart_request(text):
         state.intent = ConversationIntent.VACIAR_CARRITO
+        return state
+    if _looks_like_direct_order_with_products(text, parsed_rules):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     query = _classify_business_query(text)
     if query is not None and _looks_like_question(text):
@@ -1345,6 +1353,23 @@ async def answer_query(
     if state.query_type == "service":
         state.response_text = BotMessageFactory.service_available_answer()
         return state
+    if state.query_type == "sauce_option":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        sauce_note = _extract_sauce_preference_note(state.normalized_text) or _extract_sauce_note(state.normalized_text)
+        if sauce_note and session.cart:
+            session.observations = _append_observation(session.observations, sauce_note)
+            state.customer.observations = session.observations
+            await services.persist_session(session)
+            state.response_text = (
+                "Si claro, te lo podemos dejar con tártara en vez de ají. "
+                "Ya lo dejo anotado en tu pedido."
+            )
+        else:
+            state.response_text = (
+                "Si claro, podemos ajustarte las salsas como prefieras. "
+                "Cuando me digas tu pedido lo dejo anotado."
+            )
+        return state
     if state.query_type == "contents":
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
         if _is_soup_contents_question(state.normalized_text):
@@ -1492,7 +1517,7 @@ async def _show_category(
     next_step: ConversationState,
 ) -> ConversationGraphState:
     products = await services.list_products_by_category(category)
-    state.current_step = next_step
+    state.current_step = next_step if products else ConversationState.PRODUCT_CATEGORY
     state.response_text = BotMessageFactory.product_menu(category.value, products)
     await _persist_step(state, services)
     return state
@@ -1906,6 +1931,12 @@ def _looks_like_natural_order(text: str) -> bool:
         for phrase in [
             "quiero",
             "necesito",
+            "me colabora",
+            "me colaboras",
+            "me puede colaborar",
+            "me puedes colaborar",
+            "puede colaborar",
+            "puedes colaborar",
             "dame",
             "me das",
             "me da",
@@ -1925,6 +1956,43 @@ def _looks_like_natural_order(text: str) -> bool:
             "tambien",
             "también",
         ]
+    )
+
+
+def _looks_like_direct_order_with_products(text: str, parsed_rules) -> bool:
+    if not parsed_rules.items:
+        return False
+    return _contains_any(
+        text,
+        (
+            "quiero",
+            "necesito",
+            "dame",
+            "deme",
+            "me das",
+            "me da",
+            "me vende",
+            "me vendes",
+            "me regala",
+            "me regalas",
+            "me puede regalar",
+            "me puedes regalar",
+            "me colabora",
+            "me colaboras",
+            "me puede colaborar",
+            "me puedes colaborar",
+            "puede colaborar",
+            "puedes colaborar",
+            "me ayuda",
+            "me ayudas",
+            "agrega",
+            "agregar",
+            "añade",
+            "anade",
+            "ponme",
+            "envíame",
+            "enviame",
+        ),
     )
 
 
@@ -1986,6 +2054,14 @@ def _extract_sauce_note(text: str) -> str | None:
     if "asado" in text:
         return "Salsas asado solicitadas: " + ", ".join(mentioned) + "."
     return "Salsas solicitadas: " + ", ".join(mentioned) + "."
+
+
+def _extract_sauce_preference_note(text: str) -> str | None:
+    if _contains_any(text, ("tartara", "tártara")) and _contains_any(text, ("en vez de aji", "en vez de ají", "en lugar de aji", "en lugar de ají", "sin aji", "sin ají")):
+        return "Salsas solicitadas: tártara en vez de ají."
+    if _contains_any(text, ("aji", "ají")) and _contains_any(text, ("en vez de tartara", "en vez de tártara", "en lugar de tartara", "en lugar de tártara", "sin tartara", "sin tártara")):
+        return "Salsas solicitadas: ají en vez de tártara."
+    return None
 
 
 def _extract_included_asado_side_note(text: str) -> str | None:
@@ -2558,6 +2634,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("unknown", text)
     if _looks_like_order_status_query(text):
         return ("order_status", text)
+    if _looks_like_sauce_option_question(text):
+        return ("sauce_option", text)
     if _looks_like_combination_question(text):
         return ("combination", text)
     if _looks_like_contents_question(text):
@@ -2635,6 +2713,29 @@ def _looks_like_service_question(text: str) -> bool:
             "están en servicio",
             "hay atencion",
             "hay atención",
+        ),
+    )
+
+
+def _looks_like_sauce_option_question(text: str) -> bool:
+    if not _contains_any(text, ("tartara", "tártara", "aji", "ají", "salsa", "salsas")):
+        return False
+    return _contains_any(
+        text,
+        (
+            "puedo",
+            "puede",
+            "puedes",
+            "se puede",
+            "adicionar",
+            "cambiar",
+            "cambio",
+            "en vez de",
+            "en lugar de",
+            "con tartara",
+            "con tártara",
+            "sin aji",
+            "sin ají",
         ),
     )
 

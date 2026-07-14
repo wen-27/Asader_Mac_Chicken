@@ -61,7 +61,22 @@ class BotMessageFactory:
     def product_menu(cls, title: str, products: list[Product]) -> str:
         friendly_title = cls.CATEGORY_TITLES.get(title, title.replace("_", " ").title())
         if not products:
-            return f"{friendly_title}\n\nPor ahora no hay productos disponibles en esta categoria."
+            return "\n".join(
+                [
+                    friendly_title,
+                    "",
+                    "Por ahora no hay productos disponibles en esta categoria.",
+                    "",
+                    "Puedes elegir otra categoria:",
+                    "",
+                    "1. 🍗 Pollo asado",
+                    "2. 🍗 Pollo broaster",
+                    "3. 🥤 Bebidas",
+                    "4. 🍟 Adicionales",
+                    "6. ✅ Finalizar pedido",
+                    "0. ⬅️ Volver al inicio",
+                ]
+            )
         lines = [friendly_title, ""]
         for index, product in enumerate(products, start=1):
             lines.append(f"{index}. {product.name.value} - ${product.price.amount}")
@@ -521,14 +536,10 @@ class BotMessageFactory:
         normalized_name = product.name.value.lower()
         if "broast" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
-            return (
-                f"{product.name.value} trae pollo broaster. {soup_text}"
-            )
+            return f"Si claro. {product.name.value} es pollo broaster. {soup_text}"
         if "asado" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
-            return (
-                f"{product.name.value} trae pollo asado. {soup_text}"
-            )
+            return f"Si claro. {product.name.value} es pollo asado. {soup_text}"
         return (
             f"{product.name.value} esta disponible en el menu. "
             "Si quieres, puedes pedirlo escribiendo el nombre del producto."
