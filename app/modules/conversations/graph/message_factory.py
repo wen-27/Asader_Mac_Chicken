@@ -157,7 +157,9 @@ class BotMessageFactory:
         recommended_product_name: str,
         reason: str = "out_of_stock",
     ) -> str:
-        if reason == "restricted":
+        if unavailable_product_name.strip().lower() == "lasagna mixta":
+            first_line = f"⚠️ {unavailable_product_name} no esta disponible en este momento."
+        elif reason == "restricted":
             first_line = f"⚠️ {unavailable_product_name} solo esta disponible fines de semana o lunes festivos."
         else:
             first_line = f"⚠️ {unavailable_product_name} no esta disponible en este momento."

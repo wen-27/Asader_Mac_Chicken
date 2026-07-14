@@ -103,6 +103,13 @@ class FakeConversationServices:
                 price=MoneyCOP(20000),
                 restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
             ),
+            "MADURO_QUESO": Product(
+                code=ProductCode("MADURO_QUESO"),
+                name=ProductName("Maduro con Queso"),
+                category=ProductCategory.ESPECIALES,
+                price=MoneyCOP(9500),
+                restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+            ),
             "PAPA_SALADA": Product(
                 code=ProductCode("PAPA_SALADA"),
                 name=ProductName("Papa o yuca salada"),
@@ -306,8 +313,8 @@ async def test_real_customer_lasagna_availability_question_is_not_a_greeting() -
     state = await nodes.detect_intent(state, services)
 
     assert state.intent == ConversationIntent.RESPONDER_CONSULTA
-    assert state.query_type == "category"
-    assert state.query_value == "especiales"
+    assert state.query_type == "availability"
+    assert state.query_value == "lasagna mixta"
 
 
 @pytest.mark.asyncio
@@ -330,8 +337,12 @@ async def test_real_customer_availability_questions_go_to_catalog(raw_text: str)
     state = await nodes.detect_intent(state, services)
 
     assert state.intent == ConversationIntent.RESPONDER_CONSULTA
-    assert state.query_type == "category"
-    assert state.query_value == "especiales"
+    if "maduro" in state.normalized_text:
+        assert state.query_type == "category"
+        assert state.query_value == "especiales"
+    else:
+        assert state.query_type == "availability"
+        assert state.query_value == "lasagna mixta"
 
 
 @pytest.mark.asyncio
@@ -451,7 +462,8 @@ async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch
     state = await nodes.fallback_natural_language(state, services)
 
     assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
-    assert "fines de semana" in state.response_text
+    assert "Lasagna Mixta no esta disponible en este momento" in state.response_text
+    assert "Te puedo ofrecer Maduro con Queso" in state.response_text
     assert "no cuento con informacion" not in state.response_text.lower()
 
 
@@ -688,8 +700,9 @@ async def test_natural_product_selection_inside_specials_menu_reports_restrictio
     state = await nodes.validate_product_availability(state, services)
 
     assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
-    assert state.selected_product_code == "LASAGNA_MIXTA"
-    assert "solo esta disponible fines de semana" in state.response_text.lower()
+    assert state.selected_product_code == "MADURO_QUESO"
+    assert "Lasagna Mixta no esta disponible en este momento" in state.response_text
+    assert "Te puedo ofrecer Maduro con Queso" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -1515,6 +1528,46 @@ async def test_natural_order_with_gaseosa_kola_adds_25_liter_kola_directly() -> 
 
 
 @pytest.mark.asyncio
+async def test_natural_order_with_unavailable_lasagna_explains_not_added() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Muy buenos días me regalas porfa un pollo asado con una lasaña y una gaseosa kola",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "1 x Gaseosa 2.5 L - Kola" in result["response_text"]
+    assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
+    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
+    assert "¿Quieres seguir con esta opcion o prefieres ver el menu?" in result["response_text"]
+    assert all(item.product_code.value != "LASAGNA_MIXTA" for item in services.session.cart)
+    assert len(services.session.cart) == 2
+
+
+@pytest.mark.asyncio
+async def test_lasagna_availability_question_shows_unavailable_alternative() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Hay lasañas?")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
+    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raw_text",
     [
@@ -1894,7 +1947,8 @@ async def test_weekday_special_natural_order_stays_unavailable(monkeypatch) -> N
     state = await nodes.detect_intent(state, services)
     result = await nodes.fallback_natural_language(state, services)
 
-    assert "solo esta disponible fines de semana" in result.response_text.lower()
+    assert "no esta disponible en este momento" in result.response_text.lower()
+    assert "Maduro con Queso" in result.response_text
     assert len(services.session.cart) == 0
 
 
@@ -2004,6 +2058,119 @@ async def test_graph_adds_natural_order_additional_items_to_cart() -> None:
     assert "1 x Coca-Cola 1.5 L" in result["response_text"]
     assert "Total acumulado: $61200" in result["response_text"]
     assert len(services.session.cart) == 3
+
+
+@pytest.mark.asyncio
+async def test_asado_with_only_potato_keeps_side_as_observation_without_charge() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["PAPA_FRANCESA"] = Product(
+        code=ProductCode("PAPA_FRANCESA"),
+        name=ProductName("Papa Francesa"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(8200),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero un pollo asado con solo papa")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Papa Francesa" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Acompanamiento asado: solo papa." in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
+async def test_asado_with_only_cooked_yuca_keeps_side_as_observation_without_charge() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["PAPA_SALADA"] = Product(
+        code=ProductCode("PAPA_SALADA"),
+        name=ProductName("Papa o yuca salada"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(5000),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="me regalas un asado solo con yuca cosida")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Papa o yuca salada" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Acompanamiento asado: solo yuca cocida." in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
+async def test_asado_with_only_fried_yuca_keeps_side_as_observation_without_charge() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["YUCA_FRITA"] = Product(
+        code=ProductCode("YUCA_FRITA"),
+        name=ProductName("Yuca frita"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(5000),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="un asado sin papa y sin yuca cosida pero solo yuca frita",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Yuca frita" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Acompanamiento asado: sin papa ni yuca cocida; solo yuca frita." in (
+        services.session.observations or ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_asado_with_explicit_fried_yuca_additional_still_charges_extra() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["YUCA_FRITA"] = Product(
+        code=ProductCode("YUCA_FRITA"),
+        name=ProductName("Yuca frita"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(5000),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="quiero un pollo asado con adicional de yuca frita")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "1 x Yuca frita" in result["response_text"]
+    assert "Total acumulado: $49500" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO", "YUCA_FRITA"]
 
 
 @pytest.mark.asyncio

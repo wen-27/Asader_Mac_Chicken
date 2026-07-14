@@ -1120,7 +1120,9 @@ async def fallback_natural_language(
     if state.normalized_text not in {"2", "4", "pedido libre", "pedido libremente"}:
         added_lines = await _add_natural_order_to_cart(state, services)
         if added_lines:
-            state.current_step = ConversationState.POST_ADD
+            unavailable_notice = state.response_text if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE else ""
+            if state.current_step != ConversationState.ASK_STOCK_ALTERNATIVE:
+                state.current_step = ConversationState.POST_ADD
             state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
             state.response_text = BotMessageFactory.natural_order_added(
                 added_lines,
@@ -1134,6 +1136,8 @@ async def fallback_natural_language(
                         BotMessageFactory.ambiguous_drink_clarification(ambiguous_drink_quantity),
                     ]
                 )
+            if unavailable_notice:
+                state.response_text = "\n\n".join([state.response_text, unavailable_notice])
             return state
         if state.response_text:
             return state
@@ -1241,6 +1245,15 @@ async def answer_query(
             products = await services.list_products_by_category(category)
             state.response_text = BotMessageFactory.product_list_answer(category.value, products)
             return state
+    if state.query_type == "availability":
+        product = await _find_product_for_query(state.query_value or state.raw_text, services)
+        if product is not None:
+            availability = await _evaluate_product_availability(product, services)
+            if not availability.is_available:
+                await _prepare_unavailable_response(state, services, availability)
+                return state
+            state.response_text = f"Si, {product.name.value} esta disponible en este momento."
+            return state
     if state.query_type == "price":
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
         if product is not None:
@@ -1291,7 +1304,8 @@ async def continue_without_soup(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     session = await services.load_or_create_session(ChatId(state.chat_id))
-    session.clear_selected_product()
+    if state.current_step != ConversationState.ASK_STOCK_ALTERNATIVE:
+        session.clear_selected_product()
     session.move_to(ConversationState.PRODUCT_CATEGORY)
     await services.persist_session(session)
     state.current_step = ConversationState.PRODUCT_CATEGORY
@@ -1473,7 +1487,13 @@ async def _add_natural_order_to_cart(
     if sauce_note:
         session.observations = _append_observation(session.observations, sauce_note)
         state.customer.observations = session.observations
+    included_side_note = _extract_included_asado_side_note(state.normalized_text)
+    if included_side_note:
+        session.observations = _append_observation(session.observations, included_side_note)
+        state.customer.observations = session.observations
     for item in parsed.items:
+        if included_side_note and item.code in {"PAPA_FRANCESA", "PAPA_SALADA", "YUCA_FRITA"}:
+            continue
         product = await services.find_product(item.code)
         if product is None:
             continue
@@ -1483,6 +1503,8 @@ async def _add_natural_order_to_cart(
             restricted_alternatives = availability.alternatives
             restricted_recommendation = getattr(availability, "recommended_alternative", None)
             restricted_reason = availability.reason
+            if restricted_recommendation is None:
+                restricted_recommendation = _default_recommended_alternative(item.code)
             continue
         product_variant = _extract_product_variant(item.code, state.normalized_text)
         if _requires_product_variant(item.code) and not product_variant:
@@ -1555,6 +1577,18 @@ async def _add_natural_order_to_cart(
             )()
             await _prepare_unavailable_response(state, services, fallback_availability)
         return []
+    if restricted_product_name:
+        fallback_availability = type(
+            "AvailabilityResult",
+            (),
+            {
+                "product_name": restricted_product_name,
+                "alternatives": restricted_alternatives,
+                "recommended_alternative": restricted_recommendation,
+                "reason": restricted_reason,
+            },
+        )()
+        await _prepare_unavailable_response(state, services, fallback_availability)
     if _needs_side_extra_clarification(state.normalized_text):
         session.clear_selected_product()
         session.move_to(ConversationState.ASK_SIDE_EXTRA)
@@ -1567,7 +1601,8 @@ async def _add_natural_order_to_cart(
         )
         return []
     session.clear_selected_product()
-    session.move_to(ConversationState.POST_ADD)
+    if state.current_step != ConversationState.ASK_STOCK_ALTERNATIVE:
+        session.move_to(ConversationState.POST_ADD)
     await services.persist_session(session)
     return added_lines
 
@@ -1658,6 +1693,92 @@ def _extract_sauce_note(text: str) -> str | None:
     if "asado" in text:
         return "Salsas asado solicitadas: " + ", ".join(mentioned) + "."
     return "Salsas solicitadas: " + ", ".join(mentioned) + "."
+
+
+def _extract_included_asado_side_note(text: str) -> str | None:
+    if not _contains_any(text, ("asado", "asados", "asadito", "pollo asado", "pollos asados")):
+        return None
+    if _contains_any(
+        text,
+        (
+            "adicional",
+            "adicionales",
+            "extra",
+            "extras",
+            "porcion",
+            "porción",
+            "aparte",
+            "otra",
+            "otras",
+        ),
+    ):
+        return None
+
+    without_potato = _contains_any(text, ("sin papa", "sin papas"))
+    without_cooked_yuca = _contains_any(
+        text,
+        (
+            "sin yuca",
+            "sin yuca cocida",
+            "sin yuca cosida",
+            "sin yuca salada",
+            "sin yucas",
+        ),
+    )
+    with_only_fried_yuca = _contains_any(
+        text,
+        (
+            "solo yuca frita",
+            "solo con yuca frita",
+            "solamente yuca frita",
+            "unicamente yuca frita",
+            "únicamente yuca frita",
+        ),
+    )
+    if without_potato and without_cooked_yuca and (with_only_fried_yuca or "yuca frita" in text):
+        return "Acompanamiento asado: sin papa ni yuca cocida; solo yuca frita."
+    if without_potato and with_only_fried_yuca:
+        return "Acompanamiento asado: sin papa; solo yuca frita."
+    if _contains_any(
+        text,
+        (
+            "solo papa",
+            "solo papas",
+            "solo con papa",
+            "solo con papas",
+            "solamente papa",
+            "solamente papas",
+            "unicamente papa",
+            "unicamente papas",
+            "únicamente papa",
+            "únicamente papas",
+        ),
+    ):
+        return "Acompanamiento asado: solo papa."
+    if _contains_any(
+        text,
+        (
+            "solo yuca",
+            "solo con yuca",
+            "solo yuca cocida",
+            "solo yuca cosida",
+            "solo yuca salada",
+            "solamente yuca",
+            "solamente yuca cocida",
+            "solamente yuca cosida",
+            "solamente yuca salada",
+            "unicamente yuca",
+            "unicamente yuca cocida",
+            "unicamente yuca cosida",
+            "unicamente yuca salada",
+            "únicamente yuca",
+            "únicamente yuca cocida",
+            "únicamente yuca cosida",
+            "únicamente yuca salada",
+        ),
+    ):
+        return "Acompanamiento asado: solo yuca cocida."
+    return None
 
 
 def _append_observation(current: str | None, addition: str) -> str:
@@ -2067,6 +2188,8 @@ async def _prepare_unavailable_response(
 ) -> None:
     state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
     recommended = getattr(availability, "recommended_alternative", None)
+    if recommended is None and normalize_text(availability.product_name) == "lasagna mixta":
+        recommended = _default_recommended_alternative("LASAGNA_MIXTA")
     if recommended is None:
         state.response_text = BotMessageFactory.product_unavailable(
             availability.product_name,
@@ -2136,6 +2259,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         word in text
         for word in ["tienes", "tiene", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
     ):
+        if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
+            return ("availability", "lasagna mixta")
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
         if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
@@ -2237,6 +2362,20 @@ def _looks_like_order_status_query(text: str) -> bool:
     return direct_time_question or (
         _contains_any(text, status_terms) and _contains_any(text, product_terms)
     )
+
+
+def _default_recommended_alternative(product_code: str):
+    if product_code == "LASAGNA_MIXTA":
+        return type(
+            "StockAlternative",
+            (),
+            {
+                "product_code": "MADURO_QUESO",
+                "variant_label": None,
+                "label": "Maduro con Queso",
+            },
+        )()
+    return None
 
 
 def _looks_like_new_order_request(text: str) -> bool:
