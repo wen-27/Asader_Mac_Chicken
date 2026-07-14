@@ -465,6 +465,20 @@ async def test_natural_clear_cart_command_clears_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_clear_my_cart_command_clears_cart() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Quiero vaciar mi carrito"))
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert services.session.cart == []
+    assert "vacie tu carrito" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 14))
     services = FakeConversationServices()
@@ -1862,6 +1876,49 @@ async def test_quantity_step_soup_question_does_not_add_soup_to_cart() -> None:
 
     assert "incluye 1 sopa sin costo" in result["response_text"].lower()
     assert result["current_step"] == ConversationState.ASK_QUANTITY
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_soup_availability_question_does_not_show_addons_or_add_soup() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Una pregunta hay sopas?")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye sopa" in result["response_text"].lower()
+    assert "🍟 Adicionales" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_post_add_soup_question_uses_last_chicken_product_without_adding_soup() -> None:
+    services = FakeConversationServices()
+    product = services.products["BROASTER_ENTERO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Viene con sopa?")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye 2 sopas sin costo" in result["response_text"].lower()
+    assert "Sopa Adicional" not in result["response_text"]
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
+
+
+@pytest.mark.asyncio
+async def test_chicken_soup_question_does_not_add_soup_to_cart() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="El pollo viene con sopa?")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye sopa" in result["response_text"].lower()
+    assert "Sopa Adicional" not in result["response_text"]
     assert services.session.cart == []
 
 

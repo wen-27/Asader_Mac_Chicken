@@ -139,6 +139,9 @@ async def detect_intent(
     if _is_back_request(text):
         state.intent = ConversationIntent.VOLVER
         return state
+    if _looks_like_clear_cart_request(text):
+        state.intent = ConversationIntent.VACIAR_CARRITO
+        return state
     query = _classify_business_query(text)
     if query is not None and _looks_like_question(text):
         # Questions such as "les queda lasagna?" must be answered from the
@@ -232,6 +235,9 @@ async def detect_intent(
         if _contains_command(text, ("finalizar", "finalizar pedido", "checkout")):
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return state
+        if _looks_like_clear_cart_request(text):
+            state.intent = ConversationIntent.VACIAR_CARRITO
+            return state
     query = _classify_business_query(text)
     if query is not None:
         # Business questions such as prices, drink options and delivery costs are
@@ -261,17 +267,7 @@ async def detect_intent(
         state.intent = ConversationIntent.MENU_ADICIONALES
     elif "especial" in text or "lasagna" in text or "lasana" in text or "maduro" in text:
         state.intent = ConversationIntent.MENU_ESPECIALES
-    elif _contains_command(
-        text,
-        (
-            "vaciar carrito",
-            "vaciar el carrito",
-            "borrar carrito",
-            "borrar el carrito",
-            "limpiar carrito",
-            "limpiar el carrito",
-        ),
-    ):
+    elif _looks_like_clear_cart_request(text):
         state.intent = ConversationIntent.VACIAR_CARRITO
     elif _contains_command(text, ("carrito", "ver carrito", "mostrar carrito", "mi carrito")):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
@@ -1351,6 +1347,8 @@ async def answer_query(
         return state
     if state.query_type == "contents":
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
+        if _is_soup_contents_question(state.normalized_text):
+            product = await _product_for_soup_question(state, services, product)
         if product is None and state.selected_product_code:
             product = await services.find_product(state.selected_product_code)
         soup_available = await _soup_is_available(services)
@@ -2524,6 +2522,24 @@ def _is_menu_request(text: str) -> bool:
     return "menu" in text or "menú" in text
 
 
+def _looks_like_clear_cart_request(text: str) -> bool:
+    return "carrito" in text and _contains_any(
+        text,
+        (
+            "vaciar",
+            "vacia",
+            "vacía",
+            "borrar",
+            "borra",
+            "limpiar",
+            "limpia",
+            "eliminar todo",
+            "quita todo",
+            "sacar todo",
+        ),
+    )
+
+
 def _classify_business_query(text: str) -> tuple[str, str] | None:
     if _is_out_of_scope_query(text):
         return ("unknown", text)
@@ -2532,6 +2548,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
     if _looks_like_combination_question(text):
         return ("combination", text)
     if _looks_like_contents_question(text):
+        return ("contents", text)
+    if _looks_like_soup_availability_question(text):
         return ("contents", text)
     if _looks_like_service_question(text):
         return ("service", text)
@@ -2553,6 +2571,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         word in text
         for word in ["tienes", "tiene", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
     ):
+        if _looks_like_soup_availability_question(text):
+            return ("contents", text)
         if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
             return ("availability", "lasagna mixta")
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
@@ -2579,6 +2599,7 @@ def _looks_like_contents_question(text: str) -> bool:
             "trae sopa",
             "incluye sopa",
             "viene con sopa",
+            "viene sopa",
             "con que viene",
             "con qué viene",
         ),
@@ -2609,11 +2630,36 @@ def _is_soup_contents_question(text: str) -> bool:
     return _contains_any(
         text,
         (
+            "hay sopa",
+            "hay sopas",
+            "tiene sopa",
+            "tienen sopa",
+            "tiene sopas",
+            "tienen sopas",
             "trae sopa",
             "incluye sopa",
             "viene con sopa",
+            "viene sopa",
             "dan sopa",
             "tiene sopa",
+        ),
+    )
+
+
+def _looks_like_soup_availability_question(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "hay sopa",
+            "hay sopas",
+            "tiene sopa",
+            "tienen sopa",
+            "tiene sopas",
+            "tienen sopas",
+            "queda sopa",
+            "quedan sopas",
+            "les queda sopa",
+            "les quedan sopas",
         ),
     )
 
@@ -2757,6 +2803,7 @@ def _looks_like_question(text: str) -> bool:
             "hay",
             "trae",
             "incluye",
+            "viene",
             "vale",
             "precio",
             "valor",
@@ -2849,6 +2896,29 @@ async def _find_product_for_query(
         normalized = normalized.replace(removable, " ")
     normalized = _normalize_common_product_alias(normalized.strip())
     return await services.find_product(normalized.strip())
+
+
+async def _product_for_soup_question(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    parsed_product,
+):
+    if parsed_product is not None and parsed_product.code.value != "SOPA_ADICIONAL":
+        return parsed_product
+    if state.selected_product_code and _is_chicken_product_code(state.selected_product_code):
+        selected = await services.find_product(state.selected_product_code)
+        if selected is not None:
+            return selected
+    for line in reversed(state.cart):
+        if _is_chicken_product_code(line.product_code):
+            product = await services.find_product(line.product_code)
+            if product is not None:
+                return product
+    return None
+
+
+def _is_chicken_product_code(product_code: str | None) -> bool:
+    return bool(product_code) and product_code.startswith(("ASADO_", "BROASTER_"))
 
 
 def _normalize_common_product_alias(text: str) -> str:
