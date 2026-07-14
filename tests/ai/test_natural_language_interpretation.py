@@ -133,6 +133,17 @@ def test_rule_based_parser_understands_three_quarters() -> None:
     assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_34", 1)]
 
 
+def test_rule_based_parser_understands_mixed_quarter_chicken_styles() -> None:
+    parsed = parse_natural_order_rules(
+        "Me regala por favor 2 cuartos de pechuga broaster y 1 cuarto de pechuga asado"
+    )
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_CUARTO", 2),
+    ]
+
+
 def test_rule_based_parser_understands_plural_coca_litro_medio() -> None:
     parsed = parse_natural_order_rules("quiero dos cocas 1.5")
 
