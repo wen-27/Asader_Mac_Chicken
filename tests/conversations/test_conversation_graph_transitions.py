@@ -1190,7 +1190,35 @@ async def test_natural_quarter_order_without_part_asks_for_chicken_part() -> Non
     assert state.current_step == ConversationState.ASK_CHICKEN_PART
     assert state.selected_product_code == "BROASTER_CUARTO"
     assert "pierna o pechuga" in state.response_text
+    assert "Me faltan definir" not in state.response_text
+    assert "Ejemplos:" not in state.response_text
     assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_single_pending_quarter_response_adds_mixed_order_without_quantity_prompt() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Quiero un cuarto de pollo broster y medio asado",
+        )
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "¿Lo quieres en pierna o pechuga?" in first["response_text"]
+    assert "Me faltan definir" not in first["response_text"]
+
+    second = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="pechuga"))
+
+    assert second["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/4 Broasted - Pechuga" in second["response_text"]
+    assert "1 x 1/2 Asado" in second["response_text"]
+    assert sorted(item.product_name.value for item in services.session.cart) == [
+        "1/2 Asado",
+        "1/4 Broasted - Pechuga",
+    ]
 
 
 @pytest.mark.asyncio

@@ -1893,10 +1893,7 @@ async def _maybe_start_pending_quarter_order(
         state.selected_product_code = product.code.value
         state.selected_product_name = product.name.value
         state.selected_unit_price_cop = product.price.amount
-        state.response_text = BotMessageFactory.ask_quarter_distribution(
-            product.name.value,
-            item.quantity,
-        )
+        state.response_text = _ask_pending_quarter_part_message(product.name.value, item.quantity)
         return True
     return False
 
@@ -1933,7 +1930,7 @@ async def _continue_pending_natural_order(
     awaiting_part = pending.get("awaiting_part")
     if awaiting_part and quantity is not None:
         part = str(awaiting_part)
-    elif part and quantity is None:
+    elif part and quantity is None and remaining > 1:
         pending["awaiting_part"] = part
         session.pending_order_json = pending
         session.move_to(ConversationState.ASK_CHICKEN_PART)
@@ -1944,12 +1941,12 @@ async def _continue_pending_natural_order(
 
     if not part:
         state.current_step = ConversationState.ASK_CHICKEN_PART
-        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
     quantity = quantity or remaining
     if quantity <= 0 or quantity > remaining:
         state.current_step = ConversationState.ASK_CHICKEN_PART
-        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
 
     allocations.append({"part": part, "quantity": quantity})
@@ -1962,7 +1959,7 @@ async def _continue_pending_natural_order(
         session.move_to(ConversationState.ASK_CHICKEN_PART)
         await services.persist_session(session)
         state.current_step = ConversationState.ASK_CHICKEN_PART
-        state.response_text = BotMessageFactory.ask_quarter_distribution(product.name.value, remaining)
+        state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
 
     added_lines = await _add_pending_order_items_to_cart(session, services, pending)
@@ -1983,6 +1980,12 @@ async def _continue_pending_natural_order(
     ]
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     return added_lines
+
+
+def _ask_pending_quarter_part_message(product_name: str, remaining: int) -> str:
+    if remaining <= 1:
+        return BotMessageFactory.ask_chicken_part(product_name)
+    return BotMessageFactory.ask_quarter_distribution(product_name, remaining)
 
 
 async def _add_pending_order_items_to_cart(session, services, pending: dict[str, object]) -> list[CartLineState]:

@@ -576,8 +576,8 @@ def _order_segments(text: str) -> list[str]:
 
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
-        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*)\s+"
-        r"(?:pollo|pollos|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []
