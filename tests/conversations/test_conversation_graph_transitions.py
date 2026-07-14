@@ -308,6 +308,62 @@ async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "Hola, buenas tardes",
+        "¡Hola, buenos días!",
+        "Muy buenas,",
+        "Buenas noches!!!",
+        "Buen día",
+        "Holaaaa",
+        "Buenasss tardes",
+        "Saludos",
+        "Hola, muy buenas tardes",
+    ],
+)
+async def test_punctuated_accented_greetings_return_menu(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert "bienvenido" in result["response_text"].lower()
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_text", "expected_intent"),
+    [
+        ("  Ver,   menú!!! ", ConversationIntent.VER_MENU),
+        ("¿Me muestras el carrito?", ConversationIntent.MOSTRAR_CARRITO),
+        ("Vaciar, el carrito!!!", ConversationIntent.VACIAR_CARRITO),
+        ("Finalizar, pedido.", ConversationIntent.PEDIR_DATOS_CLIENTE),
+        ("Horários???", ConversationIntent.HORARIOS),
+    ],
+)
+async def test_punctuation_accents_and_spacing_do_not_break_common_intents(
+    raw_text: str,
+    expected_intent: ConversationIntent,
+) -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert state.intent == expected_intent
+
+
+@pytest.mark.asyncio
 async def test_real_customer_polite_order_does_not_show_welcome_menu() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -2546,6 +2602,26 @@ async def test_question_about_order_delay_gets_friendly_answer() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "¿¿ demora ??",
+        "cuánto   demora???",
+        "En cuánto tiempo, me despachan?",
+    ],
+)
+async def test_punctuation_accents_and_spacing_do_not_break_delay_questions(raw_text: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert "40 minutos" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_short_delay_question_gets_friendly_answer_without_fallback_loop() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
@@ -2573,6 +2649,27 @@ async def test_payment_account_question_answers_nequi_account_without_cancelling
     assert "Fabio Leonardo Perez" in result["response_text"]
     assert "cancele el pedido actual" not in result["response_text"]
     assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "¿Pago por Nequí?",
+        "Transferéncia, qué cuenta sería???",
+        "Si fuese a cancelar por transferencia, qué cuenta sería?",
+    ],
+)
+async def test_punctuation_accents_and_spacing_do_not_break_payment_account_questions(raw_text: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert "3182705144" in result["response_text"]
+    assert "Fabio Leonardo Perez" in result["response_text"]
+    assert "cancele el pedido actual" not in result["response_text"]
 
 
 @pytest.mark.asyncio

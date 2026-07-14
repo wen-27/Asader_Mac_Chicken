@@ -1134,22 +1134,38 @@ async def _should_ignore_stale_greeting(
 def _compact_greeting_text(text: str) -> str:
     normalized = normalize_text(text)
     normalized = re.sub(r"[^\w\s]", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\bhol+a+\b", "hola", normalized)
+    return re.sub(r"\bbuenas+\b", "buenas", normalized)
 
 
 def _is_compact_greeting_only(normalized: str) -> bool:
     greetings = {
         "hola",
+        "hola hola",
         "buenas",
+        "buenas buenas",
+        "muy buenas",
         "buenos dias",
+        "muy buenos dias",
         "buen dia",
+        "muy buen dia",
         "buenas tardes",
+        "muy buenas tardes",
         "buenas noches",
+        "muy buenas noches",
         "hola buenos dias",
+        "hola muy buenos dias",
         "hola buen dia",
+        "hola muy buen dia",
         "hola buenas",
+        "hola muy buenas",
         "hola buenas tardes",
+        "hola muy buenas tardes",
         "hola buenas noches",
+        "hola muy buenas noches",
+        "saludos",
+        "buenas saludos",
     }
     if normalized in greetings:
         return True

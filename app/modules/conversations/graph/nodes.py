@@ -64,8 +64,19 @@ async def normalize_message(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
-    state.normalized_text = normalize_text(state.raw_text)
+    state.normalized_text = _normalize_intent_text(state.raw_text)
     return state
+
+
+def _normalize_intent_text(value: str | None) -> str:
+    text = normalize_text(value)
+    text = text.replace("½", " 1/2 ").replace("¼", " 1/4 ").replace("¾", " 3/4 ")
+    text = re.sub(r"(?<=\d),(?=\d)", ".", text)
+    text = re.sub(r"(?<=\d)\s*/\s*(?=\d)", "/", text)
+    text = text.replace("-", " ")
+    text = re.sub(r"[^\w\s./]", " ", text)
+    text = re.sub(r"(?<!\d)[./]|[./](?!\d)", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 async def load_or_create_session(
@@ -2335,20 +2346,37 @@ def _is_main_menu_request(text: str) -> bool:
 
 
 def _is_greeting_only(text: str) -> bool:
-    normalized = re.sub(r"[^\w\s]", " ", text)
+    normalized = normalize_text(text)
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\bhol+a+\b", "hola", normalized)
+    normalized = re.sub(r"\bbuenas+\b", "buenas", normalized)
     greetings = {
         "hola",
+        "hola hola",
         "buenas",
+        "buenas buenas",
+        "muy buenas",
         "buenos dias",
+        "muy buenos dias",
         "buen dia",
+        "muy buen dia",
         "buenas tardes",
+        "muy buenas tardes",
         "buenas noches",
+        "muy buenas noches",
         "hola buenos dias",
+        "hola muy buenos dias",
         "hola buen dia",
+        "hola muy buen dia",
         "hola buenas",
+        "hola muy buenas",
         "hola buenas tardes",
+        "hola muy buenas tardes",
         "hola buenas noches",
+        "hola muy buenas noches",
+        "saludos",
+        "buenas saludos",
     }
     if normalized in greetings:
         return True
@@ -3007,7 +3035,7 @@ def _category_route_from_text(text: str) -> tuple[ProductCategory, ConversationS
 
 def _short_product_reference(text: str) -> str:
     cleaned = text.strip(" ¿?.,!¡")
-    if cleaned in {"la 1.5", "1.5", "1,5", "litro y medio", "litro medio"}:
+    if cleaned in {"la 1.5", "la 1 5", "1.5", "1,5", "1 5", "litro y medio", "litro medio"}:
         return "coca cola 1.5"
     if cleaned in {"agua", "aguita", "botella de agua"}:
         return "agua botella"
