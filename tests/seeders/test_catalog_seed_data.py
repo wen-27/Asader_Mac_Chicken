@@ -75,6 +75,7 @@ def test_delivery_zones_are_exact() -> None:
         "DOMICILIO_CIUDADELA": 11000,
         "DOMICILIO_CABECERA": 12000,
         "HOSPITAL_INTERNACIONAL": 10000,
+        "DOMICILIO_GIRON_SAN_ANTONIO_CARRIZAL": 12000,
         "DOMICILIO_ADICIONAL": 500,
     }
     assert all(isinstance(price, int) for price in EXPECTED_DELIVERY_PRICE_BY_CODE.values())

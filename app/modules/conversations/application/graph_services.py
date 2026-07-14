@@ -152,15 +152,7 @@ class DefaultConversationGraphServices:
         else:
             products = await self.products.list_active()
             products = [product for product in products if product.category == category]
-        if self.availability is None:
-            return products
-        controls = {control.code: control for control in await self.availability.list_controls()}
-        today = _business_today()
-        return [
-            product
-            for product in products
-            if (await self.availability.evaluate_with_controls(product, today, controls)).is_available
-        ]
+        return products
 
     async def find_product(self, code_or_text: str) -> Product | None:
         if self.products is None:

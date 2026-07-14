@@ -1284,7 +1284,12 @@ async def fallback_natural_language(
             return state
         added_lines = await _add_natural_order_to_cart(state, services)
         if added_lines:
-            unavailable_notice = state.response_text if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE else ""
+            unavailable_notice = (
+                state.response_text
+                if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE
+                or state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
+                else ""
+            )
             if state.current_step != ConversationState.ASK_STOCK_ALTERNATIVE:
                 state.current_step = ConversationState.POST_ADD
             state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
@@ -2616,6 +2621,18 @@ async def _prepare_unavailable_response(
 
     product = await services.find_product(recommended.product_code)
     if product is None:
+        state.response_text = BotMessageFactory.product_unavailable(
+            availability.product_name,
+            availability.alternatives,
+            availability.reason,
+        )
+        return
+    recommended_availability = await _evaluate_product_availability(
+        product,
+        services,
+        recommended.variant_label,
+    )
+    if not recommended_availability.is_available:
         state.response_text = BotMessageFactory.product_unavailable(
             availability.product_name,
             availability.alternatives,

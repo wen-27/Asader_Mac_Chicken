@@ -165,6 +165,29 @@ class FakeConversationServices:
         code = code_or_text.upper().replace(" ", "_")
         return self.products.get(code)
 
+    async def evaluate_product_availability(
+        self,
+        product: Product,
+        business_date,
+        variant_label: str | None = None,
+    ):
+        is_calendar_restricted = (
+            product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY
+            and business_date.weekday() not in (5, 6)
+        )
+        is_available = product.is_active and product.is_available and not is_calendar_restricted
+        return type(
+            "AvailabilityResult",
+            (),
+            {
+                "is_available": is_available,
+                "product_name": product.name.value if not variant_label else f"{product.name.value} - {variant_label}",
+                "alternatives": (),
+                "recommended_alternative": None,
+                "reason": "restricted" if is_calendar_restricted else ("available" if is_available else "out_of_stock"),
+            },
+        )()
+
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
         return CalculateDeliveryResult(
             found=True,
@@ -653,7 +676,7 @@ async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch
 
     assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
     assert "Lasagna Mixta no esta disponible en este momento" in state.response_text
-    assert "Te puedo ofrecer Maduro con Queso" in state.response_text
+    assert "Responde menu" in state.response_text
     assert "no cuento con informacion" not in state.response_text.lower()
 
 
@@ -725,6 +748,58 @@ async def test_empty_category_keeps_user_in_categories_so_next_number_has_exit()
     assert second_result["current_step"] == ConversationState.SELECT_ASADO
     assert "🍗 Pollo asado" in second_result["response_text"]
     assert "No encontre ese producto" not in second_result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_specials_menu_shows_enabled_lasagna_and_maduro() -> None:
+    services = FakeConversationServices()
+    services.session.move_to(ConversationState.PRODUCT_CATEGORY)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="5"))
+
+    assert result["current_step"] == ConversationState.SELECT_ESPECIAL
+    assert "Lasagna Mixta - $20000" in result["response_text"]
+    assert "Maduro con Queso - $9500" in result["response_text"]
+    assert "Por ahora no hay productos disponibles" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_weekday_maduro_request_is_visible_but_not_available(monkeypatch) -> None:
+    monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 1))
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    menu_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="platos especiales"))
+
+    assert "Maduro con Queso - $9500" in menu_result["response_text"]
+
+    order_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero un maduro con queso"))
+
+    assert "Maduro con Queso no esta disponible en este momento" in order_result["response_text"]
+    assert "Responde menu" in order_result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_disabled_specials_still_show_in_menu_but_cannot_be_added() -> None:
+    services = FakeConversationServices()
+    services.products["LASAGNA_MIXTA"].is_available = False
+    services.products["MADURO_QUESO"].is_available = False
+    services.session.move_to(ConversationState.PRODUCT_CATEGORY)
+    graph = build_conversation_graph(services)
+
+    menu_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="5"))
+
+    assert menu_result["current_step"] == ConversationState.SELECT_ESPECIAL
+    assert "Lasagna Mixta - $20000" in menu_result["response_text"]
+    assert "Maduro con Queso - $9500" in menu_result["response_text"]
+
+    order_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+
+    assert "Lasagna Mixta no esta disponible en este momento" in order_result["response_text"]
+    assert "Responde menu" in order_result["response_text"]
+    assert services.session.cart == []
 
 
 @pytest.mark.asyncio
@@ -905,9 +980,9 @@ async def test_natural_product_selection_inside_specials_menu_reports_restrictio
         ConversationGraphState(chat_id=123, raw_text="quiero una lasagna")
     )
 
-    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert result["current_step"] == ConversationState.SELECT_ESPECIAL
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
+    assert "Responde menu" in result["response_text"]
     assert services.session.cart == []
 
 
@@ -1962,12 +2037,11 @@ async def test_natural_order_with_unavailable_lasagna_explains_not_added() -> No
 
     result = await graph.ainvoke(state)
 
-    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert result["current_step"] == ConversationState.POST_ADD
     assert "1 x 1 Asado Entero" in result["response_text"]
     assert "1 x Gaseosa 2.5 L - Kola" in result["response_text"]
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
-    assert "¿Quieres seguir con esta opcion o prefieres ver el menu?" in result["response_text"]
+    assert "Responde menu" in result["response_text"]
     assert all(item.product_code.value != "LASAGNA_MIXTA" for item in services.session.cart)
     assert len(services.session.cart) == 2
 
@@ -1980,9 +2054,8 @@ async def test_lasagna_availability_question_shows_unavailable_alternative() -> 
 
     result = await graph.ainvoke(state)
 
-    assert result["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Te puedo ofrecer Maduro con Queso" in result["response_text"]
+    assert "Responde menu" in result["response_text"]
 
 
 @pytest.mark.asyncio
@@ -2144,6 +2217,12 @@ async def test_post_add_soup_question_uses_last_chicken_product_without_adding_s
     result = await graph.ainvoke(state)
 
     assert "incluye 2 sopas sin costo" in result["response_text"].lower()
+    assert "papa francesa" in result["response_text"].lower()
+    assert "tartara" in result["response_text"].lower()
+    assert "miel" in result["response_text"].lower()
+    assert "salsa de tomate" in result["response_text"].lower()
+    assert "yuca cocida" not in result["response_text"].lower()
+    assert "ají" not in result["response_text"].lower()
     assert "Sopa Adicional" not in result["response_text"]
     assert len(services.session.cart) == 1
     assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
@@ -2320,9 +2399,12 @@ async def test_product_contents_question_does_not_add_product_to_cart() -> None:
     result = await graph.ainvoke(state)
 
     assert "Broasted Entero vale $51000" in result["response_text"]
-    assert "papa" in result["response_text"].lower()
-    assert "yuca cocida" in result["response_text"].lower()
-    assert "ají" in result["response_text"]
+    assert "papa francesa" in result["response_text"].lower()
+    assert "tartara" in result["response_text"].lower()
+    assert "miel" in result["response_text"].lower()
+    assert "salsa de tomate" in result["response_text"].lower()
+    assert "yuca cocida" not in result["response_text"].lower()
+    assert "ají" not in result["response_text"]
     assert "Agregado al carrito" not in result["response_text"]
     assert services.session.cart == []
 
@@ -2511,7 +2593,7 @@ async def test_weekday_special_natural_order_stays_unavailable(monkeypatch) -> N
     result = await nodes.fallback_natural_language(state, services)
 
     assert "no esta disponible en este momento" in result.response_text.lower()
-    assert "Maduro con Queso" in result.response_text
+    assert "Responde menu" in result.response_text
     assert len(services.session.cart) == 0
 
 

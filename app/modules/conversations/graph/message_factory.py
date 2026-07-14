@@ -153,7 +153,10 @@ class BotMessageFactory:
         reason: str = "out_of_stock",
     ) -> str:
         label = product_name or "Ese producto"
-        if reason == "restricted":
+        normalized_label = label.strip().lower()
+        if normalized_label in {"lasagna mixta", "maduro con queso"}:
+            lines = [f"⚠️ {label} no esta disponible en este momento."]
+        elif reason == "restricted":
             lines = [f"⚠️ {label} solo esta disponible fines de semana o lunes festivos."]
         else:
             lines = [f"⚠️ {label} no esta disponible en este momento."]
@@ -163,6 +166,7 @@ class BotMessageFactory:
             lines.extend(f"- {alternative}" for alternative in alternatives)
         else:
             lines.append("Puedes elegir otra opcion disponible del menu.")
+            lines.append("Responde menu para ver las opciones.")
         return "\n".join(lines)
 
     @classmethod
@@ -172,7 +176,7 @@ class BotMessageFactory:
         recommended_product_name: str,
         reason: str = "out_of_stock",
     ) -> str:
-        if unavailable_product_name.strip().lower() == "lasagna mixta":
+        if unavailable_product_name.strip().lower() in {"lasagna mixta", "maduro con queso"}:
             first_line = f"⚠️ {unavailable_product_name} no esta disponible en este momento."
         elif reason == "restricted":
             first_line = f"⚠️ {unavailable_product_name} solo esta disponible fines de semana o lunes festivos."
@@ -537,8 +541,8 @@ class BotMessageFactory:
         if "broast" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
             return (
-                f"Si claro. {product.name.value} vale ${product.price.amount} y viene con papa, "
-                f"yuca cocida y ají. {soup_text}"
+                f"Si claro. {product.name.value} vale ${product.price.amount} y viene con papa francesa, "
+                f"tartara, miel y salsa de tomate. {soup_text}"
             )
         if "asado" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
