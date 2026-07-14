@@ -12,6 +12,8 @@ from app.modules.conversations.graph.state import CartLineState, ConversationGra
 
 class BotMessageFactory:
     BUSINESS_NAME = "ASADERO MC CHICKEN EXPRESS"
+    NEQUI_ACCOUNT_NUMBER = "3182705144"
+    NEQUI_ACCOUNT_HOLDER = "Fabio Leonardo Perez"
     # Category titles are intentionally friendly and emoji-based because these
     # are sent directly to WhatsApp/Telegram-style chat users.
     CATEGORY_TITLES = {
@@ -480,9 +482,21 @@ class BotMessageFactory:
         return "\n\n".join(
             [
                 "✅ Pedido confirmado. Gracias por tu compra.",
+                cls.payment_account_answer(),
                 "Para poder preparar tu pedido, por favor envianos el comprobante de pago por este mismo chat.",
             ]
         )
+
+    @classmethod
+    def payment_account_answer(cls) -> str:
+        return (
+            f"La cuenta de Nequi es {cls.NEQUI_ACCOUNT_NUMBER} "
+            f"a nombre de {cls.NEQUI_ACCOUNT_HOLDER}."
+        )
+
+    @classmethod
+    def gratitude_answer(cls) -> str:
+        return "Con mucho gusto, gracias a ti por elegirnos."
 
     @classmethod
     def order_confirmation_failed(cls) -> str:

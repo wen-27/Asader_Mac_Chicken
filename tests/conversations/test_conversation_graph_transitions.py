@@ -2508,6 +2508,49 @@ async def test_question_about_order_delay_gets_friendly_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_short_delay_question_gets_friendly_answer_without_fallback_loop() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="demora?")
+
+    result = await graph.ainvoke(state)
+
+    assert "40 minutos" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+async def test_payment_account_question_answers_nequi_account_without_cancelling() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Si fuese a cancelar por transferencia, que cuenta sería?",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert "3182705144" in result["response_text"]
+    assert "Fabio Leonardo Perez" in result["response_text"]
+    assert "cancele el pedido actual" not in result["response_text"]
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
+async def test_gratitude_after_order_does_not_enter_natural_order_fallback() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Muchas gracias")
+
+    result = await graph.ainvoke(state)
+
+    assert "gracias a ti" in result["response_text"].lower()
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+    assert len(services.session.cart) == 0
+
+
+@pytest.mark.asyncio
 async def test_new_order_request_is_not_treated_as_order_delay_query() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="quiero hacer otro pedido de pollo broaster")
@@ -3007,6 +3050,23 @@ async def test_post_add_generic_papas_fritas_adds_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mixed_quarter_chicken_order_adds_broaster_and_asado_in_one_message() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Me regala por favor 2 cuartos de pechuga broaster y 1 cuarto de pechuga asado",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "2 x 1/4 Broasted - Pechuga" in result["response_text"]
+    assert "1 x 1/4 Asado - Pechuga" in result["response_text"]
+    assert len(services.session.cart) == 2
+
+
+@pytest.mark.asyncio
 async def test_confirm_order_clears_cart() -> None:
     services = FakeConversationServices()
     product = services.products["ASADO_MEDIO"]
@@ -3037,6 +3097,27 @@ async def test_confirm_order_clears_cart() -> None:
     assert state.cart == []
     assert services.session.cart == []
     assert len(services.synced_orders) == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_order_with_nequi_includes_account_and_requests_proof() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.payment_method = "Nequi"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    state = ConversationGraphState(chat_id=123, raw_text="si")
+
+    state = await nodes.confirm_order(state, services)
+
+    assert "3182705144" in state.response_text
+    assert "Fabio Leonardo Perez" in state.response_text
+    assert "comprobante de pago" in state.response_text
+    assert state.current_step == ConversationState.MAIN_MENU
 
 
 @pytest.mark.asyncio

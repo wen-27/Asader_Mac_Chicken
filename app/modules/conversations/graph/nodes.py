@@ -108,6 +108,14 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if (
+        state.current_step != ConversationState.ASK_CUSTOMER_DATA
+        and _looks_like_payment_account_query(text)
+    ):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "payment_account"
+        state.query_value = text
+        return state
     replacement = _split_cart_replacement_request(text)
     if (
         state.cart
@@ -139,6 +147,11 @@ async def detect_intent(
         await services.persist_session(session)
     if text in {"horarios", "horario"}:
         state.intent = ConversationIntent.HORARIOS
+        return state
+    if _is_gratitude_only(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "gratitude"
+        state.query_value = text
         return state
     # Navigation and numbered menus are handled before natural-language parsing.
     # This keeps the zero-cost menu flow predictable and avoids unnecessary LLM calls.
@@ -1384,6 +1397,12 @@ async def answer_query(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    if state.query_type == "gratitude":
+        state.response_text = BotMessageFactory.gratitude_answer()
+        return state
+    if state.query_type == "payment_account":
+        state.response_text = BotMessageFactory.payment_account_answer()
+        return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
         return state
@@ -2332,6 +2351,19 @@ def _is_greeting_only(text: str) -> bool:
     }
 
 
+def _is_gratitude_only(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "gracias",
+        "muchas gracias",
+        "mil gracias",
+        "listo gracias",
+        "ok gracias",
+        "bueno gracias",
+        "perfecto gracias",
+    }
+
+
 def _looks_like_customer_gave_up(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
     return _contains_any(
@@ -2686,6 +2718,8 @@ def _looks_like_clear_cart_request(text: str) -> bool:
 def _classify_business_query(text: str) -> tuple[str, str] | None:
     if _is_out_of_scope_query(text):
         return ("unknown", text)
+    if _looks_like_payment_account_query(text):
+        return ("payment_account", text)
     if _looks_like_order_status_query(text):
         return ("order_status", text)
     if _looks_like_sauce_option_question(text):
@@ -2844,6 +2878,7 @@ def _looks_like_combination_question(text: str) -> bool:
 def _looks_like_order_status_query(text: str) -> bool:
     if _looks_like_new_order_request(text):
         return False
+    cleaned = text.strip(" ¿?.,!¡")
     status_terms = (
         "demora",
         "demorar",
@@ -2862,6 +2897,8 @@ def _looks_like_order_status_query(text: str) -> bool:
         "como va",
         "cómo va",
     )
+    if cleaned in status_terms or cleaned in {"cuanto demora", "cuánto demora", "cuanto se demora", "cuánto se demora"}:
+        return True
     product_terms = ("pollo", "pedido", "domicilio", "comida")
     direct_time_question = _contains_any(
         text,
@@ -2904,6 +2941,26 @@ def _default_recommended_alternative(product_code: str):
             },
         )()
     return None
+
+
+def _looks_like_payment_account_query(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    payment_terms = ("nequi", "transferencia", "bancolombia")
+    account_terms = (
+        "cuenta",
+        "numero",
+        "número",
+        "pagar",
+        "pago",
+        "cancelar",
+        "cancelo",
+        "consignar",
+        "transferir",
+        "transferencia",
+    )
+    if cleaned in {"nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia"}:
+        return True
+    return _contains_any(cleaned, payment_terms) and _contains_any(cleaned, account_terms)
 
 
 def _looks_like_new_order_request(text: str) -> bool:

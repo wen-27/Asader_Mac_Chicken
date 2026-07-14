@@ -280,6 +280,8 @@ def _collapse_repeated_vowels(text: str) -> str:
 
 
 def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
+    if _matches_rule_in_any_segment(text, rule):
+        return True
     if any(_contains_term(text, exclusion) for exclusion in rule.exclusions):
         return False
     if not any(_contains_term(text, term) for term in rule.product_terms):
@@ -309,6 +311,27 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "qué incluye",
         ),
     )
+
+
+def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
+    # Mixed orders often put different chicken styles in one sentence:
+    # "2 cuartos broaster y 1 cuarto asado". Match each side independently so
+    # a broaster term in one item does not suppress the asado item in the next.
+    if " y " not in text:
+        return False
+    for segment in re.split(r"\s+y\s+", text):
+        segment = segment.strip()
+        if not segment:
+            continue
+        if any(_contains_term(segment, exclusion) for exclusion in rule.exclusions):
+            continue
+        if not any(_contains_term(segment, term) for term in rule.product_terms):
+            continue
+        if rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(segment):
+            return True
+        if not rule.size_terms or any(_contains_term(segment, term) for term in rule.size_terms):
+            return True
+    return False
 
 
 def _looks_like_whole_roasted_chicken(text: str) -> bool:
@@ -398,11 +421,7 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
         normalized_term = _normalize_for_matching(term)
         if normalized_term and _contains_term(text, f"par de {normalized_term}"):
             return 2
-    positions = [
-        text.find(_normalize_for_matching(term))
-        for term in rule.product_terms + rule.size_terms
-        if text.find(_normalize_for_matching(term)) >= 0
-    ]
+    positions = _rule_positions(text, rule)
     product_position = min(positions) if positions else 0
     prefix = text[:product_position].strip()
     tokens = prefix.split()
@@ -419,3 +438,24 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
         if value is not None:
             return value
     return 1
+
+
+def _rule_positions(text: str, rule: NaturalProductRule) -> list[int]:
+    positions: list[int] = []
+    for term in rule.product_terms + rule.size_terms:
+        normalized_term = _normalize_for_matching(term)
+        if not normalized_term:
+            continue
+        start = 0
+        while True:
+            position = text.find(normalized_term, start)
+            if position < 0:
+                break
+            segment_start = text.rfind(" y ", 0, position)
+            segment_start = 0 if segment_start < 0 else segment_start + 3
+            segment_end = text.find(" y ", position)
+            segment = text[segment_start:] if segment_end < 0 else text[segment_start:segment_end]
+            if not any(_contains_term(segment, exclusion) for exclusion in rule.exclusions):
+                positions.append(position)
+            start = position + len(normalized_term)
+    return positions
