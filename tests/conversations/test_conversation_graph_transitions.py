@@ -33,6 +33,7 @@ class FakeConversationServices:
         self.created_orders: list[str] = []
         self.ai_parsed: NaturalLanguageOrderParse | None = None
         self.ai_calls: list[str] = []
+        self.unavailable_variant_codes: set[str] = set()
         self.products = {
             "JUGO_HIT_PERSONAL": Product(
                 code=ProductCode("JUGO_HIT_PERSONAL"),
@@ -171,11 +172,25 @@ class FakeConversationServices:
         business_date,
         variant_label: str | None = None,
     ):
+        variant_code = None
+        if variant_label:
+            normalized_variant = nodes.normalize_text(variant_label)
+            if product.code.value == "ASADO_CUARTO":
+                if "pierna" in normalized_variant:
+                    variant_code = "ASADO_CUARTO_PIERNA"
+                elif "pechuga" in normalized_variant:
+                    variant_code = "ASADO_CUARTO_PECHUGA"
+            elif product.code.value == "BROASTER_CUARTO":
+                if "pierna" in normalized_variant:
+                    variant_code = "BROASTER_CUARTO_PIERNA"
+                elif "pechuga" in normalized_variant:
+                    variant_code = "BROASTER_CUARTO_PECHUGA"
         is_calendar_restricted = (
             product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY
             and business_date.weekday() not in (5, 6)
         )
-        is_available = product.is_active and product.is_available and not is_calendar_restricted
+        variant_unavailable = variant_code in self.unavailable_variant_codes
+        is_available = product.is_active and product.is_available and not is_calendar_restricted and not variant_unavailable
         return type(
             "AvailabilityResult",
             (),
@@ -1219,6 +1234,38 @@ async def test_single_pending_quarter_response_adds_mixed_order_without_quantity
         "1/2 Asado",
         "1/4 Broasted - Pechuga",
     ]
+
+
+@pytest.mark.asyncio
+async def test_pending_quarter_respects_unavailable_selected_part_before_adding_to_cart() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.unavailable_variant_codes.add("BROASTER_CUARTO_PIERNA")
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Está bien me regala 2 pollos asados y un cuarto broster porfa",
+        )
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "pierna o pechuga" in first["response_text"]
+
+    second = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+
+    assert second["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert services.session.cart[0].quantity == 2
+    assert "2 x 1 Asado Entero" in second["response_text"]
+    assert "1 x 1/4 Broasted - Pierna" not in second["response_text"]
+    assert "1/4 Broasted - Pierna" in second["response_text"]
+    assert "no esta disponible" in second["response_text"]
 
 
 @pytest.mark.asyncio

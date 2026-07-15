@@ -1347,12 +1347,20 @@ async def fallback_natural_language(
 ) -> ConversationGraphState:
     pending_lines = await _continue_pending_natural_order(state, services)
     if pending_lines:
+        unavailable_notice = (
+            state.response_text
+            if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE
+            or state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
+            else ""
+        )
         state.current_step = ConversationState.POST_ADD
         state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
         state.response_text = BotMessageFactory.natural_order_added(
             pending_lines,
             state.subtotal_cop,
         )
+        if unavailable_notice:
+            state.response_text = "\n\n".join([state.response_text, unavailable_notice])
         return state
     if state.response_text:
         return state
@@ -1997,7 +2005,7 @@ async def _continue_pending_natural_order(
         state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
     if remaining <= 0:
-        added_lines = await _add_pending_order_items_to_cart(session, services, pending)
+        added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
         session.clear_pending_order()
         session.clear_selected_product()
         session.move_to(ConversationState.POST_ADD)
@@ -2056,7 +2064,7 @@ async def _continue_pending_natural_order(
         state.response_text = _ask_pending_quarter_part_message(product.name.value, remaining)
         return []
 
-    added_lines = await _add_pending_order_items_to_cart(session, services, pending)
+    added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
     session.clear_pending_order()
     session.clear_selected_product()
     session.move_to(ConversationState.POST_ADD)
@@ -2082,11 +2090,17 @@ def _ask_pending_quarter_part_message(product_name: str, remaining: int) -> str:
     return BotMessageFactory.ask_quarter_distribution(product_name, remaining)
 
 
-async def _add_pending_order_items_to_cart(session, services, pending: dict[str, object]) -> list[CartLineState]:
+async def _add_pending_order_items_to_cart(
+    session,
+    services,
+    pending: dict[str, object],
+    state: ConversationGraphState | None = None,
+) -> list[CartLineState]:
     added_lines: list[CartLineState] = []
     items = list(pending.get("items") or [])
     current_index = int(pending.get("current_index") or 0)
     allocations = list(pending.get("allocations") or [])
+    restricted_availability = None
     for index, item in enumerate(items):
         code = str(item.get("code"))
         quantity = int(item.get("quantity") or 1)
@@ -2099,13 +2113,23 @@ async def _add_pending_order_items_to_cart(session, services, pending: dict[str,
                 allocation_quantity = int(allocation.get("quantity") or 0)
                 if allocation_quantity <= 0:
                     continue
+                availability = await _evaluate_product_availability(product, services, part)
+                if not availability.is_available:
+                    restricted_availability = availability
+                    continue
                 cart_item = _cart_item_from_selected_product(product, allocation_quantity, part)
                 session.add_cart_item(cart_item)
                 added_lines.append(_cart_line_from_cart_item(cart_item))
             continue
+        availability = await _evaluate_product_availability(product, services)
+        if not availability.is_available:
+            restricted_availability = availability
+            continue
         cart_item = cart_item_from_product(product, quantity)
         session.add_cart_item(cart_item)
         added_lines.append(_cart_line_from_cart_item(cart_item))
+    if restricted_availability is not None and state is not None:
+        await _prepare_unavailable_response(state, services, restricted_availability)
     return added_lines
 
 
