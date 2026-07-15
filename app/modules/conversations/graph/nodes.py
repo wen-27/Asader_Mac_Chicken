@@ -151,19 +151,22 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
-    if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
-        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
-        return state
     if _looks_like_pickup_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "PICKUP"
         state.fulfillment_type = "PICKUP"
         await services.persist_session(session)
+        if state.cart or session.cart:
+            state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+            return state
     elif _looks_like_delivery_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "DELIVERY"
         state.fulfillment_type = "DELIVERY"
         await services.persist_session(session)
+    if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
     if text in {"horarios", "horario"}:
         state.intent = ConversationIntent.HORARIOS
         return state

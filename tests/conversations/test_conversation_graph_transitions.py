@@ -1594,6 +1594,41 @@ async def test_post_add_text_finalizar_asks_for_customer_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_add_pickup_request_asks_for_pickup_customer_data() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Es para recoger"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert result["fulfillment_type"] == "PICKUP"
+    assert "pedido listo para recoger" in result["response_text"]
+    assert "Nombre completo" in result["response_text"]
+    assert "Telefono" in result["response_text"]
+    assert "Direccion" not in result["response_text"]
+    assert services.session.fulfillment_type == "PICKUP"
+
+
+@pytest.mark.asyncio
+async def test_customer_data_step_pickup_request_switches_to_pickup_prompt() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.fulfillment_type = "DELIVERY"
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Es para recoger"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert result["fulfillment_type"] == "PICKUP"
+    assert "pedido listo para recoger" in result["response_text"]
+    assert "Direccion" not in result["response_text"]
+    assert services.session.fulfillment_type == "PICKUP"
+
+
+@pytest.mark.asyncio
 async def test_finalizar_asks_for_customer_data_before_confirmation() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(
