@@ -212,7 +212,7 @@ async def whatsapp_webhook(
                         "mediaId": inbound_media.media_id,
                         "mimeType": inbound_media.mime_type,
                         "sha256": inbound_media.sha256,
-                        "url": f"/api/media/whatsapp/{inbound_media.media_id}",
+                        "url": f"/api/admin/conversations/media/{inbound_media.media_id}",
                     },
                 )
                 if payment_proof_count:
