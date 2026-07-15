@@ -3494,6 +3494,24 @@ def _looks_like_order_status_query(text: str) -> bool:
     if _looks_like_new_order_request(text):
         return False
     cleaned = text.strip(" ¿?.,!¡")
+    if cleaned in {
+        "demora",
+        "se demora",
+        "demora mucho",
+        "cuanto demora",
+        "cuanto se demora",
+        "cuanto tarda",
+        "cuando llega",
+        "ya salio",
+        "salio",
+        "ya viene",
+        "viene en camino",
+        "esta en ruta",
+        "en ruta",
+        "como va",
+        "como va mi pedido",
+    }:
+        return True
     status_terms = (
         "demora",
         "demorar",
@@ -3505,6 +3523,11 @@ def _looks_like_order_status_query(text: str) -> bool:
         "despacho",
         "despachar",
         "despachan",
+        "despacharon",
+        "salio",
+        "salir",
+        "ruta",
+        "camino",
         "espera",
         "tiempo de espera",
         "cuanto tiempo de espera",

@@ -2960,8 +2960,12 @@ async def test_question_about_order_delay_gets_friendly_answer() -> None:
     "raw_text",
     [
         "¿¿ demora ??",
+        "Se demora??",
         "cuánto   demora???",
         "En cuánto tiempo, me despachan?",
+        "Ya salió?",
+        "viene en camino?",
+        "cuando llega",
     ],
 )
 async def test_punctuation_accents_and_spacing_do_not_break_delay_questions(raw_text: str) -> None:

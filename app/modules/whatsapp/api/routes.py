@@ -346,7 +346,7 @@ async def whatsapp_webhook(
             continue
         if _is_order_timing_query(inbound.text):
             try:
-                if await _answer_order_timing_query(session, settings, idempotency, inbound):
+                if await _answer_order_timing_query(session, settings, idempotency, message_client, inbound):
                     processed += 1
                 else:
                     duplicated += 1
@@ -939,6 +939,7 @@ async def _answer_order_timing_query(
     session: AsyncSession,
     settings: Settings,
     idempotency: RedisIdempotency,
+    message_client: AdminBackendMessageClient,
     inbound,
 ) -> bool:
     idempotency_key = f"telegram:update:{inbound.update_id}:message:{inbound.message_id}"
@@ -967,6 +968,16 @@ async def _answer_order_timing_query(
         created_at=_message_datetime(inbound.sent_at_epoch),
     )
     session.add(inbound_row)
+    try:
+        await message_client.record_incoming_message(
+            chat_id=str(inbound.chat_id),
+            phone=inbound.phone,
+            body=inbound.text,
+            external_message_id=inbound.external_message_id,
+            sent_at=inbound_row.created_at.isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync order timing query to admin backend")
     response_text = await _order_timing_answer(session, inbound.chat_id)
     sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(inbound.chat_id), response_text)
     session.add(
@@ -981,6 +992,15 @@ async def _answer_order_timing_query(
             created_at=sent_message.received_at,
         )
     )
+    try:
+        await message_client.record_bot_message(
+            chat_id=str(sent_message.chat_id.value),
+            body=sent_message.text_raw,
+            external_message_id=sent_message.message_id,
+            sent_at=sent_message.received_at.isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync order timing answer to admin backend")
     await session.flush()
     await idempotency.mark_processed(idempotency_key, 86_400)
     return True
@@ -1006,17 +1026,16 @@ async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
             "En este estado el tiempo estimado es de aproximadamente 40 minutos. "
             "Estamos atentos para prepararlo lo mas pronto posible. Gracias por tu paciencia 🙌"
         )
-    if status_value == "PREPARING":
+    if status_value in {"ACCEPTED", "PRINTED", "PREPARING"}:
         return (
             "🍗 Tu pedido ya esta en preparacion. "
-            "Normalmente puede tardar entre 25 y 30 minutos. "
-            "Apenas este listo te avisamos. Gracias por esperar 🙌"
+            "En este estado normalmente demora entre 20 y 30 minutos, o incluso menos si sale rapidito. "
+            "Lo estamos preparando con mucho gusto; apenas este listo seguimos contigo 🙌"
         )
-    if status_value in {"DELIVERED", "DISPATCHED", "DESPACHADO"}:
+    if status_value in {"DELIVERED", "DISPATCHED", "DESPACHADO", "OUT_FOR_DELIVERY", "EN_RUTA"}:
         return (
-            "🛵 Tu pedido ya fue despachado. "
-            "El tiempo estimado de llegada es de 10 a 15 minutos, dependiendo de la ruta. "
-            "Gracias por tu paciencia 🙌"
+            "🛵 Tu pedido ya salio del asadero y va en ruta. "
+            "Debe llegarte muy pronto. Gracias por esperarnos con paciencia, ya casi esta contigo 🙌"
         )
     if status_value == "CANCELLED":
         return (
@@ -1033,6 +1052,28 @@ def _is_order_timing_query(text: str) -> bool:
     normalized = normalize_text(text)
     if _looks_like_new_order_request(normalized):
         return False
+    compact_question = normalized.strip(" ¿?.,!¡")
+    direct_short_questions = {
+        "demora",
+        "se demora",
+        "demora mucho",
+        "cuanto demora",
+        "cuanto se demora",
+        "cuanto tarda",
+        "cuando llega",
+        "ya salio",
+        "ya salio?",
+        "ya salio mi pedido",
+        "salio",
+        "ya viene",
+        "viene en camino",
+        "esta en ruta",
+        "en ruta",
+        "como va",
+        "como va mi pedido",
+    }
+    if compact_question in direct_short_questions:
+        return True
     timing_terms = (
         "demora",
         "demorar",
@@ -1050,6 +1091,11 @@ def _is_order_timing_query(text: str) -> bool:
         "estado",
         "despacho",
         "despachado",
+        "despacharon",
+        "salio",
+        "salir",
+        "ruta",
+        "camino",
         "despachan",
         "espera",
         "tiempo de espera",
