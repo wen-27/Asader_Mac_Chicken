@@ -1631,6 +1631,42 @@ async def test_post_add_finalize_keeps_delivery_form_even_with_stale_pickup_sess
 
 
 @pytest.mark.asyncio
+async def test_new_checkout_clears_stale_customer_data_and_keeps_asking_for_neighborhood() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.customer_name = "Es para domicilio"
+    services.session.customer_neighborhood = "Me puedes añadir 3 asados con tartara y aji porfa"
+    services.session.payment_method = "Nequi"
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    start = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3"))
+    assert start["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert start["fulfillment_type"] == "DELIVERY"
+
+    after_name = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Wendy"))
+    assert "telefono" in after_name["response_text"]
+    assert "direccion" in after_name["response_text"]
+    assert "barrio" in after_name["response_text"]
+    assert "metodo de pago" in after_name["response_text"]
+
+    after_phone = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3022873964"))
+    assert "direccion" in after_phone["response_text"]
+    assert "barrio" in after_phone["response_text"]
+    assert "metodo de pago" in after_phone["response_text"]
+
+    after_address = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cra28a#195-33"))
+    assert "barrio" in after_address["response_text"]
+    assert "metodo de pago" in after_address["response_text"]
+
+    after_payment = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Nequi"))
+    assert after_payment["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "barrio" in after_payment["response_text"]
+    assert "Datos recibidos" not in after_payment["response_text"]
+    assert services.session.customer_neighborhood is None
+
+
+@pytest.mark.asyncio
 async def test_customer_data_step_pickup_request_switches_to_pickup_prompt() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))

@@ -642,7 +642,13 @@ async def ask_customer_data(
         state.response_text = BotMessageFactory.checkout_summary(state)
         await _persist_step(state, services)
         return state
+    previous_step = state.current_step
     state.current_step = ConversationState.ASK_CUSTOMER_DATA
+    if previous_step != ConversationState.ASK_CUSTOMER_DATA:
+        state.customer = CustomerDataState()
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        _clear_checkout_session(session)
+        await services.persist_session(session)
     if _looks_like_pickup_request(state.raw_text):
         state.fulfillment_type = "PICKUP"
     else:
@@ -3870,5 +3876,6 @@ async def _persist_step(
         neighborhood=state.customer.neighborhood,
         payment_method=state.customer.payment_method,
         observations=state.customer.observations,
+        fulfillment_type=state.fulfillment_type,
     )
     await services.persist_step(session, state.current_step)
