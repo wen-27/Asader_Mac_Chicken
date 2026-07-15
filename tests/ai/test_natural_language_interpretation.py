@@ -87,8 +87,10 @@ class FakeProductRepository:
 class FakeParser:
     def __init__(self, parsed: NaturalLanguageOrderParse) -> None:
         self.parsed = parsed
+        self.calls = 0
 
     async def parse(self, message: str, catalog_context: str) -> NaturalLanguageOrderParse:
+        self.calls += 1
         return self.parsed
 
 
@@ -289,6 +291,26 @@ def test_rule_based_parser_does_not_charge_soup_when_customer_asks_if_included()
     assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "quiero un chorizo asado",
+        "me das una carne asada",
+        "quiero costilla asada",
+        "me regalas una salchicha broaster",
+        "quiero pescado broaster",
+    ],
+)
+def test_rule_based_parser_does_not_convert_unsupported_asado_or_broaster_foods_to_chicken(
+    message: str,
+) -> None:
+    parsed = parse_natural_order_rules(message)
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
+    assert "unsupported_cooked_food" in parsed.notes
+
+
 def test_rule_based_parser_understands_lasagna_typos() -> None:
     examples = [
         "quiero agregar una lasaña",
@@ -325,6 +347,30 @@ async def test_semantic_search_recovers_misspelled_product() -> None:
     assert not result.needs_clarification
     assert result.parsed.items[0].code == "BROASTER_MEDIO"
     assert any(note.startswith("discarded_invalid_codes:") for note in result.parsed.notes)
+
+
+@pytest.mark.asyncio
+async def test_unsupported_asado_food_does_not_fall_back_to_ai_as_chicken() -> None:
+    parser = FakeParser(
+        NaturalLanguageOrderParse(
+            intent="order_items",
+            items=[ParsedOrderItem(code="ASADO_ENTERO", quantity=1)],
+            confidence=0.92,
+        )
+    )
+    use_case = InterpretNaturalOrder(
+        products=FakeProductRepository(),
+        parser=parser,
+        semantic_search=CatalogSemanticSearch(FakeVectorStore()),
+        llm_fallback_enabled=True,
+    )
+
+    result = await use_case.execute(InterpretNaturalOrderCommand("quiero un chorizo asado"))
+
+    assert result.needs_clarification
+    assert result.parsed.items == []
+    assert "unsupported_cooked_food" in result.parsed.notes
+    assert parser.calls == 0
 
 
 @pytest.mark.asyncio

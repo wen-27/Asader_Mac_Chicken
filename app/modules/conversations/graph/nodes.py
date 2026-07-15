@@ -13,7 +13,10 @@ from difflib import SequenceMatcher
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
+from app.modules.ai.application.rule_based_order_parser import (
+    looks_like_unsupported_cooked_food_request,
+    parse_natural_order_rules,
+)
 from app.modules.catalog.domain.enums import ProductCategory
 from app.modules.catalog.domain.product import Product
 from app.modules.catalog.domain.specifications import ProductAvailabilitySpecification
@@ -295,6 +298,8 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
+    elif looks_like_unsupported_cooked_food_request(text):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
     elif "broaster" in text or "broasted" in text or "broster" in text:
         state.intent = ConversationIntent.MENU_BROASTER
     elif "asado" in text:

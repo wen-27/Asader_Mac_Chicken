@@ -7,7 +7,10 @@ import json
 
 from app.config.settings import get_settings
 from app.modules.ai.application.ports import CachePort, NaturalLanguageOrderParser
-from app.modules.ai.application.rule_based_order_parser import parse_natural_order_rules
+from app.modules.ai.application.rule_based_order_parser import (
+    looks_like_unsupported_cooked_food_request,
+    parse_natural_order_rules,
+)
 from app.modules.ai.application.schemas import NaturalLanguageOrderParse, ParsedOrderItem
 from app.modules.ai.application.semantic_search import CatalogSemanticSearch
 from app.modules.catalog.application.ports import ProductRepository
@@ -51,6 +54,8 @@ class InterpretNaturalOrder:
         )
         if rule_parsed.items:
             return InterpretNaturalOrderResult(parsed=rule_parsed, needs_clarification=False)
+        if looks_like_unsupported_cooked_food_request(command.message):
+            return InterpretNaturalOrderResult(parsed=rule_parsed, needs_clarification=True)
 
         llm_fallback_enabled = (
             get_settings().llm_fallback_enabled

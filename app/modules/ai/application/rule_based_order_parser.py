@@ -39,6 +39,62 @@ NUMBER_WORDS = {
 }
 
 
+COOKING_STYLE_TERMS = (
+    "asado",
+    "asados",
+    "asada",
+    "asadas",
+    "asadito",
+    "asaditos",
+    "broaster",
+    "broasters",
+    "broasted",
+    "broster",
+    "brosters",
+)
+
+
+CHICKEN_TERMS = (
+    "pollo",
+    "pollos",
+    "pollito",
+    "pollitos",
+)
+
+
+UNSUPPORTED_COOKED_FOOD_TERMS = (
+    "chorizo",
+    "chorizos",
+    "carne",
+    "carnes",
+    "res",
+    "cerdo",
+    "costilla",
+    "costillas",
+    "salchicha",
+    "salchichas",
+    "pescado",
+    "pescados",
+    "tilapia",
+    "mojarra",
+    "hamburguesa",
+    "hamburguesas",
+    "perro",
+    "perros",
+    "pincho",
+    "pinchos",
+    "arepa",
+    "arepas",
+    "mazorca",
+    "mazorcas",
+    "lomo",
+    "chuleta",
+    "chuletas",
+    "morcilla",
+    "morcillas",
+)
+
+
 PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     # Specific sizes must appear before generic products. For example, "medio
     # pollo" should become ASADO_MEDIO, not ASADO_ENTERO or a generic pollo.
@@ -226,15 +282,28 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
 )
 
 
+def looks_like_unsupported_cooked_food_request(message: str) -> bool:
+    """Return true when a grilled/broaster request names a non-catalog food."""
+    normalized = _normalize_for_matching(message)
+    return (
+        _contains_any_terms(normalized, COOKING_STYLE_TERMS)
+        and _contains_any_terms(normalized, UNSUPPORTED_COOKED_FOOD_TERMS)
+        and not _contains_any_terms(normalized, CHICKEN_TERMS)
+    )
+
+
 def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
     normalized = _normalize_for_matching(message)
     items: list[ParsedOrderItem] = []
     matched_codes: set[str] = set()
+    unsupported_cooked_food = looks_like_unsupported_cooked_food_request(normalized)
 
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
         if rule.code in matched_codes:
+            continue
+        if unsupported_cooked_food and rule.code.startswith(("ASADO_", "BROASTER_")):
             continue
         if _matches_rule(normalized, rule):
             if rule.code == "SOPA_ADICIONAL" and _looks_like_soup_or_contents_question(normalized):
@@ -257,7 +326,10 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         items=items,
         wantsCheckout=wants_checkout,
         confidence=confidence,
-        notes=["rule_based_parser"] if items else [],
+        notes=[
+            *(["rule_based_parser"] if items else []),
+            *(["unsupported_cooked_food"] if unsupported_cooked_food else []),
+        ],
     )
 
 
