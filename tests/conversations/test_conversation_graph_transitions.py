@@ -1612,6 +1612,25 @@ async def test_post_add_pickup_request_asks_for_pickup_customer_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_add_finalize_keeps_delivery_form_even_with_stale_pickup_session() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.fulfillment_type = "PICKUP"
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert result["fulfillment_type"] == "DELIVERY"
+    assert "datos de envio" in result["response_text"]
+    assert "Direccion" in result["response_text"]
+    assert "Barrio" in result["response_text"]
+    assert "pedido listo para recoger" not in result["response_text"]
+    assert services.session.fulfillment_type == "DELIVERY"
+
+
+@pytest.mark.asyncio
 async def test_customer_data_step_pickup_request_switches_to_pickup_prompt() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))

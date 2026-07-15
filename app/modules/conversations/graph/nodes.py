@@ -643,6 +643,13 @@ async def ask_customer_data(
         await _persist_step(state, services)
         return state
     state.current_step = ConversationState.ASK_CUSTOMER_DATA
+    if _looks_like_pickup_request(state.raw_text):
+        state.fulfillment_type = "PICKUP"
+    else:
+        state.fulfillment_type = "DELIVERY"
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.fulfillment_type = "DELIVERY"
+        await services.persist_session(session)
     soup_available = await _soup_is_available(services)
     if state.fulfillment_type == "PICKUP":
         state.response_text = BotMessageFactory.ask_pickup_customer_data(
