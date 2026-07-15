@@ -777,12 +777,16 @@ def _extract_customer_data_from_free_lines(
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
             continue
+        if _looks_like_invalid_phone_only(line):
+            continue
         first_useful_line_is_phone = _looks_like_phone(line)
         break
     remaining: list[str] = []
     for line in lines:
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
+            continue
+        if _looks_like_invalid_phone_only(line):
             continue
         if fulfillment_type == "PICKUP":
             if not customer.phone and _looks_like_phone(line):
@@ -987,6 +991,16 @@ def _looks_like_phone(text: str) -> bool:
         return False
     digits = re.sub(r"\D", "", text)
     return 7 <= len(digits) <= 10
+
+
+def _looks_like_invalid_phone_only(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    digits = re.sub(r"\D", "", stripped)
+    if len(digits) <= 10 or _looks_like_phone(stripped):
+        return False
+    return re.fullmatch(r"[\d\s()+\-.]+", stripped) is not None
 
 
 def _looks_like_address(normalized: str) -> bool:

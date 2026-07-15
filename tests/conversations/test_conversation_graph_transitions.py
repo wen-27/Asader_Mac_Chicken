@@ -1667,6 +1667,39 @@ async def test_new_checkout_clears_stale_customer_data_and_keeps_asking_for_neig
 
 
 @pytest.mark.asyncio
+async def test_checkout_ignores_invalid_phone_only_lines_instead_of_using_them_as_neighborhood() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 3))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Wendy"))
+
+    invalid_phone = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="30283829299"))
+    assert "telefono" in invalid_phone["response_text"]
+    assert "barrio" in invalid_phone["response_text"]
+    assert services.session.customer_neighborhood is None
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Calle 36 # 28 - 45"))
+
+    invalid_second_number = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="293837290238"))
+    assert "telefono" in invalid_second_number["response_text"]
+    assert "barrio" in invalid_second_number["response_text"]
+    assert services.session.customer_neighborhood is None
+    assert services.session.observations is None
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3022873946"))
+    after_payment = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Efectivo"))
+
+    assert after_payment["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "barrio" in after_payment["response_text"]
+    assert "Datos recibidos" not in after_payment["response_text"]
+    assert services.session.customer_neighborhood is None
+    assert services.session.observations is None
+
+
+@pytest.mark.asyncio
 async def test_customer_data_step_pickup_request_switches_to_pickup_prompt() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
