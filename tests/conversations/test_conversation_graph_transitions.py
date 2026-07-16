@@ -300,8 +300,8 @@ async def test_hola_from_natural_order_returns_to_main_menu() -> None:
     assert state.intent == ConversationIntent.MOSTRAR_MENU
     assert state.current_step == ConversationState.MAIN_MENU
     assert "bienvenido" in state.response_text.lower()
-    assert "Pedir por menu" in state.response_text
-    assert "Pedir escribiendo" in state.response_text
+    assert "Bebidas" in state.response_text
+    assert "Adicionales" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -318,7 +318,7 @@ async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() ->
 
     assert result["current_step"] == ConversationState.MAIN_MENU
     assert "bienvenido" in result["response_text"].lower()
-    assert "Pedir por menu" in result["response_text"]
+    assert "Bebidas" in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
 
 
@@ -333,6 +333,7 @@ async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() ->
         "Buen día",
         "Holaaaa",
         "Buenasss tardes",
+        "Buenas días",
         "Saludos",
         "Hola, muy buenas tardes",
     ],
@@ -642,7 +643,7 @@ async def test_customer_gave_up_by_phone_cancels_instead_of_reprompting() -> Non
     result = await graph.ainvoke(state)
 
     assert result["current_step"] == ConversationState.MAIN_MENU
-    assert "cancele el pedido actual" in result["response_text"]
+    assert "Cancele la orden actual" in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
 
 
@@ -664,7 +665,7 @@ async def test_real_customer_gave_up_variants_cancel_without_reprompting(raw_tex
     result = await graph.ainvoke(state)
 
     assert result["current_step"] == ConversationState.MAIN_MENU
-    assert "cancele el pedido actual" in result["response_text"]
+    assert "Cancele la orden actual" in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
 
 
@@ -735,7 +736,7 @@ async def test_natural_clear_cart_command_clears_cart() -> None:
     state = await nodes.clear_cart(state, services)
 
     assert services.session.cart == []
-    assert "vacie tu carrito" in state.response_text
+    assert "vacie la confirmacion de tu orden" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -749,7 +750,7 @@ async def test_natural_clear_my_cart_command_clears_cart() -> None:
 
     assert result["current_step"] == ConversationState.MAIN_MENU
     assert services.session.cart == []
-    assert "vacie tu carrito" in result["response_text"]
+    assert "vacie la confirmacion de tu orden" in result["response_text"]
 
 
 @pytest.mark.asyncio
@@ -765,7 +766,7 @@ async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch
 
     assert state.intent == ConversationIntent.PRODUCTO_RESTRINGIDO
     assert "Lasagna Mixta no esta disponible en este momento" in state.response_text
-    assert "Responde menu" in state.response_text
+    assert "Selecciona menu" in state.response_text
     assert "no cuento con informacion" not in state.response_text.lower()
 
 
@@ -782,7 +783,7 @@ async def test_zero_from_categories_goes_back_to_main_menu() -> None:
 
     assert state.intent == ConversationIntent.VOLVER
     assert state.current_step == ConversationState.MAIN_MENU
-    assert "Pedir por menu" in state.response_text
+    assert "Bebidas" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -866,7 +867,7 @@ async def test_weekday_maduro_request_is_visible_but_not_available(monkeypatch) 
     order_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero un maduro con queso"))
 
     assert "Maduro con Queso no esta disponible en este momento" in order_result["response_text"]
-    assert "Responde menu" in order_result["response_text"]
+    assert "Selecciona menu" in order_result["response_text"]
     assert services.session.cart == []
 
 
@@ -887,7 +888,7 @@ async def test_disabled_specials_still_show_in_menu_but_cannot_be_added() -> Non
     order_result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
 
     assert "Lasagna Mixta no esta disponible en este momento" in order_result["response_text"]
-    assert "Responde menu" in order_result["response_text"]
+    assert "Selecciona menu" in order_result["response_text"]
     assert services.session.cart == []
 
 
@@ -1071,7 +1072,7 @@ async def test_natural_product_selection_inside_specials_menu_reports_restrictio
 
     assert result["current_step"] == ConversationState.SELECT_ESPECIAL
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Responde menu" in result["response_text"]
+    assert "Selecciona menu" in result["response_text"]
     assert services.session.cart == []
 
 
@@ -1544,7 +1545,7 @@ async def test_quantity_adds_item_and_transitions_to_post_add() -> None:
     assert services.session.cart_total == MoneyCOP(44600)
     assert services.session.current_step == ConversationState.POST_ADD
     assert "1. Agregar mas productos" in state.response_text
-    assert "3. Finalizar pedido" in state.response_text
+    assert "3. Finalizar orden" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -1651,7 +1652,7 @@ async def test_post_add_pickup_request_asks_for_pickup_customer_data() -> None:
 
     assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
     assert result["fulfillment_type"] == "PICKUP"
-    assert "pedido listo para recoger" in result["response_text"]
+    assert "orden lista para recoger" in result["response_text"]
     assert "Nombre completo" in result["response_text"]
     assert "Telefono" in result["response_text"]
     assert "Direccion" not in result["response_text"]
@@ -1673,8 +1674,49 @@ async def test_post_add_finalize_keeps_delivery_form_even_with_stale_pickup_sess
     assert "datos de envio" in result["response_text"]
     assert "Direccion" in result["response_text"]
     assert "Barrio" in result["response_text"]
-    assert "pedido listo para recoger" not in result["response_text"]
+    assert "orden lista para recoger" not in result["response_text"]
     assert services.session.fulfillment_type == "DELIVERY"
+
+
+@pytest.mark.asyncio
+async def test_post_add_accepts_direct_address_instead_of_falling_back_to_natural_order_help() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Carrera 9 no 7 17 Floridablanca casco antiguo diagonal al banco dé Bogotá veterinaria Alma-vet",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion" in result["response_text"]
+    assert "nombre" in result["response_text"].lower()
+    assert "telefono" in result["response_text"].lower()
+    assert "metodo de pago" in result["response_text"].lower()
+    assert "barrio" not in result["response_text"].lower()
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+    assert services.session.customer_address == "Carrera 9 no 7 17"
+    assert services.session.customer_neighborhood == "Floridablanca casco antiguo"
+    assert services.session.observations == "diagonal al banco dé Bogotá veterinaria Alma-vet"
+
+
+@pytest.mark.asyncio
+async def test_post_add_accepts_bodega_reference_as_checkout_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="para la bodega 18"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion" in result["response_text"]
+    assert "Puedes escribirme tu pedido" not in result["response_text"]
+    assert services.session.observations == "para la bodega 18"
 
 
 @pytest.mark.asyncio
@@ -1758,7 +1800,7 @@ async def test_customer_data_step_pickup_request_switches_to_pickup_prompt() -> 
 
     assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
     assert result["fulfillment_type"] == "PICKUP"
-    assert "pedido listo para recoger" in result["response_text"]
+    assert "orden lista para recoger" in result["response_text"]
     assert "Direccion" not in result["response_text"]
     assert services.session.fulfillment_type == "PICKUP"
 
@@ -1832,7 +1874,7 @@ async def test_customer_data_creates_review_before_confirmation() -> None:
     assert state.current_step == ConversationState.CHECKOUT_REVIEW
     assert "Datos recibidos" in state.response_text
     assert "Juan Perez" in state.response_text
-    assert "Responde SI" in state.response_text
+    assert "Selecciona SI" in state.response_text
 
 
 @pytest.mark.asyncio
@@ -1935,6 +1977,41 @@ async def test_customer_data_accepts_checkout_without_optional_note() -> None:
 
 
 @pytest.mark.asyncio
+async def test_customer_data_extracts_embedded_neighborhood_and_delivery_note_from_rich_address() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Martin Andrés Flórez\n"
+                "3142199149\n"
+                "Carrera 9 no 7 17 Floridablanca casco antiguo diagonal al banco dé Bogotá veterinaria Alma-vet\n"
+                "Efectivo\n"
+                "El pedido para las 12 dé dia"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Datos recibidos" in result["response_text"]
+    assert "Cliente: Martin Andrés Flórez" in result["response_text"]
+    assert "Direccion: Carrera 9 no 7 17" in result["response_text"]
+    assert "Barrio: Floridablanca casco antiguo" in result["response_text"]
+    assert "Barrio: El pedido para las 12" not in result["response_text"]
+    assert "diagonal al banco dé Bogotá veterinaria Alma-vet" in result["response_text"]
+    assert "El pedido para las 12 dé dia" in result["response_text"]
+    assert services.session.customer_address == "Carrera 9 no 7 17"
+    assert services.session.customer_neighborhood == "Floridablanca casco antiguo"
+    assert services.session.observations is not None
+    assert "diagonal al banco dé Bogotá veterinaria Alma-vet" in services.session.observations
+    assert "El pedido para las 12 dé dia" in services.session.observations
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_before_payment_method() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
@@ -1990,7 +2067,7 @@ async def test_zero_from_customer_data_returns_to_cart() -> None:
     result = await graph.ainvoke(state)
 
     assert result["current_step"] == ConversationState.POST_ADD
-    assert "Tu carrito" in result["response_text"]
+    assert "Confirmacion de tu orden" in result["response_text"]
     assert "Me falta esta informacion" not in result["response_text"]
     assert len(services.session.cart) == 1
 
@@ -2511,7 +2588,7 @@ async def test_natural_order_with_unavailable_lasagna_explains_not_added() -> No
     assert "1 x 1 Asado Entero" in result["response_text"]
     assert "1 x Gaseosa 2.5 L - Kola" in result["response_text"]
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Responde menu" in result["response_text"]
+    assert "Selecciona menu" in result["response_text"]
     assert all(item.product_code.value != "LASAGNA_MIXTA" for item in services.session.cart)
     assert len(services.session.cart) == 2
 
@@ -2525,7 +2602,7 @@ async def test_lasagna_availability_question_shows_unavailable_alternative() -> 
     result = await graph.ainvoke(state)
 
     assert "Lasagna Mixta no esta disponible en este momento" in result["response_text"]
-    assert "Responde menu" in result["response_text"]
+    assert "Selecciona menu" in result["response_text"]
 
 
 @pytest.mark.asyncio
@@ -2822,7 +2899,7 @@ async def test_unavailable_soup_question_prompts_continue_or_cancel() -> None:
     result = await graph.ainvoke(state)
 
     assert "no contamos con sopas" in result["response_text"].lower()
-    assert "¿Quieres seguir con tu pedido o prefieres cancelarlo?" in result["response_text"]
+    assert "¿Quieres seguir con tu orden o prefieres cancelarla?" in result["response_text"]
     assert result["current_step"] == ConversationState.ASK_SOUP_UNAVAILABLE
     assert services.session.cart == []
 
@@ -2838,7 +2915,7 @@ async def test_continue_without_soup_shows_menu_and_keeps_cart() -> None:
 
     result = await graph.ainvoke(state)
 
-    assert "seguimos con tu pedido sin sopa" in result["response_text"].lower()
+    assert "seguimos con tu orden sin sopa" in result["response_text"].lower()
     assert "Elige una categoria" in result["response_text"]
     assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
     assert len(services.session.cart) == 1
@@ -2887,7 +2964,7 @@ async def test_combination_question_does_not_add_half_broaster_to_cart() -> None
 
     result = await graph.ainvoke(state)
 
-    assert "puedes pedir medio asado y medio broaster" in result["response_text"].lower()
+    assert "puedes ordenar medio asado y medio broaster" in result["response_text"].lower()
     assert "Agregado al carrito" not in result["response_text"]
     assert services.session.cart == []
 
@@ -3052,7 +3129,7 @@ async def test_payment_account_question_answers_nequi_account_without_cancelling
 
     assert "3182705144" in result["response_text"]
     assert "Fabio Leonardo Perez" in result["response_text"]
-    assert "cancele el pedido actual" not in result["response_text"]
+    assert "Cancele la orden actual" not in result["response_text"]
     assert len(services.session.cart) == 0
 
 
@@ -3074,7 +3151,7 @@ async def test_punctuation_accents_and_spacing_do_not_break_payment_account_ques
 
     assert "3182705144" in result["response_text"]
     assert "Fabio Leonardo Perez" in result["response_text"]
-    assert "cancele el pedido actual" not in result["response_text"]
+    assert "Cancele la orden actual" not in result["response_text"]
 
 
 @pytest.mark.asyncio
@@ -3101,7 +3178,7 @@ async def test_new_order_request_is_not_treated_as_order_delay_query() -> None:
     state = await nodes.fallback_natural_language(state, services)
 
     assert "40 minutos" not in state.response_text
-    assert "Claro, te ayudo con otro pedido" in state.response_text
+    assert "Claro, te ayudo con otra orden" in state.response_text
     assert "Pollo broaster" in state.response_text
     assert state.current_step == ConversationState.SELECT_BROASTER
     assert len(services.session.cart) == 0
@@ -3176,7 +3253,7 @@ async def test_weekday_special_natural_order_stays_unavailable(monkeypatch) -> N
     result = await nodes.fallback_natural_language(state, services)
 
     assert "no esta disponible en este momento" in result.response_text.lower()
-    assert "Responde menu" in result.response_text
+    assert "Selecciona menu" in result.response_text
     assert len(services.session.cart) == 0
 
 
@@ -3757,6 +3834,34 @@ async def test_confirm_order_requires_payment_method() -> None:
 
 
 @pytest.mark.asyncio
+async def test_checkout_review_accepts_payment_correction_and_no_cancels_order() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.customer_name = "Martin Andrés Flórez"
+    services.session.customer_phone = "3142199149"
+    services.session.customer_address = "Carrera 9 no 7 17"
+    services.session.customer_neighborhood = "Floridablanca casco antiguo"
+    services.session.payment_method = "Nequi"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    graph = build_conversation_graph(services)
+
+    corrected = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pago en efectivo"))
+
+    assert corrected["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Datos recibidos" in corrected["response_text"]
+    assert "Pago: Efectivo" in corrected["response_text"]
+    assert "Puedes escribirme tu pedido" not in corrected["response_text"]
+    assert services.session.payment_method == "Efectivo"
+
+    cancelled = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="no"))
+
+    assert cancelled["current_step"] == ConversationState.MAIN_MENU
+    assert services.session.cart == []
+    assert "Puedes escribirme tu pedido" not in cancelled["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_confirm_order_keeps_cart_when_admin_sync_fails() -> None:
     services = FakeConversationServices()
     services.fail_sync = True
@@ -3774,7 +3879,7 @@ async def test_confirm_order_keeps_cart_when_admin_sync_fails() -> None:
     state = await nodes.confirm_order(state, services)
 
     assert state.current_step == ConversationState.CHECKOUT_REVIEW
-    assert "No pude registrar tu pedido" in state.response_text
+    assert "No pude registrar tu orden" in state.response_text
     assert services.session.cart
     assert services.synced_orders == []
 

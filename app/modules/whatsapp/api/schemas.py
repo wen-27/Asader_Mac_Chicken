@@ -83,9 +83,15 @@ class WhatsAppMessageSchema(BaseModel):
             if button.id == "soup_cancel":
                 return "cancelar"
             if button.id == "half_combo_order":
-                return "pedir"
+                return "ordenar"
             if button.id == "half_combo_menu":
                 return "ver menu"
+            if button.id == "main_menu_drinks":
+                return "bebidas"
+            if button.id == "main_menu_addons":
+                return "adicionales"
+            if button.id == "main_menu_schedule":
+                return "horario"
             if button.id and button.id.startswith("admin_preparing_yes"):
                 return "Si"
             if button.id and button.id.startswith("admin_preparing_no"):

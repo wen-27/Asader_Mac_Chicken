@@ -30,16 +30,31 @@ class BotMessageFactory:
     def main_menu(cls) -> str:
         return "\n\n".join(
             [
-                f"👋 Hola, bienvenido a {cls.BUSINESS_NAME}.",
-                "¿Que quieres hacer hoy?",
+                "Bienvenido al asadero Mac chiken express. ¿En que podemos servirte?",
+                "Puedes escribir tu orden en texto normal despues de ver el menu.",
+                cls.customer_data_requirements_intro(),
+                "Tambien puedes seleccionar una opcion:",
+                "\n".join(["🥤 Bebidas", "🍟 Adicionales", "🕒 Nuestro horario"]),
+            ]
+        )
+
+    @classmethod
+    def customer_data_requirements_intro(cls) -> str:
+        return "\n\n".join(
+            [
+                "📦 Para preparar tu orden necesitaremos estos datos:",
                 "\n".join(
                     [
-                        "1. Pedir por menu 📋",
-                        "2. Pedir escribiendo ✍️",
-                        "3. Ver carrito 🧾",
-                        "4. Horarios 🕒",
+                        "Nombre completo",
+                        "Telefono",
+                        "Direccion",
+                        "Barrio",
+                        "Nota o especificacion (opcional)",
+                        "Metodo de pago",
                     ]
                 ),
+                "💳 Metodos de pago: Efectivo, Datafono, Nequi o Transferencia Bancolombia.",
+                "Cuando tengas lista tu orden, puedes enviarlos en un solo mensaje, en lineas separadas o como te quede mas facil.",
             ]
         )
 
@@ -54,7 +69,7 @@ class BotMessageFactory:
                 "3. 🥤 Bebidas",
                 "4. 🍟 Adicionales",
                 "5. ⭐ Platos especiales",
-                "6. ✅ Finalizar pedido",
+                "6. ✅ Finalizar orden",
                 "0. ⬅️ Volver al inicio",
             ]
         )
@@ -75,7 +90,7 @@ class BotMessageFactory:
                     "2. 🍗 Pollo broaster",
                     "3. 🥤 Bebidas",
                     "4. 🍟 Adicionales",
-                    "6. ✅ Finalizar pedido",
+                    "6. ✅ Finalizar orden",
                     "0. ⬅️ Volver al inicio",
                 ]
             )
@@ -83,7 +98,7 @@ class BotMessageFactory:
         for index, product in enumerate(products, start=1):
             lines.append(f"{index}. {product.name.value} - ${product.price.amount}")
         lines.append("")
-        lines.append("Responde con el numero del producto que quieres agregar.")
+        lines.append("Selecciona el numero del producto que quieres agregar.")
         lines.append("0. ⬅️ Volver a categorias")
         return "\n".join(lines)
 
@@ -205,7 +220,7 @@ class BotMessageFactory:
             lines.extend(f"- {alternative}" for alternative in alternatives)
         else:
             lines.append("Puedes elegir otra opcion disponible del menu.")
-            lines.append("Responde menu para ver las opciones.")
+            lines.append("Selecciona menu para ver las opciones.")
         return "\n".join(lines)
 
     @classmethod
@@ -234,8 +249,8 @@ class BotMessageFactory:
         option = recommended_product_name or "la opcion recomendada"
         return "\n\n".join(
             [
-                f"Responde Si para seguir con {option}.",
-                "Tambien puedes responder Ver menu para escoger otra opcion.",
+                f"Selecciona Si para seguir con {option}.",
+                "Tambien puedes seleccionar Ver menu para escoger otra opcion.",
             ]
         )
 
@@ -265,16 +280,16 @@ class BotMessageFactory:
     def added_to_cart(cls, line: CartLineState, total_cop: int) -> str:
         return "\n\n".join(
             [
-                "✅ Agregado al carrito.",
+                "✅ Agregado a la confirmacion de tu orden.",
                 f"{line.quantity} x {line.product_name} = ${line.subtotal_cop}",
                 f"🧾 Total acumulado: ${total_cop}",
                 "¿Que quieres hacer ahora?",
                 "\n".join(
                     [
                         "1. Agregar mas productos ➕",
-                        "2. Ver carrito 🛒",
-                        "3. Finalizar pedido ✅",
-                        "4. Vaciar carrito 🗑️",
+                        "2. Ver confirmacion de tu orden 🧾",
+                        "3. Finalizar orden ✅",
+                        "4. Vaciar confirmacion 🗑️",
                         "0. Volver a categorias ⬅️",
                     ]
                 ),
@@ -288,16 +303,16 @@ class BotMessageFactory:
         )
         return "\n\n".join(
             [
-                "✅ Agregado al carrito.",
+                "✅ Agregado a la confirmacion de tu orden.",
                 added_lines,
                 f"🧾 Total acumulado: ${total_cop}",
                 "¿Que quieres hacer ahora?",
                 "\n".join(
                     [
                         "1. Agregar mas productos ➕",
-                        "2. Ver carrito 🛒",
-                        "3. Finalizar pedido ✅",
-                        "4. Vaciar carrito 🗑️",
+                        "2. Ver confirmacion de tu orden 🧾",
+                        "3. Finalizar orden ✅",
+                        "4. Vaciar confirmacion 🗑️",
                         "0. Volver a categorias ⬅️",
                     ]
                 ),
@@ -330,7 +345,7 @@ class BotMessageFactory:
         )
         return "\n\n".join(
             [
-                "✅ Agregado al carrito.",
+                "✅ Agregado a la confirmacion de tu orden.",
                 added_lines,
                 f"🧾 Total acumulado: ${total_cop}",
                 cls.ask_side_extra(),
@@ -340,29 +355,29 @@ class BotMessageFactory:
     @classmethod
     def cart(cls, cart: list[CartLineState], total_cop: int) -> str:
         if not cart:
-            return "🛒 Tu carrito esta vacio. Escribe menu para ver opciones."
-        lines = ["🛒 Tu carrito:", ""]
+            return "🧾 La confirmacion de tu orden esta vacia. Escribe menu para ver opciones."
+        lines = ["🧾 Confirmacion de tu orden:", ""]
         for line in cart:
             lines.append(f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}")
         lines.append("")
         lines.append(f"Total: ${total_cop}")
         lines.append("")
         lines.append("1. Agregar mas productos ➕")
-        lines.append("2. Ver carrito 🛒")
-        lines.append("3. Finalizar pedido ✅")
-        lines.append("4. Vaciar carrito 🗑️")
+        lines.append("2. Ver confirmacion de tu orden 🧾")
+        lines.append("3. Finalizar orden ✅")
+        lines.append("4. Vaciar confirmacion 🗑️")
         lines.append("0. Volver al inicio ⬅️")
         return "\n".join(lines)
 
     @classmethod
     def clear_cart(cls) -> str:
-        return "🗑️ Listo, vacie tu carrito. Puedes seguir comprando cuando quieras."
+        return "🗑️ Listo, vacie la confirmacion de tu orden. Puedes ordenar de nuevo cuando quieras."
 
     @classmethod
     def remove_last_item(cls, removed_name: str | None) -> str:
         if removed_name is None:
-            return "🛒 Tu carrito esta vacio. No hay productos para eliminar."
-        return f"Listo, quite {removed_name} del carrito."
+            return "🧾 La confirmacion de tu orden esta vacia. No hay productos para eliminar."
+        return f"Listo, quite {removed_name} de la confirmacion de tu orden."
 
     @classmethod
     def cart_replaced_items(
@@ -377,16 +392,16 @@ class BotMessageFactory:
         )
         return "\n\n".join(
             [
-                f"Listo, quite {removed_text} del carrito y agregue lo que prefieres.",
+                f"Listo, quite {removed_text} de la confirmacion de tu orden y agregue lo que prefieres.",
                 added_text,
                 f"🧾 Total acumulado: ${total_cop}",
                 "¿Que quieres hacer ahora?",
                 "\n".join(
                     [
                         "1. Agregar mas productos ➕",
-                        "2. Ver carrito 🛒",
-                        "3. Finalizar pedido ✅",
-                        "4. Vaciar carrito 🗑️",
+                        "2. Ver confirmacion de tu orden 🧾",
+                        "3. Finalizar orden ✅",
+                        "4. Vaciar confirmacion 🗑️",
                         "0. Volver a categorias ⬅️",
                     ]
                 ),
@@ -396,19 +411,19 @@ class BotMessageFactory:
     @classmethod
     def checkout_summary(cls, state: ConversationGraphState) -> str:
         if not state.cart:
-            return "🛒 Tu carrito esta vacio. Primero agrega productos al pedido."
+            return "🧾 La confirmacion de tu orden esta vacia. Primero agrega productos a tu orden."
         return "\n\n".join(
             [
-                "🧾 Resumen de tu pedido:",
+                "🧾 Resumen de tu orden:",
                 cls.cart(state.cart, state.subtotal_cop),
-                "¿Deseas confirmar el pedido? Responde SI para confirmar o NO para cancelar.",
+                "¿Deseas confirmar tu orden? Selecciona SI para confirmar o NO para cancelar.",
             ]
         )
 
     @classmethod
     def ask_customer_data(cls, soup_available: bool = True) -> str:
         sections = [
-            "📦 Para finalizar tu pedido necesito los datos de envio:",
+            "📦 Para finalizar tu orden necesito los datos de envio:",
             "\n".join(
                 [
                     "Nombre completo",
@@ -426,7 +441,7 @@ class BotMessageFactory:
         sections.extend(
             [
                 "Puedes enviarlos en un solo mensaje, en lineas separadas o como te quede mas facil.",
-                "0. ⬅️ Volver al carrito",
+                "0. ⬅️ Volver a la confirmación de tú orden",
             ]
         )
         return "\n\n".join(sections)
@@ -434,7 +449,7 @@ class BotMessageFactory:
     @classmethod
     def ask_pickup_customer_data(cls, soup_available: bool = True) -> str:
         sections = [
-            "📦 Para dejar tu pedido listo para recoger necesito estos datos:",
+            "📦 Para dejar tu orden lista para recoger necesito estos datos:",
             "\n".join(
                 [
                     "Nombre completo",
@@ -448,7 +463,7 @@ class BotMessageFactory:
         sections.extend(
             [
                 "Puedes enviarlos en un solo mensaje, en lineas separadas o como te quede mas facil.",
-                "0. ⬅️ Volver al carrito",
+                "0. ⬅️ Volver a la confirmación de tú orden",
             ]
         )
         return "\n\n".join(sections)
@@ -467,7 +482,7 @@ class BotMessageFactory:
         if state.fulfillment_type == "PICKUP":
             return "\n\n".join(
                 [
-                    "✅ Datos recibidos. Revisa tu pedido para recoger:",
+                    "✅ Datos recibidos. Revisa tu orden para recoger:",
                     cls.cart(state.cart, state.subtotal_cop),
                     "\n".join(
                         [
@@ -484,12 +499,12 @@ class BotMessageFactory:
                             f"Total: ${state.total_cop}",
                         ]
                     ),
-                    "¿Confirmas tu pedido? Responde SI para confirmar o NO para cancelar.",
+                    "¿Confirmas tu orden? Selecciona SI para confirmar o NO para cancelar.",
                 ]
             )
         return "\n\n".join(
             [
-                "✅ Datos recibidos. Revisa tu pedido:",
+                "✅ Datos recibidos. Revisa tu orden:",
                 cls.cart(state.cart, state.subtotal_cop),
                 "\n".join(
                     [
@@ -508,19 +523,19 @@ class BotMessageFactory:
                         f"Total: ${state.total_cop}",
                     ]
                 ),
-                "¿Confirmas tu pedido? Responde SI para confirmar o NO para cancelar.",
+                "¿Confirmas tu orden? Selecciona SI para confirmar o NO para cancelar.",
             ]
         )
 
     @classmethod
     def confirmed(cls, requires_payment_proof: bool = False) -> str:
         if not requires_payment_proof:
-            return "✅ Pedido confirmado. Gracias por tu compra."
+            return "✅ Orden confirmada. Gracias por tu compra."
         return "\n\n".join(
             [
-                "✅ Pedido confirmado. Gracias por tu compra.",
+                "✅ Orden confirmada. Gracias por tu compra.",
                 cls.payment_account_answer(),
-                "Para poder preparar tu pedido, por favor envianos el comprobante de pago por este mismo chat.",
+                "Para poder preparar tu orden, por favor envianos el comprobante de pago por este mismo chat.",
             ]
         )
 
@@ -538,21 +553,21 @@ class BotMessageFactory:
     @classmethod
     def order_confirmation_failed(cls) -> str:
         return (
-            "No pude registrar tu pedido en este momento. No perdi tu carrito ni tus datos. "
+            "No pude registrar tu orden en este momento. No perdi la confirmacion de tu orden ni tus datos. "
             "Por favor intenta confirmar de nuevo en unos segundos."
         )
 
     @classmethod
     def cancelled(cls) -> str:
         return (
-            "Muchas gracias por elegirnos. cancele el pedido actual y vamos a estar pendientes "
-            "por si quieres volver a pedir. Aqui estoy para atenderte con mucho gusto."
+            "Muchas gracias por elegirnos. Cancele la orden actual y vamos a estar pendientes "
+            "por si quieres ordenar de nuevo. Aqui estoy para atenderte con mucho gusto."
         )
 
     @classmethod
     def natural_language_fallback(cls) -> str:
         return (
-            "Puedes escribirme tu pedido en texto normal. Por ejemplo: "
+            "Puedes escribirme tu orden en texto normal. Por ejemplo: "
             "un pollo asado con una Coca-Cola 1.5, medio broaster o dos papas francesas."
         )
 
@@ -574,7 +589,7 @@ class BotMessageFactory:
         for product in products:
             lines.append(f"- {product.name.value}: ${product.price.amount}")
         lines.append("")
-        lines.append("Si quieres pedir alguno, puedes escribirlo o responder con menu.")
+        lines.append("Si quieres ordenar alguno, puedes escribirlo o seleccionar menu.")
         return "\n".join(lines)
 
     @classmethod
@@ -603,7 +618,7 @@ class BotMessageFactory:
             )
         return (
             f"{product.name.value} esta disponible en el menu. "
-            "Si quieres, puedes pedirlo escribiendo el nombre del producto."
+            "Si quieres, puedes ordenarlo escribiendo el nombre del producto."
         )
 
     @classmethod
@@ -611,7 +626,7 @@ class BotMessageFactory:
         if not soup_available:
             return (
                 "En este momento no contamos con sopas porque ya se agotaron, "
-                "pero con gusto podemos seguir con tu pedido sin sopa."
+                "pero con gusto podemos seguir con tu orden sin sopa."
             )
         if product_code in {"ASADO_ENTERO", "BROASTER_ENTERO", "ASADO_34", "BROASTER_34"}:
             return "Mientras haya sopa disponible, esta presentacion incluye 2 sopas sin costo."
@@ -624,8 +639,8 @@ class BotMessageFactory:
         return "\n\n".join(
             [
                 "En este momento no contamos con sopas debido a que ya se agotaron.",
-                "Podemos seguir con tu pedido sin sopa o, si prefieres, lo cancelamos sin problema.",
-                "¿Quieres seguir con tu pedido o prefieres cancelarlo?",
+                "Podemos seguir con tu orden sin sopa o, si prefieres, la cancelamos sin problema.",
+                "¿Quieres seguir con tu orden o prefieres cancelarla?",
             ]
         )
 
@@ -640,8 +655,8 @@ class BotMessageFactory:
     def continue_without_soup_menu(cls) -> str:
         return "\n\n".join(
             [
-                "Listo, seguimos con tu pedido sin sopa.",
-                "¿Deseas pedir algo mas del menu?",
+                "Listo, seguimos con tu orden sin sopa.",
+                "¿Deseas ordenar algo mas del menu?",
                 cls.product_categories(),
             ]
         )
@@ -649,9 +664,9 @@ class BotMessageFactory:
     @classmethod
     def product_combination_answer(cls) -> str:
         return (
-            "Si, puedes pedir medio asado y medio broaster en el mismo pedido. "
+            "Si, puedes ordenar medio asado y medio broaster en la misma orden. "
             "Te los agrego como productos separados: 1/2 Asado y 1/2 Broasted.\n\n"
-            "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?"
+            "¿Deseas ordenarlos ahora o prefieres seguir viendo el menu?"
         )
 
     @classmethod
@@ -663,7 +678,7 @@ class BotMessageFactory:
         return "\n\n".join(
             [
                 "Muy buenas tardes, si claro, contamos con servicio a domicilio y estamos atendiendo.",
-                "Dime como te puedo ayudar: puedes escribirme tu pedido completo o elegir desde el menu:",
+                "Dime como te puedo ayudar: puedes escribirme tu orden completa o elegir desde el menu:",
                 cls.product_categories(),
             ]
         )
@@ -671,7 +686,7 @@ class BotMessageFactory:
     @classmethod
     def order_status_answer(cls) -> str:
         return (
-            "🍗 Estamos haciendo lo posible para despachar tu pedido lo mas pronto posible. "
+            "🍗 Estamos haciendo lo posible para despachar tu orden lo mas pronto posible. "
             "El tiempo aproximado es de 40 minutos o menos.\n\n"
             "Gracias por tu paciencia 🙌"
         )
@@ -680,7 +695,7 @@ class BotMessageFactory:
     def business_unknown_answer(cls) -> str:
         return (
             "Gracias por escribirme. No cuento con informacion sobre eso. "
-            "Puedo ayudarte con el menu, precios, domicilios o pedidos del asadero."
+            "Puedo ayudarte con el menu, precios, domicilios u ordenes del asadero."
         )
 
     @classmethod
@@ -704,7 +719,7 @@ class BotMessageFactory:
                 "En este momento estamos fuera del horario de atencion.",
                 "",
                 "Nuestro horario es de lunes a domingo de 10:00 a.m. a 4:00 p.m.",
-                "Para poder atender bien tu pedido, por favor escribenos dentro de ese horario.",
+                "Para poder atender bien tu orden, por favor escribenos dentro de ese horario.",
             ]
         )
 
@@ -712,7 +727,7 @@ class BotMessageFactory:
     def start_delivery_order(cls) -> str:
         return "\n\n".join(
             [
-                "Claro, te colaboro con un domicilio. Puedes escribirme tu pedido completo o elegir desde el menu:",
+                "Claro, te colaboro con un domicilio. Puedes escribirme tu orden completa o elegir desde el menu:",
                 cls.product_categories(),
             ]
         )
@@ -721,5 +736,5 @@ class BotMessageFactory:
     def audio_not_supported(cls) -> str:
         return (
             "Gracias por el audio. Por ahora no puedo procesar notas de voz. "
-            "Para atenderte mejor, por favor escribeme tu pedido o usa las opciones del menu."
+            "Para atenderte mejor, por favor escribeme tu orden o usa las opciones del menu."
         )

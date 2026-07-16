@@ -1,6 +1,7 @@
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import (
     _confirmation_buttons_payload,
     _half_combo_buttons_payload,
+    _main_menu_buttons_payload,
     _soup_unavailable_buttons_payload,
 )
 from app.shared.domain.value_object import ChatId
@@ -55,13 +56,28 @@ def test_soup_unavailable_prompt_uses_continue_cancel_buttons() -> None:
 def test_half_combo_prompt_uses_order_menu_buttons() -> None:
     payload = _half_combo_buttons_payload(
         ChatId(573153327502),
-        "Si, puedes pedir medio asado y medio broaster.\n\n"
-        "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?",
+        "Si, puedes ordenar medio asado y medio broaster.\n\n"
+        "¿Deseas ordenarlos ahora o prefieres seguir viendo el menu?",
     )
 
     assert payload is not None
     buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
     assert buttons[0]["reply"]["id"] == "half_combo_order"
-    assert buttons[0]["reply"]["title"] == "Pedir"
+    assert buttons[0]["reply"]["title"] == "Ordenar"
     assert buttons[1]["reply"]["id"] == "half_combo_menu"
     assert buttons[1]["reply"]["title"] == "Menú"
+
+
+def test_main_menu_prompt_uses_customer_friendly_buttons() -> None:
+    payload = _main_menu_buttons_payload(
+        ChatId(573153327502),
+        "Bienvenido al asadero Mac chiken express. ¿En que podemos servirte?",
+    )
+
+    assert payload is not None
+    buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
+    assert [button["reply"]["title"] for button in buttons] == [
+        "Bebidas",
+        "Adicionales",
+        "Nuestro horario",
+    ]

@@ -122,7 +122,7 @@ def test_whatsapp_payload_maps_half_combo_order_button_reply_to_text() -> None:
                                             "type": "button_reply",
                                             "button_reply": {
                                                 "id": "half_combo_order",
-                                                "title": "Pedir",
+                                                "title": "Ordenar",
                                             },
                                         },
                                     }
@@ -138,7 +138,7 @@ def test_whatsapp_payload_maps_half_combo_order_button_reply_to_text() -> None:
     messages = payload.iter_text_messages()
 
     assert len(messages) == 1
-    assert messages[0].text == "pedir"
+    assert messages[0].text == "ordenar"
 
 
 def test_whatsapp_payload_maps_admin_preparing_button_reply() -> None:

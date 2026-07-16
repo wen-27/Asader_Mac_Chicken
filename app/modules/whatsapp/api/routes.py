@@ -389,7 +389,15 @@ async def whatsapp_webhook(
             logger.exception("failed to load whatsapp conversation control")
             control = {"aiActive": True}
         if control.get("aiActive") is False:
-            processed += 1
+            try:
+                if await _store_paused_ai_inbound_message(session, idempotency, message_client, inbound):
+                    processed += 1
+                else:
+                    duplicated += 1
+            except Exception:
+                failed += 1
+                logger.exception("failed to store whatsapp inbound while ai is paused")
+                await session.rollback()
             continue
 
         try:
@@ -486,6 +494,56 @@ def _message_datetime(sent_at_epoch: int | None) -> datetime:
 def _is_business_open_now() -> bool:
     now = datetime.now(ZoneInfo("America/Bogota"))
     return 10 <= now.hour < 16
+
+
+async def _store_paused_ai_inbound_message(
+    session: AsyncSession,
+    idempotency: RedisIdempotency,
+    message_client: AdminBackendMessageClient,
+    inbound,
+) -> bool:
+    idempotency_key = f"telegram:update:{inbound.update_id}:message:{inbound.message_id}"
+    if await idempotency.is_processed(idempotency_key):
+        return False
+    if not await idempotency.mark_processing(idempotency_key, 86_400):
+        return False
+
+    existing = await session.execute(
+        select(TelegramMessageORM).where(
+            TelegramMessageORM.update_id == inbound.update_id,
+            TelegramMessageORM.direction == "inbound",
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        await idempotency.mark_processed(idempotency_key, 86_400)
+        return False
+
+    inbound_datetime = _message_datetime(inbound.sent_at_epoch)
+    session.add(
+        TelegramMessageORM(
+            update_id=inbound.update_id,
+            chat_id=inbound.chat_id,
+            direction="inbound",
+            message_text=inbound.text,
+            normalized_message_text=normalize_text(inbound.text),
+            message_type="text",
+            telegram_message_id=inbound.message_id,
+            created_at=inbound_datetime,
+        )
+    )
+    await session.flush()
+    await idempotency.mark_processed(idempotency_key, 86_400)
+    try:
+        await message_client.record_incoming_message(
+            chat_id=str(inbound.chat_id),
+            phone=inbound.phone,
+            body=inbound.text,
+            external_message_id=inbound.external_message_id,
+            sent_at=inbound_datetime.isoformat(),
+        )
+    except Exception:
+        logger.exception("failed to sync paused-ai whatsapp inbound to admin backend")
+    return True
 
 
 async def _answer_outside_business_hours(
@@ -638,15 +696,8 @@ def _whatsapp_call_response_text() -> str:
         [
             "Gracias por comunicarte con ASADERO MC CHICKEN EXPRESS.",
             "En este momento no estamos recibiendo llamadas por WhatsApp, pero con gusto te atendemos por este chat.",
-            "Puedes escribir tu pedido directamente o elegir una opcion:",
-            "\n".join(
-                [
-                    "1. Pedir por menu 📋",
-                    "2. Pedir escribiendo ✍️",
-                    "3. Ver carrito 🧾",
-                    "4. Horarios 🕒",
-                ]
-            ),
+            "Puedes escribir tu orden directamente o seleccionar una opcion:",
+            "\n".join(["🥤 Bebidas", "🍟 Adicionales", "🕒 Nuestro horario"]),
         ]
     )
 
@@ -825,8 +876,8 @@ async def _cancel_order_after_admin_no(
         return
     order.status = "CANCELLED"
     response_text = (
-        "Entendido, ya cancelamos tu pedido. Muchas gracias por pedir en ASADERO MC CHICKEN EXPRESS. "
-        "Quedamos atentos para ayudarte con cualquier otro pedido cuando lo desees."
+        "Entendido, ya cancelamos tu orden. Muchas gracias por elegir ASADERO MC CHICKEN EXPRESS. "
+        "Quedamos atentos para ayudarte con cualquier otra orden cuando lo desees."
     )
     sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(chat_id), response_text)
     session.add(
@@ -860,7 +911,7 @@ async def _continue_order_after_admin_yes(
         order.status = "PREPARING"
         order.accepted_at = datetime.now(timezone.utc)
     response_text = (
-        "Perfecto, muchas gracias por confirmarnos. Tu pedido ya esta en preparacion. "
+        "Perfecto, muchas gracias por confirmarnos. Tu orden ya esta en preparacion. "
         "En este estado normalmente tarda entre 25 y 30 minutos. Apenas este listo te avisamos."
     )
     sent_message = await WhatsAppCloudClient(settings).send_text_message(ChatId(chat_id), response_text)
@@ -1016,34 +1067,34 @@ async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
     order = result.scalar_one_or_none()
     if order is None:
         return (
-            "Con gusto te ayudo. En este momento no encuentro un pedido reciente asociado a este chat. "
-            "Si ya realizaste el pedido, por favor espera un momento o escribenos el numero del pedido para revisarlo."
+            "Con gusto te ayudo. En este momento no encuentro una orden reciente asociada a este chat. "
+            "Si ya realizaste la orden, por favor espera un momento o escribenos el numero de la orden para revisarla."
         )
     status_value = (order.status or "").upper()
     if status_value in {"PENDING", "CONFIRMED"}:
         return (
-            "👋 Claro, tu pedido ya fue recibido. "
+            "👋 Claro, tu orden ya fue recibida. "
             "En este estado el tiempo estimado es de aproximadamente 40 minutos. "
             "Estamos atentos para prepararlo lo mas pronto posible. Gracias por tu paciencia 🙌"
         )
     if status_value in {"ACCEPTED", "PRINTED", "PREPARING"}:
         return (
-            "🍗 Tu pedido ya esta en preparacion. "
+            "🍗 Tu orden ya esta en preparacion. "
             "En este estado normalmente demora entre 20 y 30 minutos, o incluso menos si sale rapidito. "
             "Lo estamos preparando con mucho gusto; apenas este listo seguimos contigo 🙌"
         )
     if status_value in {"DELIVERED", "DISPATCHED", "DESPACHADO", "OUT_FOR_DELIVERY", "EN_RUTA"}:
         return (
-            "🛵 Tu pedido ya salio del asadero y va en ruta. "
+            "🛵 Tu orden ya salio del asadero y va en ruta. "
             "Debe llegarte muy pronto. Gracias por esperarnos con paciencia, ya casi esta contigo 🙌"
         )
     if status_value == "CANCELLED":
         return (
-            "Tu pedido aparece como cancelado en nuestro sistema. "
-            "Si necesitas hacer uno nuevo, con gusto te ayudamos."
+            "Tu orden aparece como cancelada en nuestro sistema. "
+            "Si necesitas hacer una nueva, con gusto te ayudamos."
         )
     return (
-        "Estamos revisando el estado de tu pedido. "
+        "Estamos revisando el estado de tu orden. "
         "Te confirmamos lo antes posible, gracias por tu paciencia 🙌"
     )
 

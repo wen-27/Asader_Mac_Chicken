@@ -151,6 +151,27 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
+    if state.current_step == ConversationState.CHECKOUT_REVIEW:
+        if _is_no_reply(text):
+            state.intent = ConversationIntent.CANCELAR
+            return state
+        if _is_yes_reply(text):
+            state.intent = ConversationIntent.CONFIRMAR_PEDIDO
+            return state
+        if (
+            _looks_like_payment_method(text)
+            or _looks_like_address(text)
+            or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+        ):
+            state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+            return state
+    if state.current_step == ConversationState.POST_ADD and (
+        _looks_like_address(text)
+        or _looks_like_payment_method(text)
+        or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+    ):
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
     if _looks_like_pickup_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "PICKUP"
@@ -255,7 +276,7 @@ async def detect_intent(
             state.intent = ConversationIntent.CANCELAR
             return state
     if state.current_step == ConversationState.ASK_HALF_COMBO:
-        if _contains_command(text, ("pedir", "agregar", "si", "sí")):
+        if _contains_command(text, ("pedir", "ordenar", "agregar", "si", "sí")):
             state.intent = ConversationIntent.AGREGAR_MEDIO_COMBO
             return state
         if _contains_command(text, ("menu", "menú", "ver menu", "ver menú")):
@@ -794,12 +815,19 @@ def _extract_customer_data_from_free_lines(
             else:
                 remaining.append(line)
             continue
-        if not customer.address and _looks_like_address(normalized):
-            customer.address = line
-        elif not customer.phone and _looks_like_phone(line):
+        if _looks_like_address(normalized):
+            address, neighborhood, note = _split_rich_address_line(line)
+            customer.address = address
+            if neighborhood:
+                customer.neighborhood = neighborhood
+            if note:
+                customer.observations = _append_observation(customer.observations, note)
+        elif _looks_like_phone(line):
             customer.phone = line
-        elif not customer.payment_method and _looks_like_payment_method(normalized):
+        elif _looks_like_payment_method(normalized):
             customer.payment_method = _normalize_payment_method(normalized, line)
+        elif _looks_like_checkout_note(normalized):
+            customer.observations = _append_observation(customer.observations, line)
         else:
             remaining.append(line)
 
@@ -871,16 +899,17 @@ def _split_structured_checkout_lines(lines: list[str]) -> list[str] | None:
     name = " ".join(before_payment[:phone_index]).strip()
     if not name:
         return None
-    address = before_payment[address_index]
+    address, embedded_neighborhood, embedded_note = _split_rich_address_line(before_payment[address_index])
     between_phone_and_address = [
         line for index, line in enumerate(before_payment[phone_index + 1 : address_index + 1], start=phone_index + 1)
         if index != address_index
     ]
     trailing = before_payment[address_index + 1 :]
-    if not trailing:
+    if not trailing and not embedded_neighborhood:
         return None
-    neighborhood = trailing[0]
-    note_lines = between_phone_and_address + trailing[1:] + after_payment
+    neighborhood = embedded_neighborhood or trailing[0]
+    trailing_note_lines = trailing if embedded_neighborhood else trailing[1:]
+    note_lines = between_phone_and_address + ([embedded_note] if embedded_note else []) + trailing_note_lines + after_payment
     result = [name, before_payment[phone_index], address, neighborhood]
     if note_lines:
         result.append(" ".join(note_lines))
@@ -943,6 +972,9 @@ def _extract_payment_from_text(normalized: str) -> str | None:
 
 
 def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
+    address, neighborhood, _note = _split_rich_address_line(text)
+    if neighborhood:
+        return (address or None, neighborhood)
     words = text.split()
     if len(words) < 3:
         return (text or None, None)
@@ -955,6 +987,53 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
     address = " ".join(words[: last_number_index + 1]).strip()
     neighborhood = " ".join(words[last_number_index + 1 :]).strip()
     return (address or None, neighborhood or None)
+
+
+def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
+    raw = text.strip()
+    normalized = normalize_text(raw)
+    known_neighborhoods = (
+        "floridablanca casco antiguo",
+        "casco antiguo",
+        "el manantial",
+        "manantial",
+        "lagos 2",
+        "lagos ii",
+        "provenza",
+        "diamante",
+        "cacique",
+        "cabecera",
+        "san antonio del carrizal",
+        "san antonio carrizal",
+    )
+    address_note_markers = (
+        "diagonal",
+        "frente",
+        "al frente",
+        "cerca",
+        "junto",
+        "local",
+        "veterinaria",
+        "banco",
+        "torre",
+        "apto",
+        "apartamento",
+    )
+    best_match: tuple[int, int, str] | None = None
+    for neighborhood in known_neighborhoods:
+        match = re.search(rf"\b{re.escape(neighborhood)}\b", normalized)
+        if match and (best_match is None or match.start() < best_match[0]):
+            best_match = (match.start(), match.end(), raw[match.start() : match.end()])
+    if best_match is None:
+        return raw, None, None
+
+    start, end, neighborhood = best_match
+    before = raw[:start].strip(" ,.-")
+    after = raw[end:].strip(" ,.-")
+    if after and not _contains_any(normalize_text(after), address_note_markers):
+        neighborhood = f"{neighborhood} {after}".strip()
+        after = ""
+    return before or raw, neighborhood.strip(), after or None
 
 
 def _looks_like_complete_checkout_payload(lines: list[str], fulfillment_type: str = "DELIVERY") -> bool:
@@ -1414,7 +1493,7 @@ async def fallback_natural_language(
                 products = await services.list_products_by_category(category)
                 state.current_step = next_step
                 state.response_text = (
-                    "Claro, te ayudo con otro pedido.\n\n"
+                    "Claro, te ayudo con otra orden.\n\n"
                     + BotMessageFactory.product_menu(category.value, products)
                 )
                 await _persist_step(state, services)
@@ -1422,7 +1501,7 @@ async def fallback_natural_language(
 
             state.current_step = ConversationState.PRODUCT_CATEGORY
             state.response_text = (
-                "Claro, te ayudo con otro pedido. Elige una categoria para empezar:\n\n"
+                "Claro, te ayudo con otra orden. Elige una categoria para empezar:\n\n"
                 + BotMessageFactory.product_categories()
             )
             await _persist_step(state, services)
@@ -2747,6 +2826,43 @@ def _is_yes_reply(text: str) -> bool:
     return text.strip() in {"1", "si", "sí", "s", "ok", "dale", "listo", "confirmo"}
 
 
+def _is_no_reply(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {"0", "no", "n", "cancelar", "cancela", "cancelalo", "cancélalo"}
+
+
+def _looks_like_checkout_note(text: str) -> bool:
+    normalized = normalize_text(text)
+    return _contains_any(
+        normalized,
+        (
+            "para las",
+            "a las",
+            "medio dia",
+            "mediodia",
+            "medio día",
+            "mas tarde",
+            "más tarde",
+            "sin salsa",
+            "sin salsas",
+            "con salsa",
+            "con salsas",
+            "tartara",
+            "tártara",
+            "aji",
+            "ají",
+            "nota",
+            "observacion",
+            "observación",
+            "bodega",
+            "diagonal",
+            "frente",
+            "veterinaria",
+            "banco",
+        ),
+    )
+
+
 def _is_close_word(value: str, expected: str) -> bool:
     if value == expected:
         return True
@@ -2784,7 +2900,9 @@ def _is_greeting_only(text: str) -> bool:
         "buenas",
         "buenas buenas",
         "muy buenas",
+        "buenas dias",
         "buenos dias",
+        "muy buenas dias",
         "muy buenos dias",
         "buen dia",
         "muy buen dia",

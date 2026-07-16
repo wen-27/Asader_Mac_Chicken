@@ -29,7 +29,9 @@ class WhatsAppCloudClient:
         self._client = client
 
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
-        payload = _confirmation_buttons_payload(chat_id, text)
+        payload = _main_menu_buttons_payload(chat_id, text)
+        if payload is None:
+            payload = _confirmation_buttons_payload(chat_id, text)
         if payload is None:
             payload = _stock_alternative_buttons_payload(chat_id, text)
         if payload is None:
@@ -92,7 +94,7 @@ class WhatsAppCloudClient:
 
 
 def _confirmation_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
-    if "Responde SI para confirmar o NO para cancelar." not in text:
+    if "Responde SI para confirmar o NO para cancelar." not in text and "Selecciona SI para confirmar o NO para cancelar." not in text:
         return None
     body = _confirmation_body_text(text)
     return {
@@ -135,7 +137,49 @@ def _confirmation_body_text(text: str) -> str:
         " Responde SI para confirmar o NO para cancelar.",
         "",
     )
+    body = body.replace(
+        "¿Deseas confirmar tu orden? Selecciona SI para confirmar o NO para cancelar.",
+        "¿Deseas confirmar tu orden?",
+    )
+    body = body.replace(
+        "\n\nSelecciona SI para confirmar o NO para cancelar.",
+        "",
+    )
+    body = body.replace(
+        " Selecciona SI para confirmar o NO para cancelar.",
+        "",
+    )
     return body.strip()
+
+
+def _main_menu_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "Bienvenido al asadero Mac chiken express." not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "main_menu_drinks", "title": "Bebidas"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "main_menu_addons", "title": "Adicionales"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "main_menu_schedule", "title": "Nuestro horario"},
+                    },
+                ]
+            },
+        },
+    }
 
 
 def _stock_alternative_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
@@ -165,7 +209,7 @@ def _stock_alternative_buttons_payload(chat_id: ChatId, text: str) -> dict[str, 
 
 
 def _soup_unavailable_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
-    if "¿Quieres seguir con tu pedido o prefieres cancelarlo?" not in text:
+    if "¿Quieres seguir con tu pedido o prefieres cancelarlo?" not in text and "¿Quieres seguir con tu orden o prefieres cancelarla?" not in text:
         return None
     return {
         "messaging_product": "whatsapp",
@@ -191,7 +235,7 @@ def _soup_unavailable_buttons_payload(chat_id: ChatId, text: str) -> dict[str, o
 
 
 def _half_combo_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
-    if "¿Deseas pedirlos ahora o prefieres seguir viendo el menu?" not in text:
+    if "¿Deseas ordenarlos ahora o prefieres seguir viendo el menu?" not in text:
         return None
     return {
         "messaging_product": "whatsapp",
@@ -204,7 +248,7 @@ def _half_combo_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object]
                 "buttons": [
                     {
                         "type": "reply",
-                        "reply": {"id": "half_combo_order", "title": "Pedir"},
+                        "reply": {"id": "half_combo_order", "title": "Ordenar"},
                     },
                     {
                         "type": "reply",
