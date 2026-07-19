@@ -39,19 +39,29 @@ NUMBER_WORDS = {
 }
 
 
-COOKING_STYLE_TERMS = (
+ASADO_STYLE_TERMS = (
     "asado",
     "asados",
     "asada",
     "asadas",
     "asadito",
     "asaditos",
+)
+
+
+BROASTER_TERMS = (
     "broaster",
     "broasters",
     "broasted",
     "broster",
     "brosters",
+    "broche",
+    "broches",
+    "brosted",
 )
+
+
+COOKING_STYLE_TERMS = ASADO_STYLE_TERMS + BROASTER_TERMS
 
 
 CHICKEN_TERMS = (
@@ -102,19 +112,19 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
         "ASADO_34",
         ("pollo", "pollos", "asado"),
         ("3/4", "3 4", "tres cuartos", "tres cuarto"),
-        ("broaster", "broasted", "broster"),
+        BROASTER_TERMS,
     ),
     NaturalProductRule(
         "ASADO_MEDIO",
         ("pollo", "pollos", "asado"),
         ("1/2", "1 2", "medio", "medios", "media", "mitad"),
-        ("broaster", "broasted", "broster"),
+        BROASTER_TERMS,
     ),
     NaturalProductRule(
         "ASADO_CUARTO",
         ("pollo", "pollos", "asado"),
         ("1/4", "1 4", "cuarto", "cuartos"),
-        ("broaster", "broasted", "broster", "tres cuartos", "3/4"),
+        BROASTER_TERMS + ("tres cuartos", "3/4"),
     ),
     NaturalProductRule(
         "ASADO_ENTERO",
@@ -132,27 +142,27 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "asaditos",
         ),
         ("entero", "completo", "uno", "un"),
-        ("broaster", "broasted", "broster", "medio", "cuarto", "3/4", "1/2", "1/4"),
+        BROASTER_TERMS + ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
     NaturalProductRule(
         "BROASTER_34",
-        ("broaster", "broasted", "broster"),
+        BROASTER_TERMS,
         ("3/4", "3 4", "tres cuartos", "tres cuarto"),
     ),
     NaturalProductRule(
         "BROASTER_MEDIO",
-        ("broaster", "broasted", "broster"),
+        BROASTER_TERMS,
         ("1/2", "1 2", "medio", "medios", "media", "mitad"),
     ),
     NaturalProductRule(
         "BROASTER_CUARTO",
-        ("broaster", "broasted", "broster"),
+        BROASTER_TERMS,
         ("1/4", "1 4", "cuarto", "cuartos"),
         ("tres cuartos", "3/4"),
     ),
     NaturalProductRule(
         "BROASTER_ENTERO",
-        ("broaster", "broasters", "broasted", "broasteres", "broster", "brosters"),
+        BROASTER_TERMS + ("broasteres",),
         ("entero", "completo", "uno", "un"),
         ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
@@ -355,6 +365,7 @@ def _normalize_for_matching(message: str) -> str:
     normalized = normalized.replace("-", " ")
     normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
     normalized = _collapse_repeated_vowels(normalized)
+    normalized = re.sub(r"\bunpollo\b", "un pollo", normalized)
     return " ".join(normalized.split())
 
 
@@ -501,11 +512,18 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
             "pollos broster",
             "pollo brosters",
             "pollos brosters",
+            "pollo broche",
+            "pollos broche",
+            "pollo broches",
+            "pollos broches",
             "broaster",
             "broasters",
             "broasted",
             "broster",
             "brosters",
+            "broche",
+            "broches",
+            "brosted",
         ),
     ):
         return False
@@ -520,9 +538,15 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
             "pollos broster",
             "pollo brosters",
             "pollos brosters",
+            "pollo broche",
+            "pollos broche",
+            "pollo broches",
+            "pollos broches",
             "broaster",
             "broster",
             "brosters",
+            "broche",
+            "broches",
         ),
     ):
         return True
@@ -660,7 +684,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|broche|broches|brosted|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []

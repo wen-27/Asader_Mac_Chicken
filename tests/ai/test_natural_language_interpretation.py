@@ -124,6 +124,17 @@ def test_rule_based_parser_understands_whole_broster_like_whole_asado() -> None:
     assert parsed.confidence >= 0.9
 
 
+def test_rule_based_parser_tolerates_broche_autocorrect_for_quarter_broaster() -> None:
+    parsed = parse_natural_order_rules(
+        "Porfa para pedir un cuarto broche pechuga ala a la calle 5 numero numero 40-37 lagos 2"
+    )
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("BROASTER_CUARTO", 1),
+    ]
+    assert parsed.confidence >= 0.9
+
+
 def test_rule_based_parser_understands_mixed_whole_brosters_and_asado() -> None:
     parsed = parse_natural_order_rules("Buenos días me vendes dos pollos brosters y un pollo asado")
 
@@ -169,6 +180,12 @@ def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
     assert parsed.intent == "order_items"
+
+
+def test_rule_based_parser_tolerates_joined_unpollo_typo() -> None:
+    parsed = parse_natural_order_rules("dame unpollo porfa")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
 
 
 def test_rule_based_parser_understands_fractions_and_word_quantities() -> None:
