@@ -145,6 +145,25 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.MOSTRAR_MENU
         return state
+    if state.current_step == ConversationState.SELECT_BEBIDA:
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        if (session.pending_order_json or {}).get("kind") == "coca_cola_options":
+            selected_code = _extract_coca_cola_option(text)
+            if selected_code:
+                session.clear_pending_order()
+                await services.persist_session(session)
+                state.selected_product_code = selected_code
+                state.quantity = 1
+                state.intent = ConversationIntent.AGREGAR_PRODUCTO
+                return state
+            if text == "0" or _is_back_request(text):
+                session.clear_pending_order()
+                await services.persist_session(session)
+                state.intent = ConversationIntent.MOSTRAR_MENU
+                return state
+            state.response_text = BotMessageFactory.coca_cola_clarification()
+            state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
+            return state
     if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
         session = await services.load_or_create_session(ChatId(state.chat_id))
         if session.pending_order_json:
@@ -1753,9 +1772,25 @@ async def answer_query(
         state.response_text = BotMessageFactory.complaint_answer()
         return state
     if state.query_type == "coca_cola":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.pending_order_json = {"kind": "coca_cola_options"}
+        session.move_to(ConversationState.SELECT_BEBIDA)
+        await services.persist_session(session)
+        state.current_step = ConversationState.SELECT_BEBIDA
         state.response_text = BotMessageFactory.coca_cola_clarification()
         return state
     if state.query_type == "water":
+        product = await services.find_product("AGUA_BOTELLA")
+        if product is not None:
+            session = await services.load_or_create_session(ChatId(state.chat_id))
+            session.selected_product_code = product.code
+            session.selected_chicken_part = None
+            session.move_to(ConversationState.ASK_PRODUCT_VARIANT)
+            await services.persist_session(session)
+            state.selected_product_code = product.code.value
+            state.selected_product_name = product.name.value
+            state.selected_unit_price_cop = product.price.amount
+            state.current_step = ConversationState.ASK_PRODUCT_VARIANT
         state.response_text = BotMessageFactory.water_clarification()
         return state
     if state.query_type == "service":
@@ -2989,6 +3024,26 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
     return None
 
 
+def _extract_coca_cola_option(text: str) -> str | None:
+    cleaned = text.strip(" ¿?.,!¡")
+    if cleaned in {"1", "personal", "la personal", "coca personal", "coca cola personal", "400", "400 ml", "400ml"}:
+        return "PERSONAL_400"
+    if cleaned in {
+        "2",
+        "1.5",
+        "1,5",
+        "1 5",
+        "litro y medio",
+        "litro medio",
+        "la litro y medio",
+        "coca 1.5",
+        "coca cola 1.5",
+        "coca litro y medio",
+    }:
+        return "COCA_COLA_15"
+    return None
+
+
 def _extract_sauce_note(text: str) -> str | None:
     if _contains_any(text, ("extra salsa", "extra salsas", "adicional de salsa", "adicional de salsas")):
         return None
@@ -3325,7 +3380,7 @@ def _is_greeting_only(text: str) -> bool:
     normalized = re.sub(r"\bbuenas+\b", "buenas", normalized)
     normalized = re.sub(r"\bbuena\b", "buenas", normalized)
     normalized = re.sub(r"\bwenas+\b", "buenas", normalized)
-    normalized = re.sub(r"\s+(veci|vcei|vecino|vecina|amigo|amiga|parce|mano|senor|señor|senora|señora)$", "", normalized)
+    normalized = re.sub(r"\s+(veci|vcei|eci|vecino|vecina|amigo|amiga|parce|mano|senor|señor|senora|señora)$", "", normalized)
     greetings = {
         "hola",
         "hola hola",
@@ -3371,6 +3426,10 @@ def _looks_like_complaint(text: str) -> bool:
             "no llegó",
             "no me llego",
             "no me llegó",
+            "llego vacio",
+            "llegó vacío",
+            "pedido vacio",
+            "pedido vacío",
             "se perdio",
             "se perdió",
             "hijueputa",

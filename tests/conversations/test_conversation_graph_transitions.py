@@ -383,6 +383,7 @@ async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() ->
         "Wenas",
         "Wenas días",
         "Buenas veci",
+        "Buenas eci",
         "Saludos",
         "Hola, muy buenas tardes",
     ],
@@ -2863,6 +2864,49 @@ async def test_ambiguous_coca_cola_alone_asks_size_with_prices_without_fallback(
 
 
 @pytest.mark.asyncio
+async def test_coca_cola_clarification_then_personal_adds_drink_to_existing_order() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    question = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="con una coca cola"))
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="personal"))
+
+    assert "Coca-Cola personal 400 ml - $3500" in question["response_text"]
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Coca-Cola personal 400 ml" in result["response_text"]
+    assert "vale $3500" not in result["response_text"]
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO", "PERSONAL_400"]
+
+
+@pytest.mark.asyncio
+async def test_coca_cola_clarification_then_number_adds_litro_y_medio() -> None:
+    services = FakeConversationServices()
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
+        category=ProductCategory.BEBIDAS,
+        price=MoneyCOP(8500),
+    )
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="dame una coca cola"))
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="2"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Coca-Cola 1.5 L" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["COCA_COLA_15"]
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_water_alone_asks_variant_with_price_without_adding_default() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
@@ -2875,6 +2919,19 @@ async def test_ambiguous_water_alone_asks_variant_with_price_without_adding_defa
     assert "Sin gas" in result["response_text"]
     assert "Saborizada" in result["response_text"]
     assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_water_clarification_then_variant_continues_product_flow() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero un agua"))
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="sin gas"))
+
+    assert result["current_step"] == ConversationState.ASK_QUANTITY
+    assert "Agua botella - Sin gas" in result["response_text"]
+    assert "¿Cuantas unidades deseas añadir?" in result["response_text"]
 
 
 @pytest.mark.asyncio
@@ -3510,6 +3567,19 @@ async def test_complaint_with_profanity_does_not_enter_order_fallback() -> None:
     assert "administrador" in result["response_text"].lower()
     assert "Puedes escribirme tu orden" not in result["response_text"]
     assert "catalogo del asadero" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_empty_order_complaint_does_not_enter_catalog_unknown() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="oye es que el pedido me llegó vacio")
+
+    result = await graph.ainvoke(state)
+
+    assert "administrador" in result["response_text"].lower()
+    assert "catalogo del asadero" not in result["response_text"]
+    assert "Puedes escribirme tu orden" not in result["response_text"]
 
 
 @pytest.mark.asyncio
