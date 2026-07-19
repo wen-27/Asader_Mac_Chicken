@@ -42,8 +42,6 @@ def test_seed_prices_are_exact() -> None:
         "PAPA_FRANCESA": 8200,
         "PAPA_SALADA": 5000,
         "YUCA_FRITA": 5000,
-        "BOTELLA_VIDRIO": 200,
-        "ICOPOR": 900,
         "ADICIONAL_SALSAS": 900,
         "SOPA_ADICIONAL": 3500,
         "ICOPOR_SOPA": 350,
@@ -85,6 +83,9 @@ def test_delivery_zones_are_exact() -> None:
 def test_restricted_products() -> None:
     products = {seed.code: seed for seed in PRODUCT_SEEDS}
 
+    assert "BOTELLA_VIDRIO" not in products
+    assert "ICOPOR" not in products
+    assert "ICOPOR_SOPA" in products
     assert products["LASAGNA_MIXTA"].restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY
     assert products["MADURO_QUESO"].restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY
 
@@ -125,5 +126,7 @@ def test_aliases_normalized() -> None:
     assert "lasagnas" in normalized_aliases
     assert "maduros" in normalized_aliases
     assert "papas francesas" in normalized_aliases
-    assert "botellas de vidrios" in normalized_aliases
+    assert "botellas de vidrios" not in normalized_aliases
+    assert "icopores" not in normalized_aliases
+    assert "sopa con icopor" in normalized_aliases
     assert normalize_alias("Cañaveral") == "canaveral"

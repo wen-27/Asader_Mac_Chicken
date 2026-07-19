@@ -119,6 +119,8 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     NaturalProductRule(
         "ASADO_ENTERO",
         (
+            "pollo",
+            "pollos",
             "pollo asado",
             "pollos asados",
             "pollito asado",
@@ -235,14 +237,23 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "porción de yuca frita",
         ),
     ),
-    NaturalProductRule("BOTELLA_VIDRIO", ("botella vidrio", "botella de vidrio", "envase vidrio")),
-    NaturalProductRule("ICOPOR", ("icopor", "icopores", "caja icopor", "cajas icopor")),
     NaturalProductRule(
         "ADICIONAL_SALSAS",
         ("adicional de salsas", "adicional de salsa", "extra salsas", "extra salsa", "salsa adicional"),
     ),
     NaturalProductRule("SOPA_ADICIONAL", ("sopa", "sopita", "sopa adicional")),
-    NaturalProductRule("ICOPOR_SOPA", ("icopor sopa", "icopor para sopa", "vaso sopa")),
+    NaturalProductRule(
+        "ICOPOR_SOPA",
+        (
+            "icopor sopa",
+            "icopor para sopa",
+            "vaso sopa",
+            "sopa con icopor",
+            "sopa en icopor",
+            "sopita con icopor",
+            "sopita en icopor",
+        ),
+    ),
     NaturalProductRule(
         "LASAGNA_MIXTA",
         (

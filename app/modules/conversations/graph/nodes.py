@@ -55,6 +55,8 @@ SIDE_EXTRA_OPTIONS: tuple[tuple[str, str], ...] = (
     ("PAPA_SALADA", "Papa o yuca salada"),
 )
 
+INTERNAL_PRODUCT_CODES = {"ICOPOR_SOPA"}
+
 
 async def receive_message(
     state: ConversationGraphState,
@@ -122,6 +124,14 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if (
+        state.current_step == ConversationState.MAIN_MENU
+        and not state.cart
+        and not parsed_rules.items
+        and (_is_greeting_only(text) or _is_gratitude_only(text) or _looks_like_new_order_request(text))
+    ):
+        state.intent = ConversationIntent.MOSTRAR_MENU
+        return state
     if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
         session = await services.load_or_create_session(ChatId(state.chat_id))
         if session.pending_order_json:
@@ -147,7 +157,7 @@ async def detect_intent(
         state.intent = ConversationIntent.CANCELAR
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
-        text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "ver carrito", "carrito"))
+        text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "volver a la compra", "ver carrito", "ver compra", "carrito", "compra"))
     ):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
@@ -261,7 +271,7 @@ async def detect_intent(
             state.intent = ConversationIntent.PEDIR_CANTIDAD
             return state
         if text in {"0", "no"} or _contains_command(text, ("ver menu", "ver menú", "menu", "menú", "otra opcion", "otra opción")):
-            state.intent = ConversationIntent.VER_MENU
+            state.intent = ConversationIntent.MOSTRAR_MENU
             return state
         state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
         state.response_text = BotMessageFactory.stock_alternative_invalid(
@@ -280,7 +290,7 @@ async def detect_intent(
             state.intent = ConversationIntent.AGREGAR_MEDIO_COMBO
             return state
         if _contains_command(text, ("menu", "menú", "ver menu", "ver menú")):
-            state.intent = ConversationIntent.VER_MENU
+            state.intent = ConversationIntent.MOSTRAR_MENU
             return state
     if state.current_step == ConversationState.ASK_QUANTITY:
         state.intent = ConversationIntent.AGREGAR_PRODUCTO
@@ -294,10 +304,10 @@ async def detect_intent(
         if _contains_command(text, ("agregar", "agregar mas", "agregar más", "seguir", "seguir comprando")):
             state.intent = ConversationIntent.VER_MENU
             return state
-        if _contains_command(text, ("carrito", "ver carrito")):
+        if _contains_command(text, ("carrito", "compra", "ver carrito", "ver compra")):
             state.intent = ConversationIntent.MOSTRAR_CARRITO
             return state
-        if _contains_command(text, ("finalizar", "finalizar pedido", "checkout")):
+        if _contains_command(text, ("finalizar", "finalizar pedido", "finalizar compra", "confirmar compra", "checkout")):
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return state
         if _looks_like_clear_cart_request(text):
@@ -313,8 +323,10 @@ async def detect_intent(
         return state
     if text in {"menu", "menú", "hola", "inicio", "empezar"}:
         state.intent = ConversationIntent.MOSTRAR_MENU
-    elif text in {"ver menu", "ver menú", "1"}:
+    elif text == "1":
         state.intent = ConversationIntent.VER_MENU
+    elif _is_menu_request(text):
+        state.intent = ConversationIntent.MOSTRAR_MENU
     elif (
         state.current_step == ConversationState.NATURAL_ORDER
         or _looks_like_natural_order(text)
@@ -336,11 +348,11 @@ async def detect_intent(
         state.intent = ConversationIntent.MENU_ESPECIALES
     elif _looks_like_clear_cart_request(text):
         state.intent = ConversationIntent.VACIAR_CARRITO
-    elif _contains_command(text, ("carrito", "ver carrito", "mostrar carrito", "mi carrito")):
+    elif _contains_command(text, ("carrito", "compra", "ver carrito", "ver compra", "mostrar carrito", "mostrar compra", "mi carrito", "mi compra")):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
     elif text in {"eliminar", "quitar", "eliminar producto"}:
         state.intent = ConversationIntent.ELIMINAR_PRODUCTO
-    elif text in {"finalizar", "checkout", "resumen", "finalizar pedido"}:
+    elif text in {"finalizar", "checkout", "resumen", "finalizar pedido", "finalizar compra", "confirmar compra"}:
         state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
     elif text in {"datos", "factura"}:
         state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
@@ -707,6 +719,8 @@ async def extract_customer_data(
         if not line:
             continue
         if ":" not in line:
+            if _looks_like_order_line_without_checkout_data(line):
+                continue
             free_lines.append(line)
             continue
         key, value = line.split(":", 1)
@@ -798,6 +812,8 @@ def _extract_customer_data_from_free_lines(
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
             continue
+        if _looks_like_order_line_without_checkout_data(line):
+            continue
         if _looks_like_invalid_phone_only(line):
             continue
         first_useful_line_is_phone = _looks_like_phone(line)
@@ -806,6 +822,8 @@ def _extract_customer_data_from_free_lines(
     for line in lines:
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
+            continue
+        if _looks_like_order_line_without_checkout_data(line):
             continue
         if _looks_like_invalid_phone_only(line):
             continue
@@ -969,6 +987,47 @@ def _extract_payment_from_text(normalized: str) -> str | None:
     if "efectivo" in normalized:
         return "Efectivo"
     return None
+
+
+def _has_checkout_data_signal(text: str) -> bool:
+    for line in text.splitlines():
+        normalized = normalize_text(line)
+        if ":" in line:
+            key = normalize_text(line.split(":", 1)[0])
+            if key in {
+                "nombre",
+                "nombre completo",
+                "cliente",
+                "telefono",
+                "celular",
+                "direccion",
+                "dir",
+                "barrio",
+                "sector",
+                "metodo de pago",
+                "pago",
+                "medio de pago",
+                "forma de pago",
+                "nota",
+                "observaciones",
+            }:
+                return True
+        if _looks_like_phone(line) or _looks_like_payment_method(normalized):
+            return True
+    return False
+
+
+def _line_has_checkout_signal(line: str, normalized: str) -> bool:
+    return (
+        _looks_like_phone(line)
+        or _looks_like_address(normalized)
+        or _looks_like_payment_method(normalized)
+    )
+
+
+def _looks_like_order_line_without_checkout_data(line: str) -> bool:
+    normalized = normalize_text(line)
+    return bool(parse_natural_order_rules(line).items) and not _line_has_checkout_signal(line, normalized)
 
 
 def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
@@ -1478,6 +1537,9 @@ async def fallback_natural_language(
                 )
             if unavailable_notice:
                 state.response_text = "\n\n".join([state.response_text, unavailable_notice])
+            checkout_state = await _maybe_create_checkout_from_current_message(state, services)
+            if checkout_state:
+                return checkout_state
             return state
         if state.response_text:
             return state
@@ -1612,7 +1674,7 @@ async def answer_query(
     if state.query_type == "category":
         category = _category_from_query_value(state.query_value or "")
         if category is not None:
-            products = await services.list_products_by_category(category)
+            products = _visible_menu_products(await services.list_products_by_category(category))
             state.response_text = BotMessageFactory.product_list_answer(category.value, products)
             return state
     if state.query_type == "availability":
@@ -1730,11 +1792,15 @@ async def _show_category(
     category: ProductCategory,
     next_step: ConversationState,
 ) -> ConversationGraphState:
-    products = await services.list_products_by_category(category)
+    products = _visible_menu_products(await services.list_products_by_category(category))
     state.current_step = next_step if products else ConversationState.PRODUCT_CATEGORY
     state.response_text = BotMessageFactory.product_menu(category.value, products)
     await _persist_step(state, services)
     return state
+
+
+def _visible_menu_products(products: list[Product]) -> list[Product]:
+    return [product for product in products if product.code.value not in INTERNAL_PRODUCT_CODES]
 
 
 def _detect_numbered_menu_intent(state: ConversationGraphState) -> bool:
@@ -1800,28 +1866,28 @@ def _detect_natural_step_action(state: ConversationGraphState) -> bool:
         if _contains_command(text, ("agregar mas", "agregar más", "seguir comprando", "otro producto")):
             state.intent = ConversationIntent.VER_MENU
             return True
-        if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+        if _contains_command(text, ("ver carrito", "ver compra", "mostrar carrito", "mostrar compra", "mi carrito", "mi compra", "carrito", "compra")):
             state.intent = ConversationIntent.MOSTRAR_CARRITO
             return True
-        if _contains_command(text, ("finalizar", "finalizar pedido", "terminar pedido", "confirmar pedido")):
+        if _contains_command(text, ("finalizar", "finalizar pedido", "finalizar compra", "terminar pedido", "terminar compra", "confirmar pedido", "confirmar compra")):
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return True
-        if _contains_command(text, ("vaciar carrito", "borrar carrito", "limpiar carrito")):
+        if _contains_command(text, ("vaciar carrito", "vaciar compra", "borrar carrito", "borrar compra", "limpiar carrito", "limpiar compra")):
             state.intent = ConversationIntent.VACIAR_CARRITO
             return True
 
     if state.current_step == ConversationState.MAIN_MENU:
-        if _contains_command(text, ("pedir por menu", "pedir por menú", "ver menu", "ver menú")):
-            state.intent = ConversationIntent.VER_MENU
-            return True
         if _contains_command(text, ("pedir escribiendo", "pedido libre", "escribir pedido")):
             state.intent = ConversationIntent.LENGUAJE_NATURAL
             return True
-        if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+        if _contains_command(text, ("ver carrito", "ver compra", "mostrar carrito", "mostrar compra", "mi carrito", "mi compra", "carrito", "compra")):
             state.intent = ConversationIntent.MOSTRAR_CARRITO
             return True
         if _contains_command(text, ("horario", "horarios")):
             state.intent = ConversationIntent.HORARIOS
+            return True
+        if _is_menu_request(text):
+            state.intent = ConversationIntent.MOSTRAR_MENU
             return True
 
     if state.current_step == ConversationState.PRODUCT_CATEGORY:
@@ -1988,6 +2054,20 @@ async def _add_natural_order_to_cart(
     return added_lines
 
 
+async def _maybe_create_checkout_from_current_message(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState | None:
+    if not _has_checkout_data_signal(state.raw_text):
+        return None
+    state = await extract_customer_data(state, services)
+    state = await validate_customer_data(state, services)
+    if state.errors:
+        return None
+    state = await calculate_delivery(state, services)
+    return await create_order(state, services)
+
+
 async def _maybe_start_pending_quarter_order(
     state: ConversationGraphState,
     services: ConversationGraphServices,
@@ -1995,9 +2075,9 @@ async def _maybe_start_pending_quarter_order(
     parsed_items,
 ) -> bool:
     for index, item in enumerate(parsed_items):
-        if not _requires_chicken_part(item.code):
+        ambiguous_style = _is_ambiguous_chicken_style(item.code, state.normalized_text)
+        if not _requires_chicken_part(item.code) and not ambiguous_style:
             continue
-        ambiguous_style = _is_ambiguous_quarter_style(item.code, state.normalized_text)
         if _extract_chicken_selection(item.code, state.normalized_text) and not ambiguous_style:
             continue
         product = await services.find_product(item.code)
@@ -2059,7 +2139,7 @@ async def _continue_pending_natural_order(
             state.current_step = ConversationState.ASK_CHICKEN_STYLE
             state.response_text = BotMessageFactory.ask_chicken_style()
             return []
-        code = _quarter_code_for_style(style)
+        code = _chicken_code_for_style(code, style)
         current["code"] = code
         items[index] = current
         pending["items"] = items
@@ -2076,6 +2156,63 @@ async def _continue_pending_natural_order(
     allocations = list(pending.get("allocations") or [])
     allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
     remaining = max(0, total_quantity - allocated_quantity)
+    if was_awaiting_style and _requires_chicken_composition(code):
+        pending["variant"] = None
+        pending["awaiting_composition"] = True
+        session.pending_order_json = pending
+        session.move_to(ConversationState.ASK_CHICKEN_PART)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CHICKEN_PART
+        state.response_text = BotMessageFactory.ask_chicken_composition(product.name.value)
+        return []
+    if bool(pending.get("awaiting_composition")):
+        composition = _extract_chicken_composition(state.normalized_text)
+        if composition is None:
+            state.current_step = ConversationState.ASK_CHICKEN_PART
+            state.response_text = BotMessageFactory.ask_chicken_composition(product.name.value)
+            return []
+        pending["variant"] = composition
+        pending["awaiting_composition"] = False
+        session.selected_chicken_part = composition
+        session.pending_order_json = pending
+        await services.persist_session(session)
+        added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
+        session.clear_pending_order()
+        session.clear_selected_product()
+        session.move_to(ConversationState.POST_ADD)
+        await services.persist_session(session)
+        state.current_step = ConversationState.POST_ADD
+        state.cart = [
+            CartLineState(
+                product_code=item.product_code.value,
+                product_name=item.product_name.value,
+                unit_price_cop=item.unit_price.amount,
+                quantity=item.quantity,
+                subtotal_cop=item.subtotal.amount,
+            )
+            for item in session.cart
+        ]
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        return added_lines
+    if was_awaiting_style and not _requires_chicken_part(code):
+        added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
+        session.clear_pending_order()
+        session.clear_selected_product()
+        session.move_to(ConversationState.POST_ADD)
+        await services.persist_session(session)
+        state.current_step = ConversationState.POST_ADD
+        state.cart = [
+            CartLineState(
+                product_code=item.product_code.value,
+                product_name=item.product_name.value,
+                unit_price_cop=item.unit_price.amount,
+                quantity=item.quantity,
+                subtotal_cop=item.subtotal.amount,
+            )
+            for item in session.cart
+        ]
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        return added_lines
     if was_awaiting_style and remaining > 0:
         session.pending_order_json = pending
         session.move_to(ConversationState.ASK_CHICKEN_PART)
@@ -2199,6 +2336,16 @@ async def _add_pending_order_items_to_cart(
                 cart_item = _cart_item_from_selected_product(product, allocation_quantity, part)
                 session.add_cart_item(cart_item)
                 added_lines.append(_cart_line_from_cart_item(cart_item))
+            continue
+        if index == current_index and pending.get("variant"):
+            variant = str(pending["variant"])
+            availability = await _evaluate_product_availability(product, services, variant)
+            if not availability.is_available:
+                restricted_availability = availability
+                continue
+            cart_item = _cart_item_from_selected_product(product, quantity, variant)
+            session.add_cart_item(cart_item)
+            added_lines.append(_cart_line_from_cart_item(cart_item))
             continue
         availability = await _evaluate_product_availability(product, services)
         if not availability.is_available:
@@ -2747,7 +2894,7 @@ def _needs_side_extra_clarification(text: str) -> bool:
 def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
     if _is_main_menu_request(text):
         return ConversationIntent.MOSTRAR_MENU
-    if _contains_command(text, ("finalizar", "finalizar pedido", "terminar pedido", "checkout")):
+    if _contains_command(text, ("finalizar", "finalizar pedido", "finalizar compra", "terminar pedido", "terminar compra", "confirmar pedido", "confirmar compra", "checkout")):
         return ConversationIntent.PEDIR_DATOS_CLIENTE
     if _contains_command(
         text,
@@ -2758,10 +2905,16 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
             "borrar el carrito",
             "limpiar carrito",
             "limpiar el carrito",
+            "vaciar compra",
+            "vaciar la compra",
+            "borrar compra",
+            "borrar la compra",
+            "limpiar compra",
+            "limpiar la compra",
         ),
     ):
         return ConversationIntent.VACIAR_CARRITO
-    if _contains_command(text, ("ver carrito", "mostrar carrito", "mi carrito", "carrito")):
+    if _contains_command(text, ("ver carrito", "ver compra", "mostrar carrito", "mostrar compra", "mi carrito", "mi compra", "carrito", "compra")):
         return ConversationIntent.MOSTRAR_CARRITO
     if _contains_command(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
         return ConversationIntent.ELIMINAR_PRODUCTO
@@ -2780,7 +2933,7 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
     if _is_category_request(text, ("especial", "especiales", "platos especiales")):
         return ConversationIntent.MENU_ESPECIALES
     if _is_menu_request(text):
-        return ConversationIntent.VER_MENU
+        return ConversationIntent.MOSTRAR_MENU
     return None
 
 
@@ -3008,6 +3161,28 @@ def _extract_chicken_style(text: str) -> str | None:
 
 def _quarter_code_for_style(style: str) -> str:
     return "BROASTER_CUARTO" if style == "broster" else "ASADO_CUARTO"
+
+
+def _chicken_code_for_style(product_code: str, style: str) -> str:
+    if style != "broster":
+        return product_code
+    return {
+        "ASADO_ENTERO": "BROASTER_ENTERO",
+        "ASADO_MEDIO": "BROASTER_MEDIO",
+        "ASADO_CUARTO": "BROASTER_CUARTO",
+        "ASADO_34": "BROASTER_34",
+    }.get(product_code, product_code)
+
+
+def _is_ambiguous_chicken_style(product_code: str | None, text: str) -> bool:
+    if product_code not in {"ASADO_ENTERO", "ASADO_MEDIO", "ASADO_CUARTO", "ASADO_34"}:
+        return False
+    for segment in _natural_order_segments(text):
+        if not _segment_mentions_product_code(segment, product_code):
+            continue
+        if _extract_chicken_style(segment) is None:
+            return True
+    return False
 
 
 def _is_ambiguous_quarter_style(product_code: str | None, text: str) -> bool:
@@ -3384,7 +3559,11 @@ async def _prepare_unavailable_response(
 ) -> None:
     state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
     recommended = getattr(availability, "recommended_alternative", None)
-    if recommended is None and normalize_text(availability.product_name) == "lasagna mixta":
+    if (
+        recommended is None
+        and availability.reason != "restricted"
+        and normalize_text(availability.product_name) == "lasagna mixta"
+    ):
         recommended = _default_recommended_alternative("LASAGNA_MIXTA")
     if recommended is None:
         state.response_text = BotMessageFactory.product_unavailable(
@@ -3435,13 +3614,54 @@ async def _soup_is_available(services: ConversationGraphServices) -> bool:
 
 
 def _is_menu_request(text: str) -> bool:
-    if text in {"menu", "menú"}:
-        return False
-    return "menu" in text or "menú" in text
+    if _contains_command(
+        text,
+        (
+            "menu",
+            "menú",
+            "carta",
+            "la carta",
+            "ver carta",
+            "ver el menu",
+            "ver el menú",
+            "ver menu",
+            "ver menú",
+            "mostrar menu",
+            "mostrar menú",
+            "mostrar carta",
+            "productos",
+            "opciones",
+            "que venden",
+            "qué venden",
+            "que hay",
+            "qué hay",
+            "comida",
+            "comidas",
+            "comer",
+            "almuerzo",
+            "almuerzos",
+            "productos",
+            "platos",
+            "quiero pedir",
+            "quiero ordenar",
+            "quiero comprar",
+            "hacer pedido",
+            "hacer un pedido",
+            "pedir comida",
+            "ordenar comida",
+        ),
+    ):
+        return True
+    tokens = text.split()
+    return any(
+        _is_close_word(token, expected)
+        for token in tokens
+        for expected in ("menu", "carta", "productos", "opciones", "comida")
+    )
 
 
 def _looks_like_clear_cart_request(text: str) -> bool:
-    return "carrito" in text and _contains_any(
+    return ("carrito" in text or "compra" in text) and _contains_any(
         text,
         (
             "vaciar",
@@ -3499,6 +3719,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("contents", text)
         if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
             return ("availability", "lasagna mixta")
+        if "maduro" in text:
+            return ("availability", "maduro con queso")
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
         if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
@@ -4020,7 +4242,7 @@ async def _find_numbered_product(
     if category is None:
         return None
     index = int(state.normalized_text) - 1
-    products = await services.list_products_by_category(category)
+    products = _visible_menu_products(await services.list_products_by_category(category))
     if index < 0 or index >= len(products):
         return None
     return products[index]

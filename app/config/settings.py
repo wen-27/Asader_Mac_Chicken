@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     whatsapp_verify_token: str = Field(default="", repr=False)
     whatsapp_graph_api_version: str = "v23.0"
     whatsapp_send_timeout_seconds: float = 4.0
+    whatsapp_menu_image_media_id: str = Field(default="", repr=False)
 
     # Gemini is the configured LLM path. Deterministic rules run first to avoid
     # spending credits on common menu/order messages.

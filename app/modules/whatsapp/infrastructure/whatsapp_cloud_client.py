@@ -27,9 +27,12 @@ class WhatsAppCloudClient:
         self._access_token = settings.whatsapp_access_token
         self._timeout = settings.whatsapp_send_timeout_seconds
         self._client = client
+        self._menu_image_media_id = settings.whatsapp_menu_image_media_id.strip()
 
     async def send_text_message(self, chat_id: ChatId, text: str) -> TelegramMessage:
         payload = _main_menu_buttons_payload(chat_id, text)
+        if payload is not None and self._menu_image_media_id:
+            await self._send_payload(_image_payload(chat_id, self._menu_image_media_id))
         if payload is None:
             payload = _confirmation_buttons_payload(chat_id, text)
         if payload is None:
@@ -93,6 +96,15 @@ class WhatsAppCloudClient:
         return response.json()
 
 
+def _image_payload(chat_id: ChatId, media_id: str) -> dict[str, object]:
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "image",
+        "image": {"id": media_id},
+    }
+
+
 def _confirmation_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
     if "Responde SI para confirmar o NO para cancelar." not in text and "Selecciona SI para confirmar o NO para cancelar." not in text:
         return None
@@ -142,6 +154,10 @@ def _confirmation_body_text(text: str) -> str:
         "¿Deseas confirmar tu orden?",
     )
     body = body.replace(
+        "¿Confirmas tu compra? Selecciona SI para confirmar o NO para cancelar.",
+        "¿Confirmas tu compra?",
+    )
+    body = body.replace(
         "\n\nSelecciona SI para confirmar o NO para cancelar.",
         "",
     )
@@ -153,7 +169,7 @@ def _confirmation_body_text(text: str) -> str:
 
 
 def _main_menu_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
-    if "Bienvenido al asadero Mac chiken express." not in text:
+    if "¡Bienvenid@ a Mac Chicken!" not in text:
         return None
     return {
         "messaging_product": "whatsapp",
@@ -171,10 +187,6 @@ def _main_menu_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] 
                     {
                         "type": "reply",
                         "reply": {"id": "main_menu_addons", "title": "Adicionales"},
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {"id": "main_menu_schedule", "title": "Nuestro horario"},
                     },
                 ]
             },
