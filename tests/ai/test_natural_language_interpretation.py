@@ -120,6 +120,7 @@ def test_rule_based_parser_understands_whole_broster_like_whole_asado() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [
         ("BROASTER_ENTERO", 2),
+        ("ADICIONAL_SALSAS", 1),
     ]
     assert parsed.confidence >= 0.9
 
@@ -200,6 +201,22 @@ def test_rule_based_parser_charges_soup_icopor_with_irregular_text() -> None:
     for message in examples:
         parsed = parse_natural_order_rules(message)
         assert ("ICOPOR_SOPA", 1) in [(item.code, item.quantity) for item in parsed.items]
+
+
+def test_rule_based_parser_charges_paid_sauce_extras_only_when_requested() -> None:
+    paid_examples = {
+        "con adicional de tartara": [("ADICIONAL_SALSAS", 1)],
+        "quiero mas miel": [("ADICIONAL_SALSAS", 1)],
+        "extra salsa de tomate": [("ADICIONAL_SALSAS", 1)],
+        "adicional de aji": [("ADICIONAL_SALSAS", 1)],
+    }
+
+    for message, expected in paid_examples.items():
+        parsed = parse_natural_order_rules(message)
+        assert [(item.code, item.quantity) for item in parsed.items] == expected
+
+    assert parse_natural_order_rules("bastante tartara").items == []
+    assert parse_natural_order_rules("con la napa de salsa").items == []
 
 
 def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:

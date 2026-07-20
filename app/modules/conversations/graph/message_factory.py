@@ -322,26 +322,39 @@ class BotMessageFactory:
         )
 
     @classmethod
-    def natural_order_added(cls, lines: list[CartLineState], total_cop: int) -> str:
+    def natural_order_added(
+        cls,
+        lines: list[CartLineState],
+        total_cop: int,
+        missing_fields: list[str] | None = None,
+    ) -> str:
         added_lines = "\n".join(
             f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in lines
+        )
+        missing = missing_fields if missing_fields is not None else [
+            "Nombre completo",
+            "Telefono",
+            "Direccion",
+            "Barrio",
+            "Metodo de pago",
+            "Nota o especificacion (opcional)",
+        ]
+        customer_prompt = (
+            "Para confirmar tu orden, enviame estos datos cuando puedas:"
+            if missing_fields is not None
+            else "Para confirmar tu orden, enviame tus datos cuando puedas:"
+        )
+        customer_lines = (
+            [customer_prompt, "\n".join(missing)]
+            if missing
+            else ["Ya tengo los datos para confirmar tu orden."]
         )
         return "\n\n".join(
             [
                 "✅ Añadido a tu orden.",
                 added_lines,
                 f"🧾 Total acumulado: ${total_cop}",
-                "Para confirmar tu orden, enviame tus datos cuando puedas:",
-                "\n".join(
-                    [
-                        "Nombre completo",
-                        "Telefono",
-                        "Direccion",
-                        "Barrio",
-                        "Metodo de pago",
-                        "Nota o especificacion (opcional)",
-                    ]
-                ),
+                *customer_lines,
             ]
         )
 

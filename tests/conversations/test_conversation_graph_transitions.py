@@ -3140,11 +3140,47 @@ async def test_graph_adds_whole_broster_order_like_whole_asado() -> None:
 
     assert result["current_step"] == ConversationState.POST_ADD
     assert "2 x Broasted Entero" in result["response_text"]
-    assert "Total acumulado: $102000" in result["response_text"]
-    assert len(services.session.cart) == 1
+    assert "1 x Adicional de Salsas - Miel" in result["response_text"]
+    assert "Total acumulado: $102900" in result["response_text"]
+    assert len(services.session.cart) == 2
     assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
     assert services.session.cart[0].quantity == 2
-    assert services.session.observations == "Salsas broaster solicitadas: miel."
+    assert services.session.cart[1].product_code == ProductCode("ADICIONAL_SALSAS")
+    assert services.session.cart[1].product_name == ProductName("Adicional de Salsas - Miel")
+    assert services.session.cart[1].quantity == 1
+    assert services.session.observations is None
+
+
+@pytest.mark.asyncio
+async def test_natural_order_with_address_keeps_customer_fields_and_no_whole_chicken_part() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text=(
+            "Me puedes enviar un pollo asado\n\n"
+            "para la calle 195 No. 28-15 barrio villa piedra del sol"
+        ),
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "- 1 x 1 Asado Entero: $44500" in result["response_text"]
+    assert "1 Asado Entero - Pierna" not in result["response_text"]
+    assert "Direccion" not in result["response_text"]
+    assert "Barrio" not in result["response_text"]
+    assert "nombre completo" in result["response_text"]
+    assert "telefono" in result["response_text"]
+    assert "metodo de pago" in result["response_text"]
+    assert services.session.customer_address == "calle 195 No. 28-15"
+    assert services.session.customer_neighborhood == "villa piedra del sol"
 
 
 @pytest.mark.asyncio
@@ -4727,6 +4763,40 @@ async def test_extra_sauce_asks_sauce_type() -> None:
     assert "Adicional de Salsas" in result["response_text"]
     assert "1. Tártara" in result["response_text"]
     assert "2. Ají" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_paid_sauce_extra_after_cart_adds_item_instead_of_checkout_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Con adicional de tártara")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Adicional de Salsas - Tártara" in result["response_text"]
+    assert "Me falta esta informacion" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "BROASTER_ENTERO",
+        "ADICIONAL_SALSAS",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_simple_sauce_request_after_cart_stays_note_without_charge() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="bastante tartara")
+
+    result = await graph.ainvoke(state)
+
+    assert "Me falta esta informacion" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_ENTERO"]
+    assert services.session.observations == "bastante tartara"
 
 
 @pytest.mark.asyncio

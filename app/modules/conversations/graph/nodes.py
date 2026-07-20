@@ -215,6 +215,9 @@ async def detect_intent(
     if _looks_like_other_channel_order(text):
         state.intent = ConversationIntent.CANCELAR
         return state
+    if state.cart and _looks_like_paid_sauce_extra(text):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
         text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "volver a la compra", "volver a la orden", "ver carrito", "ver compra", "ver orden", "carrito", "compra", "orden"))
     ):
@@ -1215,7 +1218,7 @@ def _has_checkout_data_signal(text: str) -> bool:
                 "observaciones",
             }:
                 return True
-        if _looks_like_phone(line) or _looks_like_payment_method(normalized):
+        if _looks_like_phone(line) or _looks_like_payment_method(normalized) or _looks_like_address(normalized):
             return True
     return False
 
@@ -1255,6 +1258,12 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
 def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
     raw = _trim_address_leading_context(text.strip())
     normalized = normalize_text(raw)
+    labeled_neighborhood = re.search(r"\b(?:barrio|sector)\b", raw, flags=re.IGNORECASE)
+    if labeled_neighborhood:
+        before = raw[: labeled_neighborhood.start()].strip(" ,.-")
+        after = raw[labeled_neighborhood.end() :].strip(" ,.-")
+        if before and after:
+            return before, after, None
     known_neighborhoods = (
         "floridablanca casco antiguo",
         "casco antiguo",
@@ -1765,9 +1774,11 @@ async def fallback_natural_language(
             if state.current_step != ConversationState.ASK_STOCK_ALTERNATIVE:
                 state.current_step = ConversationState.POST_ADD
             state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+            await _capture_checkout_fragments_from_natural_order(state, services)
             state.response_text = BotMessageFactory.natural_order_added(
                 added_lines,
                 state.subtotal_cop,
+                _missing_checkout_fields(state),
             )
             contents_answer = await _contents_answer_for_added_order_question(state, services, added_lines)
             if contents_answer:
@@ -2364,12 +2375,29 @@ async def _maybe_create_checkout_from_current_message(
 ) -> ConversationGraphState | None:
     if not _has_checkout_data_signal(state.raw_text):
         return None
+    previous_response = state.response_text
+    previous_step = state.current_step
     state = await extract_customer_data(state, services)
     state = await validate_customer_data(state, services)
     if state.errors:
+        state.response_text = previous_response
+        state.current_step = previous_step
+        state.errors = []
         return None
     state = await calculate_delivery(state, services)
     return await create_order(state, services)
+
+
+async def _capture_checkout_fragments_from_natural_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    if not _has_checkout_data_signal(state.raw_text):
+        return
+    await extract_customer_data(state, services)
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_state_to_session(state, session)
+    await services.persist_session(session)
 
 
 async def _maybe_start_pending_quarter_order(
@@ -3041,6 +3069,10 @@ def _looks_like_natural_order(text: str) -> bool:
             "me colaboras",
             "me puede colaborar",
             "me puedes colaborar",
+            "me puede enviar",
+            "me puedes enviar",
+            "puede enviar",
+            "puedes enviar",
             "puede colaborar",
             "puedes colaborar",
             "dame",
@@ -3087,6 +3119,10 @@ def _looks_like_direct_order_with_products(text: str, parsed_rules) -> bool:
             "me colaboras",
             "me puede colaborar",
             "me puedes colaborar",
+            "me puede enviar",
+            "me puedes enviar",
+            "puede enviar",
+            "puedes enviar",
             "puede colaborar",
             "puedes colaborar",
             "me ayuda",
@@ -3232,7 +3268,7 @@ def _extract_coca_cola_option(text: str) -> str | None:
 
 
 def _extract_sauce_note(text: str) -> str | None:
-    if _contains_any(text, ("extra salsa", "extra salsas", "adicional de salsa", "adicional de salsas")):
+    if _looks_like_paid_sauce_extra(text):
         return None
     if _contains_any(text, ("sin salsa", "sin salsas")):
         return "Salsas: sin salsas."
@@ -3256,6 +3292,24 @@ def _extract_sauce_note(text: str) -> str | None:
     if "asado" in text:
         return "Salsas asado solicitadas: " + ", ".join(mentioned) + "."
     return "Salsas solicitadas: " + ", ".join(mentioned) + "."
+
+
+def _looks_like_paid_sauce_extra(text: str) -> bool:
+    if not _contains_any(text, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "tomate", "miel")):
+        return False
+    return _contains_any(
+        text,
+        (
+            "adicional",
+            "extra",
+            "mas ",
+            "más ",
+            "porcion",
+            "porción",
+            "por aparte",
+            "aparte",
+        ),
+    )
 
 
 def _extract_sauce_preference_note(text: str) -> str | None:
@@ -4060,7 +4114,9 @@ def _ask_chicken_selection_message(product_code: str | None, product_name: str) 
 def _extract_chicken_selection(product_code: str | None, text: str) -> str | None:
     if _requires_chicken_composition(product_code):
         return _extract_chicken_composition(text)
-    return _extract_chicken_part(text)
+    if _requires_chicken_part(product_code):
+        return _extract_chicken_part(text)
+    return None
 
 
 def _extract_product_variant(product_code: str | None, text: str) -> str | None:
@@ -4092,6 +4148,10 @@ def _extract_product_variant(product_code: str | None, text: str) -> str | None:
             return "Tártara"
         if "aji" in normalized:
             return "Ají"
+        if "tomate" in normalized:
+            return "Tomate"
+        if "miel" in normalized:
+            return "Miel"
     return None
 
 
