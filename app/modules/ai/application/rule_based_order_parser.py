@@ -51,13 +51,21 @@ ASADO_STYLE_TERMS = (
 
 BROASTER_TERMS = (
     "broaster",
+    "broasterr",
+    "broasther",
     "broasters",
     "broasted",
+    "brouster",
     "broster",
+    "brosterr",
+    "brostter",
+    "brostee",
     "brosters",
     "broche",
     "broches",
     "brosted",
+    "bruster",
+    "brusters",
 )
 
 
@@ -185,6 +193,8 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "gaseosa piña",
             "colombiana",
             "gaseosa colombiana",
+            "manzana",
+            "gaseosa manzana",
             "gaseosa",
         ),
         ("2.5", "2,5", "2 5", "dos litros y medio", "2 litros y medio"),
@@ -504,28 +514,10 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
     if not _contains_any_terms(
         text,
         (
-            "pollo broaster",
-            "pollo a la broaster",
-            "pollos broaster",
-            "pollo broasted",
-            "pollos broasted",
-            "pollo broster",
-            "pollo a la broster",
-            "pollos broster",
-            "pollo brosters",
-            "pollos brosters",
-            "pollo broche",
-            "pollos broche",
-            "pollo broches",
-            "pollos broches",
-            "broaster",
-            "broasters",
-            "broasted",
-            "broster",
-            "brosters",
-            "broche",
-            "broches",
-            "brosted",
+            *BROASTER_TERMS,
+            *(f"pollo {term}" for term in BROASTER_TERMS),
+            *(f"pollo a la {term}" for term in BROASTER_TERMS),
+            *(f"pollos {term}" for term in BROASTER_TERMS),
         ),
     ):
         return False
@@ -534,23 +526,10 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
     if _has_quantity_before_any_term(
         text,
         (
-            "pollo broaster",
-            "pollo a la broaster",
-            "pollos broaster",
-            "pollo broster",
-            "pollo a la broster",
-            "pollos broster",
-            "pollo brosters",
-            "pollos brosters",
-            "pollo broche",
-            "pollos broche",
-            "pollo broches",
-            "pollos broches",
-            "broaster",
-            "broster",
-            "brosters",
-            "broche",
-            "broches",
+            *BROASTER_TERMS,
+            *(f"pollo {term}" for term in BROASTER_TERMS),
+            *(f"pollo a la {term}" for term in BROASTER_TERMS),
+            *(f"pollos {term}" for term in BROASTER_TERMS),
         ),
     ):
         return True
@@ -688,7 +667,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|broche|broches|brosted|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []
