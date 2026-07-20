@@ -5065,6 +5065,11 @@ def _looks_like_service_question(text: str) -> bool:
         (
             "tienes servicio",
             "ya tienes servicio",
+            "tienes servidion",
+            "tienen servidion",
+            "hay servidion",
+            "servidion",
+            "servicion",
             "aun tienes servicio",
             "aún tienes servicio",
             "tienes domicilios",

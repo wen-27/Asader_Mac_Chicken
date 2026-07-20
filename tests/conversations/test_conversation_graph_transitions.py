@@ -3637,6 +3637,34 @@ async def test_natural_order_with_manzana_litro_warns_only_25_liter_available() 
 
 
 @pytest.mark.asyncio
+async def test_real_customer_service_typo_and_broaster_with_manzana_litro_notice() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Buenas tardes"))
+    service = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Tienen servidion"))
+
+    assert service["current_step"] == ConversationState.MAIN_MENU
+    assert "si claro, contamos con servicio" in service["response_text"].lower()
+    assert "Puedes escribirme tu orden en texto normal" not in service["response_text"]
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Un pollo a la Broaster porfa y una gaseosa litro manzana",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Broasted Entero: $51000" in result["response_text"]
+    assert "gaseosa Manzana solo la manejamos en presentacion 2.5 L" in result["response_text"]
+    assert "Precio: $8500" in result["response_text"]
+    assert "Gaseosa 2.5 L - Manzana" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_ENTERO"]
+
+
+@pytest.mark.asyncio
 async def test_manzana_litro_alone_warns_only_25_liter_available() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

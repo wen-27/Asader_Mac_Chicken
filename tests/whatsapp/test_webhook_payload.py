@@ -141,6 +141,42 @@ def test_whatsapp_payload_maps_half_combo_order_button_reply_to_text() -> None:
     assert messages[0].text == "ordenar"
 
 
+def test_whatsapp_payload_maps_manzana_25_button_reply_to_text() -> None:
+    payload = WhatsAppWebhookPayload.model_validate(
+        {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": "573153327502",
+                                        "id": "wamid.MANZANA",
+                                        "type": "interactive",
+                                        "interactive": {
+                                            "type": "button_reply",
+                                            "button_reply": {
+                                                "id": "manzana_25_add",
+                                                "title": "Añadir 2.5 L",
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    messages = payload.iter_text_messages()
+
+    assert len(messages) == 1
+    assert messages[0].text == "Manzana 2.5"
+
+
 def test_whatsapp_payload_maps_admin_preparing_button_reply() -> None:
     payload = WhatsAppWebhookPayload.model_validate(
         {
