@@ -4253,11 +4253,25 @@ async def test_menu_request_recovers_after_unknown_natural_order() -> None:
 @pytest.mark.asyncio
 async def test_addons_menu_hides_internal_soup_icopor() -> None:
     services = FakeConversationServices()
+    services.products["ICOPOR"] = Product(
+        code=ProductCode("ICOPOR"),
+        name=ProductName("Icopores"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(900),
+    )
+    services.products["BOTELLA_VIDRIO"] = Product(
+        code=ProductCode("BOTELLA_VIDRIO"),
+        name=ProductName("Botella Vidrio"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(200),
+    )
     state = ConversationGraphState(chat_id=123, raw_text="adicionales")
 
     result = await nodes.show_addons_menu(state, services)
 
     assert "Icopor Sopa" not in result.response_text
+    assert "Icopores" not in result.response_text
+    assert "Botella Vidrio" not in result.response_text
     assert "Adicional de Salsas" in result.response_text
 
 

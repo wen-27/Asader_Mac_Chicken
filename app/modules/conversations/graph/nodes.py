@@ -55,7 +55,7 @@ SIDE_EXTRA_OPTIONS: tuple[tuple[str, str], ...] = (
     ("PAPA_SALADA", "Papa o yuca salada"),
 )
 
-INTERNAL_PRODUCT_CODES = {"ICOPOR_SOPA"}
+INTERNAL_PRODUCT_CODES = {"ICOPOR_SOPA", "ICOPOR", "BOTELLA_VIDRIO"}
 
 BROASTER_TEXT_TERMS = (
     "broaster",

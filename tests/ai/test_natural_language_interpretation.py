@@ -189,6 +189,19 @@ def test_rule_based_parser_charges_soup_icopor_only_for_soup_context() -> None:
     assert glass_bottle.items == []
 
 
+def test_rule_based_parser_charges_soup_icopor_with_irregular_text() -> None:
+    examples = [
+        "quiero sopa en icopol",
+        "me da una sopita con icopor pa llevar",
+        "quiero una sopa en vasito",
+        "sopa con icopores porfa",
+    ]
+
+    for message in examples:
+        parsed = parse_natural_order_rules(message)
+        assert ("ICOPOR_SOPA", 1) in [(item.code, item.quantity) for item in parsed.items]
+
+
 def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
     parsed = parse_natural_order_rules("quiero un pollo")
 
