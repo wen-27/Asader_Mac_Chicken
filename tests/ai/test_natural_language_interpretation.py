@@ -135,6 +135,20 @@ def test_rule_based_parser_tolerates_broche_autocorrect_for_quarter_broaster() -
     assert parsed.confidence >= 0.9
 
 
+def test_rule_based_parser_tolerates_common_broaster_typos() -> None:
+    examples = {
+        "quiero medio bruster": [("BROASTER_MEDIO", 1)],
+        "quiero un cuarto brostter pierna": [("BROASTER_CUARTO", 1)],
+        "me vende dos pollos broasther": [("BROASTER_ENTERO", 2)],
+        "necesito un pollo brouster": [("BROASTER_ENTERO", 1)],
+        "dame 3/4 broasterr": [("BROASTER_34", 1)],
+    }
+
+    for message, expected in examples.items():
+        parsed = parse_natural_order_rules(message)
+        assert [(item.code, item.quantity) for item in parsed.items] == expected
+
+
 def test_rule_based_parser_understands_mixed_whole_brosters_and_asado() -> None:
     parsed = parse_natural_order_rules("Buenos días me vendes dos pollos brosters y un pollo asado")
 
@@ -239,6 +253,14 @@ def test_rule_based_parser_understands_gaseosa_kola_as_25_liter_variant_product(
         ("ASADO_ENTERO", 1),
         ("GASEOSA_25", 1),
     ]
+
+
+def test_rule_based_parser_only_adds_manzana_when_25_liter_is_explicit() -> None:
+    unavailable_size = parse_natural_order_rules("quiero una manzana litro")
+    available_size = parse_natural_order_rules("quiero una manzana 2.5")
+
+    assert unavailable_size.items == []
+    assert [(item.code, item.quantity) for item in available_size.items] == [("GASEOSA_25", 1)]
 
 
 def test_rule_based_parser_understands_additional_papas_fritas() -> None:
@@ -378,7 +400,7 @@ async def test_semantic_search_recovers_misspelled_product() -> None:
     )
 
     result = await use_case.execute(
-        InterpretNaturalOrderCommand("quiero medio brosterr con una coca")
+        InterpretNaturalOrderCommand("quiero medio brosterrr con una coca")
     )
 
     assert not result.needs_clarification

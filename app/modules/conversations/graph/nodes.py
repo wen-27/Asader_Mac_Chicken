@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 VARIANT_OPTIONS_BY_PRODUCT: dict[str, tuple[str, ...]] = {
-    "GASEOSA_25": ("Kola", "Pepsi", "Piña", "Colombiana"),
+    "GASEOSA_25": ("Kola", "Pepsi", "Piña", "Colombiana", "Manzana"),
     "AGUA_BOTELLA": ("Con gas", "Sin gas", "Saborizada"),
     "JUGO_HIT_PERSONAL": ("Tropical", "Mango"),
     "ADICIONAL_SALSAS": ("Tártara", "Ají", "Tomate", "Miel"),
@@ -59,8 +59,11 @@ INTERNAL_PRODUCT_CODES = {"ICOPOR_SOPA"}
 
 BROASTER_TEXT_TERMS = (
     "broaster",
+    "broasterr",
+    "broasther",
     "broasters",
     "broasted",
+    "brouster",
     "broster",
     "brosters",
     "broche",
@@ -68,6 +71,9 @@ BROASTER_TEXT_TERMS = (
     "brosted",
     "brosterr",
     "brostter",
+    "brostee",
+    "bruster",
+    "brusters",
 )
 
 
@@ -290,6 +296,12 @@ async def detect_intent(
         return state
     if _looks_like_cart_total_query(text) and not _looks_like_delivery_cost_question(text):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    if _looks_like_manzana_unavailable_size(text):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return state
+    if _looks_like_unstyled_chicken_order(text):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if (
         not state.cart
@@ -864,7 +876,12 @@ async def extract_customer_data(
         elif key in {"telefono", "celular"}:
             customer.phone = value
         elif key in {"direccion", "dir"}:
-            customer.address = value
+            address, neighborhood, note = _split_rich_address_line(value)
+            customer.address = address
+            if neighborhood:
+                customer.neighborhood = neighborhood
+            if note:
+                customer.observations = _append_observation(customer.observations, note)
         elif key in {"barrio", "sector"}:
             customer.neighborhood = value
         elif key in {"metodo de pago", "pago", "medio de pago", "forma de pago"}:
@@ -1106,6 +1123,8 @@ def _split_payment_suffix(line: str) -> list[str]:
     ).strip(" ,.-")
     if not without_payment or normalize_text(without_payment) == normalized:
         return [line]
+    if normalize_text(without_payment) in {"pago", "pago en", "pago con", "pagamos", "pagamos por"}:
+        return [payment]
     return [without_payment, payment]
 
 
@@ -1268,7 +1287,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         return raw, None, None
 
     start, end, neighborhood = best_match
-    before = raw[:start].strip(" ,.-")
+    before = re.sub(r"\b(?:barrio|sector)\s*$", "", raw[:start].strip(" ,.-"), flags=re.IGNORECASE).strip(" ,.-")
     after = raw[end:].strip(" ,.-")
     if after and not _contains_any(normalize_text(after), address_note_markers):
         neighborhood = f"{neighborhood} {after}".strip()
@@ -1728,6 +1747,9 @@ async def fallback_natural_language(
         replaced = await _replace_cart_items_from_natural_message(state, services)
         if replaced:
             return state
+        if _looks_like_unstyled_chicken_order(state.normalized_text):
+            await _start_pending_unstyled_chicken_order(state, services)
+            return state
         added_lines = await _add_natural_order_to_cart(state, services)
         if added_lines:
             unavailable_notice = (
@@ -1754,6 +1776,9 @@ async def fallback_natural_language(
                         BotMessageFactory.ambiguous_drink_clarification(ambiguous_drink_quantity),
                     ]
                 )
+            manzana_notice = await _manzana_25_only_notice(state.normalized_text, services)
+            if manzana_notice:
+                state.response_text = "\n\n".join([state.response_text, manzana_notice])
             if unavailable_notice:
                 state.response_text = "\n\n".join([state.response_text, unavailable_notice])
             if _extract_included_chicken_side_note(state.normalized_text) and _needs_included_side_clarification(
@@ -1777,6 +1802,12 @@ async def fallback_natural_language(
         if _looks_like_quarter_part_without_style(state.normalized_text):
             state.current_step = ConversationState.PRODUCT_CATEGORY
             state.response_text = BotMessageFactory.ambiguous_chicken_order()
+            await _persist_step(state, services)
+            return state
+        manzana_notice = await _manzana_25_only_notice(state.normalized_text, services)
+        if manzana_notice:
+            state.current_step = ConversationState.NATURAL_ORDER
+            state.response_text = manzana_notice
             await _persist_step(state, services)
             return state
         if _looks_like_new_order_request(state.normalized_text):
@@ -2384,6 +2415,34 @@ async def _maybe_start_pending_quarter_order(
             state.response_text = _ask_pending_quarter_part_message(product.name.value, item.quantity)
         return True
     return False
+
+
+async def _start_pending_unstyled_chicken_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    quantity = _extract_chicken_order_quantity(state.normalized_text)
+    session.pending_order_json = {
+        "items": [{"code": "ASADO_ENTERO", "quantity": quantity}],
+        "current_index": 0,
+        "allocations": [],
+        "awaiting_part": None,
+        "awaiting_style": True,
+        "original_text": state.raw_text,
+    }
+    note = _incomplete_destination_note(state.raw_text)
+    if note:
+        session.observations = _append_observation(session.observations, note)
+    session.selected_product_code = None
+    session.selected_chicken_part = None
+    session.move_to(ConversationState.ASK_CHICKEN_STYLE)
+    await services.persist_session(session)
+    state.current_step = ConversationState.ASK_CHICKEN_STYLE
+    state.selected_product_code = None
+    state.selected_product_name = None
+    state.selected_unit_price_cop = None
+    state.response_text = BotMessageFactory.ask_chicken_style("Pollo")
 
 
 async def _continue_pending_natural_order(
@@ -3062,6 +3121,7 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
             "kola",
             "pepsi",
             "colombiana",
+            "manzana",
             "pina",
             "piña",
             "hit",
@@ -3085,6 +3145,29 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
     }.get(match.group(0).split()[0], 1)
 
 
+async def _manzana_25_only_notice(text: str, services: ConversationGraphServices) -> str | None:
+    if not _looks_like_manzana_unavailable_size(text):
+        return None
+    product = await services.find_product("GASEOSA_25")
+    price = product.price.amount if product else 8500
+    return (
+        "🥤 Por ahora la gaseosa Manzana solo la manejamos en presentacion 2.5 L.\n"
+        f"💰 Precio: ${price}.\n"
+        "Si deseas añadirla a tu orden, escribeme: Manzana 2.5."
+    )
+
+
+def _looks_like_manzana_unavailable_size(text: str) -> bool:
+    if "manzana" not in text:
+        return False
+    if _contains_any(text, ("2.5", "2 5", "dos litros y medio", "2 litros y medio")):
+        return False
+    return _contains_any(
+        text,
+        ("litro", "litros", "1.5", "1 5", "litro y medio", "litro medio", "personal", "400", "400 ml", "400ml"),
+    )
+
+
 def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | None:
     if _contains_any(text, ("coca", "cocacola", "coca cola")) and not _contains_any(
         text,
@@ -3106,6 +3189,7 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
             "kola",
             "pepsi",
             "colombiana",
+            "manzana",
             "pina",
             "piña",
             "hit",
@@ -3908,7 +3992,7 @@ def _is_ambiguous_quarter_style(product_code: str | None, text: str) -> bool:
 def _natural_order_segments(text: str) -> list[str]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasters|broasted|broster|brosters|broche|broches|brosted|brosterr|brostter|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[str] = []
@@ -3991,6 +4075,8 @@ def _extract_product_variant(product_code: str | None, text: str) -> str | None:
             return "Piña"
         if "colombiana" in normalized:
             return "Colombiana"
+        if "manzana" in normalized:
+            return "Manzana"
     if product_code == "ADICIONAL_SALSAS":
         if "tartara" in normalized:
             return "Tártara"
@@ -4900,6 +4986,60 @@ def _looks_like_ambiguous_chicken_order(text: str) -> bool:
     return not _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS)
 
 
+def _looks_like_unstyled_chicken_order(text: str) -> bool:
+    if _looks_like_question(text):
+        return False
+    if not _contains_any(text, ("pollo", "pollos")):
+        return False
+    if _contains_any(text, ("medio", "media", "mitad", "cuarto", "cuartos", "1/2", "1 2", "1/4", "1 4", "3/4", "3 4", "tres cuartos")):
+        return False
+    if _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS):
+        return False
+    if _contains_any(text, ("demora", "llega", "llego", "llegó", "pedido", "orden")):
+        return False
+    return _contains_any(
+        text,
+        (
+            "quiero",
+            "necesito",
+            "dame",
+            "deme",
+            "me das",
+            "me da",
+            "me vende",
+            "me vendes",
+            "me regala",
+            "me regalas",
+            "me puede regalar",
+            "me puedes regalar",
+            "me colabora",
+            "me colaboras",
+            "me puede colaborar",
+            "me puedes colaborar",
+        ),
+    ) or re.search(
+        r"\b(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*)\s+pollos?\s*(?:$|para\b|a\b|al\b|en\b)",
+        text,
+    ) is not None
+
+
+def _extract_chicken_order_quantity(text: str) -> int:
+    match = re.search(
+        r"\b(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*)\s+pollos?\b",
+        text,
+    )
+    if match:
+        return _extract_positive_integer(match.group(0)) or 1
+    return 1
+
+
+def _incomplete_destination_note(text: str) -> str | None:
+    match = re.search(r"\b(?:para|a|al|en)\s+(?:la\s+|el\s+)?(?:bodega|casa|apto|apartamento|torre|local|porteria|portería|bloque|manzana|mz)\b.*", text, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(0).strip(" ,.-")
+
+
 def _looks_like_quarter_part_without_style(text: str) -> bool:
     return (
         _contains_any(text, ("cuarto", "cuartos", "1/4"))
@@ -5138,11 +5278,17 @@ def _normalize_common_product_alias(text: str) -> str:
         "lasaña": "lasagna",
         "broster": "broasted",
         "broaster": "broasted",
+        "broasterr": "broasted",
+        "broasther": "broasted",
+        "brouster": "broasted",
         "broche": "broasted",
         "broches": "broasted",
         "brosted": "broasted",
         "brosterr": "broasted",
         "brostter": "broasted",
+        "brostee": "broasted",
+        "bruster": "broasted",
+        "brusters": "broasted",
         "pollo a la broasted": "broasted",
         "pollo broasted": "broasted",
     }

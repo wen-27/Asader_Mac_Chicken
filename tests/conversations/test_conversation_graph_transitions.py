@@ -698,6 +698,48 @@ async def test_graph_uses_ai_interpreter_when_rules_do_not_understand_human_orde
 
 
 @pytest.mark.asyncio
+async def test_unstyled_chickens_with_incomplete_bodega_destination_asks_style_first() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Ban día vesi me vende 3 pollos para la bodega 18")
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CHICKEN_STYLE
+    assert "¿Lo quieres asado o broster?" in result["response_text"]
+    assert "domicilio" not in result["response_text"].lower()
+    assert services.session.observations == "para la bodega 18"
+    assert services.session.customer_address is None
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_unstyled_chickens_with_bodega_destination_adds_quantity_after_style() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Ban día vesi me vende 3 pollos para la bodega 18")
+    )
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="asado"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "3 x 1 Asado Entero" in result["response_text"]
+    assert "Nombre completo" in result["response_text"]
+    assert services.session.observations == "para la bodega 18"
+    assert services.session.customer_address is None
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].quantity == 3
+
+
+@pytest.mark.asyncio
 async def test_real_customer_lasagna_availability_question_is_not_a_greeting() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(
@@ -2591,6 +2633,34 @@ async def test_customer_data_extracts_embedded_neighborhood_and_delivery_note_fr
 
 
 @pytest.mark.asyncio
+async def test_labeled_address_extracts_embedded_barrio_and_payment_prefix_is_not_name() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Dirección: Calle 39 #5-125, barrio Lagos 2\n\n"
+                "Que esté acá a la 1:00pm, por favor, antes no\n\n"
+                "Pago en efectivo"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "nombre completo" in result["response_text"].lower()
+    assert "telefono" in result["response_text"].lower()
+    assert "barrio" not in result["response_text"].lower()
+    assert services.session.customer_address == "Calle 39 #5-125"
+    assert services.session.customer_neighborhood == "Lagos 2"
+    assert services.session.payment_method == "Efectivo"
+    assert services.session.customer_name is None
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_before_payment_method() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
@@ -3095,6 +3165,19 @@ async def test_graph_tolerates_broche_autocorrect_for_quarter_broaster() -> None
 
 
 @pytest.mark.asyncio
+async def test_graph_tolerates_common_broaster_typo_for_whole_chicken() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="me vende dos pollos bruster"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "2 x Broasted Entero" in result["response_text"]
+    assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
+    assert services.session.cart[0].quantity == 2
+
+
+@pytest.mark.asyncio
 async def test_graph_adds_mixed_whole_brosters_and_asado_in_one_message() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -3292,6 +3375,56 @@ async def test_natural_order_with_gaseosa_kola_adds_25_liter_kola_directly() -> 
     assert "1 x Gaseosa 2.5 L - Kola" in result["response_text"]
     assert "dime cual deseas" not in result["response_text"]
     assert len(services.session.cart) == 2
+
+
+@pytest.mark.asyncio
+async def test_natural_order_with_manzana_litro_warns_only_25_liter_available() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Buena tarde me puede enviar por favor un pollo asado y una manzana litro",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "gaseosa Manzana solo la manejamos en presentacion 2.5 L" in result["response_text"]
+    assert "Precio: $8500" in result["response_text"]
+    assert "Gaseosa 2.5 L - Manzana" not in result["response_text"]
+    assert [item.product_code for item in services.session.cart] == [ProductCode("ASADO_ENTERO")]
+
+
+@pytest.mark.asyncio
+async def test_manzana_litro_alone_warns_only_25_liter_available() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="manzana litro y medio"))
+
+    assert "gaseosa Manzana solo la manejamos en presentacion 2.5 L" in result["response_text"]
+    assert "Precio: $8500" in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_natural_order_with_manzana_25_adds_soda_variant() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero una manzana 2.5"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Gaseosa 2.5 L - Manzana" in result["response_text"]
+    assert services.session.cart[0].product_code == ProductCode("GASEOSA_25")
+    assert services.session.cart[0].product_name == ProductName("Gaseosa 2.5 L - Manzana")
 
 
 @pytest.mark.asyncio

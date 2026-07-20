@@ -171,6 +171,8 @@ PRODUCT_ALIAS_SEEDS: tuple[ProductAliasSeed, ...] = (
             "piña 2.5",
             "gaseosa colombiana",
             "colombiana 2.5",
+            "gaseosa manzana",
+            "manzana 2.5",
         ),
     ),
     ProductAliasSeed(
