@@ -622,7 +622,9 @@ class BotMessageFactory:
     def natural_language_fallback(cls) -> str:
         return (
             "Puedes escribirme tu orden en texto normal. Por ejemplo: "
-            "un pollo asado con una Coca-Cola 1.5, medio broaster o dos papas francesas."
+            "un pollo asado con una Coca-Cola 1.5, medio broaster o dos papas francesas.\n\n"
+            "Si quieres ver el menu, escribe menu o quiero ver el menu. "
+            "Tambien puedes preguntarme por horarios, bebidas, adicionales o domicilios."
         )
 
     @classmethod

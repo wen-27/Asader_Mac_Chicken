@@ -505,10 +505,12 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
         text,
         (
             "pollo broaster",
+            "pollo a la broaster",
             "pollos broaster",
             "pollo broasted",
             "pollos broasted",
             "pollo broster",
+            "pollo a la broster",
             "pollos broster",
             "pollo brosters",
             "pollos brosters",
@@ -533,8 +535,10 @@ def _looks_like_whole_broaster_chicken(text: str) -> bool:
         text,
         (
             "pollo broaster",
+            "pollo a la broaster",
             "pollos broaster",
             "pollo broster",
+            "pollo a la broster",
             "pollos broster",
             "pollo brosters",
             "pollos brosters",

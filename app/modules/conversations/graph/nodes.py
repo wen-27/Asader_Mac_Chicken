@@ -226,6 +226,14 @@ async def detect_intent(
         ):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
+    if (
+        state.cart
+        and state.current_step not in {ConversationState.ASK_CUSTOMER_DATA, ConversationState.CHECKOUT_REVIEW}
+        and not _looks_like_pickup_request(text)
+        and _looks_like_checkout_data_fragment(state.raw_text)
+    ):
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
     if state.current_step == ConversationState.POST_ADD and (
         _looks_like_address(text)
         or _looks_like_incomplete_delivery_address(text)
@@ -257,6 +265,15 @@ async def detect_intent(
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "gratitude"
         state.query_value = text
+        return state
+    if state.cart and _looks_like_cart_total_query(text):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    if state.cart and _looks_like_cart_confirmation_or_review_request(text, state.raw_text):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    if state.cart and _looks_like_ready_to_checkout_reply(text):
+        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
         return state
     ambiguous_drink_request = _classify_ambiguous_drink_request(text)
     if ambiguous_drink_request is not None and not _looks_like_question(text) and (
@@ -300,6 +317,20 @@ async def detect_intent(
         return state
     if _looks_like_delivery_order_start(text):
         state.intent = ConversationIntent.INICIAR_DOMICILIO
+        return state
+    category_route = _category_route_from_text(text)
+    if category_route is not None and not parsed_rules.items:
+        category, _next_step = category_route
+        if category == ProductCategory.POLLO_ASADO:
+            state.intent = ConversationIntent.MENU_ASADO
+        elif category == ProductCategory.POLLO_BROASTER:
+            state.intent = ConversationIntent.MENU_BROASTER
+        elif category == ProductCategory.BEBIDAS:
+            state.intent = ConversationIntent.MENU_BEBIDAS
+        elif category == ProductCategory.ADICIONALES:
+            state.intent = ConversationIntent.MENU_ADICIONALES
+        elif category == ProductCategory.ESPECIALES:
+            state.intent = ConversationIntent.MENU_ESPECIALES
         return state
     if state.current_step == ConversationState.ASK_CHICKEN_PART:
         state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
@@ -909,6 +940,8 @@ def _extract_customer_data_from_free_lines(
                 customer.observations = _append_observation(customer.observations, note)
         elif _looks_like_incomplete_delivery_address(normalized):
             continue
+        elif not customer.neighborhood and _looks_like_neighborhood_only(normalized):
+            customer.neighborhood = line
         elif _looks_like_phone(line):
             customer.phone = line
         elif _looks_like_payment_method(normalized):
@@ -1038,6 +1071,7 @@ def _split_payment_suffix(line: str) -> list[str]:
 
 
 def _clean_customer_name(value: str) -> str:
+    value = re.sub(r"^\s*(?:a\s+)?nombre\s+de\s+", "", value.strip(), flags=re.IGNORECASE)
     tokens = value.strip(" ,.-").split()
     noisy_prefixes = {
         "perri",
@@ -3315,6 +3349,54 @@ def _is_no_reply(text: str) -> bool:
     return normalized in {"0", "no", "n", "cancelar", "cancela", "cancelalo", "cancélalo"}
 
 
+def _looks_like_ready_to_checkout_reply(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "listo",
+        "ok",
+        "okay",
+        "dale",
+        "bueno",
+        "perfecto",
+        "esta bien",
+        "está bien",
+        "eso es",
+        "eso seria",
+        "eso sería",
+        "asi esta bien",
+        "así está bien",
+        "ya",
+    }
+
+
+def _looks_like_cart_confirmation_or_review_request(text: str, raw_text: str = "") -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    raw = raw_text.strip(" ¿?.,!¡")
+    if normalized in {"?", "??", "cuanto", "cuánto"} or (not raw and raw_text.strip() in {"?", "??"}):
+        return True
+    return _contains_any(
+        normalized,
+        (
+            "me confirmas",
+            "me confirma",
+            "confirmame",
+            "confírmame",
+            "cuanto seria",
+            "cuánto seria",
+            "cuanto sería",
+            "cuánto sería",
+            "cuanto es",
+            "cuánto es",
+            "cuanto llevo",
+            "cuánto llevo",
+            "como va la orden",
+            "cómo va la orden",
+            "como va el pedido",
+            "cómo va el pedido",
+        ),
+    )
+
+
 def _looks_like_checkout_note(text: str) -> bool:
     normalized = normalize_text(text)
     return _contains_any(
@@ -3347,6 +3429,38 @@ def _looks_like_checkout_note(text: str) -> bool:
     )
 
 
+def _looks_like_checkout_data_fragment(text: str) -> bool:
+    normalized = normalize_text(text)
+    return (
+        _looks_like_address(normalized)
+        or _looks_like_incomplete_delivery_address(normalized)
+        or _looks_like_payment_method(normalized)
+        or _looks_like_customer_name_line(normalized)
+        or _looks_like_neighborhood_only(normalized)
+        or _looks_like_pickup_request(normalized)
+        or (_looks_like_checkout_note(normalized) and not _looks_like_question(normalized))
+    )
+
+
+def _looks_like_customer_name_line(normalized: str) -> bool:
+    return normalized.startswith(("a nombre de ", "nombre de ", "para "))
+
+
+def _looks_like_neighborhood_only(normalized: str) -> bool:
+    return normalized in {
+        "lagos 2",
+        "lagos2",
+        "lagos 3",
+        "lagos3",
+        "bucarica",
+        "manantial",
+        "el manantial",
+        "bellfort",
+        "bellavista",
+        "provenza",
+    }
+
+
 def _is_close_word(value: str, expected: str) -> bool:
     if value == expected:
         return True
@@ -3376,10 +3490,12 @@ def _is_greeting_only(text: str) -> bool:
     normalized = normalize_text(text)
     normalized = re.sub(r"[^\w\s]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\bola\b", "hola", normalized)
     normalized = re.sub(r"\bhol+a+\b", "hola", normalized)
     normalized = re.sub(r"\bbuenas+\b", "buenas", normalized)
     normalized = re.sub(r"\bbuena\b", "buenas", normalized)
     normalized = re.sub(r"\bwenas+\b", "buenas", normalized)
+    normalized = re.sub(r"\s+(hagame favor|me hace favor)$", "", normalized)
     normalized = re.sub(r"\s+(veci|vcei|eci|vecino|vecina|amigo|amiga|parce|mano|senor|señor|senora|señora)$", "", normalized)
     greetings = {
         "hola",
@@ -3393,6 +3509,9 @@ def _is_greeting_only(text: str) -> bool:
         "muy buenos dias",
         "buen dia",
         "muy buen dia",
+        "buenas tarde",
+        "buena tarde",
+        "hola buena tarde",
         "buenas tardes",
         "muy buenas tardes",
         "buenas noches",
@@ -3403,6 +3522,7 @@ def _is_greeting_only(text: str) -> bool:
         "hola muy buen dia",
         "hola buenas",
         "hola muy buenas",
+        "hola buenas tarde",
         "hola buenas tardes",
         "hola muy buenas tardes",
         "hola buenas noches",
@@ -3844,9 +3964,11 @@ def _business_today() -> date:
 
 
 def _looks_like_pickup_request(text: str) -> bool:
+    text = normalize_text(text)
     return _contains_any(
         text,
         (
+            "para llevar",
             "paso a recoger",
             "paso por el",
             "paso por mi",
@@ -3862,12 +3984,12 @@ def _looks_like_pickup_request(text: str) -> bool:
 
 
 def _looks_like_delivery_request(text: str) -> bool:
-    return _contains_any(text, ("domicilio", "envio", "envío", "me lo llevan", "para llevar a"))
+    return _contains_any(text, ("domicilio", "domi", "envio", "envío", "me lo llevan", "para llevar a"))
 
 
 def _looks_like_delivery_order_start(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
-    if not _contains_any(normalized, ("domicilio", "envio", "envío")):
+    if not _contains_any(normalized, ("domicilio", "domi", "envio", "envío")):
         return False
     return _contains_any(
         normalized,
@@ -4060,7 +4182,7 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("price", short_product_reference)
     if not _looks_like_question(text):
         return None
-    if any(word in text for word in ["domicilio", "envio", "envío", "llevar", "lleva"]):
+    if any(word in text for word in ["domicilio", "domi", "envio", "envío", "llevar", "lleva"]):
         neighborhood = _extract_delivery_neighborhood(text)
         if neighborhood:
             return ("delivery", neighborhood)
@@ -4070,6 +4192,11 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("category", "bebidas")
         if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
             return ("price", "lasagna mixta")
+        has_chicken_size = _contains_any(text, ("entero", "completo", "medio", "media", "cuarto", "3/4", "1/2", "1/4"))
+        if _contains_any(text, BROASTER_TEXT_TERMS) and not has_chicken_size:
+            return ("category", "broaster")
+        if any(word in text for word in ["asado", "pollo"]) and not has_chicken_size:
+            return ("category", "asado")
         return ("price", text)
     if any(
         word in text
@@ -4108,6 +4235,14 @@ def _looks_like_contents_question(text: str) -> bool:
             "viene sopa",
             "con que viene",
             "con qué viene",
+            "cuantas presas",
+            "cuántas presas",
+            "cuanta presa",
+            "cuánta presa",
+            "presas trae",
+            "presa trae",
+            "presa o dos",
+            "una presa o dos",
         ),
     )
 
@@ -4116,6 +4251,13 @@ def _looks_like_service_question(text: str) -> bool:
     return _contains_any(
         text,
         (
+            "tienes servicio",
+            "ya tienes servicio",
+            "aun tienes servicio",
+            "aún tienes servicio",
+            "tienes domicilios",
+            "aun tienes domicilios",
+            "aún tienes domicilios",
             "tienen disponibilidad",
             "tiene disponibilidad",
             "hay disponibilidad",
@@ -4129,6 +4271,9 @@ def _looks_like_service_question(text: str) -> bool:
             "hay domicilio",
             "para un domicilio",
             "para domicilio",
+            "para pedir un servicio",
+            "pedir un servicio",
+            "pedir servicio",
             "necesito domicilio",
             "quiero domicilio",
             "cuentan con servicio",
@@ -4140,6 +4285,8 @@ def _looks_like_service_question(text: str) -> bool:
             "están en servicio",
             "hay atencion",
             "hay atención",
+            "me comunico a mac chicken",
+            "me comunico a max chicken",
         ),
     )
 
@@ -4253,6 +4400,9 @@ def _looks_like_order_status_query(text: str) -> bool:
         "en ruta",
         "como va",
         "como va mi pedido",
+        "en cuanto lo traen",
+        "se demora veci",
+        "paso en 15 minutos",
     }:
         return True
     status_terms = (
@@ -4293,6 +4443,8 @@ def _looks_like_order_status_query(text: str) -> bool:
         (
             "cuanto se demora",
             "cuánto se demora",
+            "se demora",
+            "demora mucho",
             "cuanto demora",
             "cuánto demora",
             "en cuanto tiempo",
@@ -4301,6 +4453,8 @@ def _looks_like_order_status_query(text: str) -> bool:
             "cuánto tiempo",
             "cuando llega",
             "cuándo llega",
+            "en cuanto lo traen",
+            "paso en 15",
             "mi pedido llego",
             "mi pedido llegó",
             "ya se envio",
@@ -4362,7 +4516,7 @@ def _default_recommended_alternative(product_code: str):
 
 def _looks_like_payment_account_query(text: str) -> bool:
     cleaned = text.strip(" ¿?.,!¡")
-    payment_terms = ("nequi", "transferencia", "bancolombia")
+    payment_terms = ("nequi", "transferencia", "bancolombia", "llave")
     account_terms = (
         "cuenta",
         "numero",
@@ -4374,10 +4528,36 @@ def _looks_like_payment_account_query(text: str) -> bool:
         "consignar",
         "transferir",
         "transferencia",
+        "llave",
+        "recibes",
+        "recibe",
     )
-    if cleaned in {"nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia"}:
+    if cleaned in {"nequi", "o nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia"}:
+        return True
+    if _contains_any(cleaned, ("numero de cuenta", "número de cuenta", "numero para transferir", "número para transferir", "a que numero", "a qué numero", "a que número", "a qué número", "me envias numero", "me envías numero", "m envias numero", "comparte el numero", "comparte el número")):
         return True
     return _contains_any(cleaned, payment_terms) and _contains_any(cleaned, account_terms)
+
+
+def _looks_like_cart_total_query(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "cuanto seria",
+            "cuánto seria",
+            "cuanto sería",
+            "cuánto sería",
+            "cuanto es",
+            "cuánto es",
+            "cuanto seria todo",
+            "cuánto sería todo",
+            "valor para transferir",
+            "me confirma cuanto",
+            "me confirma cuánto",
+            "a como completo",
+            "a cómo completo",
+        ),
+    )
 
 
 def _looks_like_new_order_request(text: str) -> bool:
@@ -4385,6 +4565,8 @@ def _looks_like_new_order_request(text: str) -> bool:
         "otro pedido",
         "nuevo pedido",
         "hacer pedido",
+        "para un pedido",
+        "para pedido",
         "hacer otro pedido",
         "hacer un pedido",
         "pedir otra vez",
@@ -4397,7 +4579,10 @@ def _looks_like_new_order_request(text: str) -> bool:
 
 
 def _looks_like_ambiguous_chicken_order(text: str) -> bool:
-    if not _looks_like_natural_order(text):
+    if not (
+        _looks_like_natural_order(text)
+        or _contains_any(text, ("tiene pollo", "tienen pollo", "hay pollo"))
+    ):
         return False
     if "pollo" not in text and "pollos" not in text:
         return False
@@ -4483,7 +4668,7 @@ def _is_out_of_scope_query(text: str) -> bool:
 
 def _extract_delivery_neighborhood(text: str) -> str:
     patterns = [
-        r"(?:domicilio|envio|envío|llevar|lleva)(?:\s+para|\s+a|\s+hasta|\s+en)?\s+(.+)",
+        r"(?:domicilio|domi|envio|envío|llevar|lleva)(?:\s+para|\s+a|\s+hasta|\s+en)?\s+(.+)",
         r"(?:para|a|hasta|en)\s+(.+?)\s+(?:cuanto|cuánto|vale|cuesta)",
     ]
     for pattern in patterns:
@@ -4501,6 +4686,7 @@ def _is_generic_delivery_neighborhood(value: str) -> bool:
     return normalized in {
         "",
         "domicilio",
+        "domi",
         "un domicilio",
         "para domicilio",
         "por favor",

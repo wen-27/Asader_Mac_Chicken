@@ -874,6 +874,164 @@ async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_natural_language_fallback_explains_how_to_open_menu() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="asdfasdf pollo nose"))
+
+    assert "Puedes escribirme tu orden en texto normal" in result["response_text"]
+    assert "escribe menu" in result["response_text"].lower()
+    assert "quiero ver el menu" in result["response_text"].lower()
+    assert "horarios" in result["response_text"].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_text", "expected"),
+    [
+        ("Ola veci", "Bienvenid@ a Mac Chicken"),
+        ("Hola buena tarde", "Bienvenid@ a Mac Chicken"),
+        ("Buen día veci hágame favor", "Bienvenid@ a Mac Chicken"),
+        ("Tienes servicio", "servicio a domicilio"),
+        ("Ya tienes servicio", "servicio a domicilio"),
+        ("Veci para pedir un servicio", "servicio a domicilio"),
+        ("Recibes nequi?", "La cuenta de Nequi"),
+        ("Tienen llave para transferir?", "La cuenta de Nequi"),
+        ("Me ayudas con el número para transferir", "La cuenta de Nequi"),
+        ("En cuanto lo traen", "40 minutos"),
+        ("Se demora?, debo salir a la 1", "40 minutos"),
+        ("Ustedes me dice si ya está paso en 15 minutos", "40 minutos"),
+        ("Buenas tardes que precio tiene el pollo azado", "Pollo asado"),
+        ("Veci tiene pollo", "Pollo asado"),
+        ("Cuanto vale el domi?", "servicio a domicilio"),
+        ("Pollo asado", "Pollo asado"),
+        ("Listo pollo broaster", "Pollo broaster"),
+    ],
+)
+async def test_qa_history_common_messages_do_not_fall_back(raw_text: str, expected: str) -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert expected in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+    assert "no cuento con informacion" not in result["response_text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_qa_history_total_question_with_cart_shows_cart() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cuanto seria todo veci?"))
+
+    assert "Tu orden" in result["response_text"]
+    assert "Broasted Entero" in result["response_text"]
+    assert "Total" in result["response_text"]
+    assert "no cuento con informacion" not in result["response_text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_qa_history_numeric_brostee_order_adds_whole_broaster() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1 pollo a la brostee"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Broasted Entero" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_cart_accepts_checkout_fragments_from_natural_order_state() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_MEDIO"], 1))
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+
+    address = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cll 40 #6-31"))
+    neighborhood = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Lagos 2"))
+    name = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="A nombre de Gabriela"))
+    payment = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pagamos por enqui"))
+
+    assert "Puedes escribirme tu orden en texto normal" not in address["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in neighborhood["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in name["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in payment["response_text"]
+    assert services.session.customer_address == "Cll 40 #6-31"
+    assert services.session.customer_neighborhood == "Lagos 2"
+    assert services.session.customer_name == "Gabriela"
+    assert services.session.payment_method == "Nequi"
+
+
+@pytest.mark.asyncio
+async def test_qa_history_para_llevar_with_cart_switches_to_pickup_data() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Para llevar"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert result["fulfillment_type"] == "PICKUP"
+    assert "orden lista para recoger" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_loose_ready_reply_with_cart_starts_checkout() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="listo"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Para finalizar tu orden necesito los datos de envio" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["?", "Me confirmas porfis"])
+async def test_qa_history_cart_review_requests_show_cart_instead_of_fallback(message: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert "Tu orden" in result["response_text"]
+    assert "Broasted Entero" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_chicken_piece_question_answers_contents() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="El cuarto es una presa o dos?"))
+
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+    assert "No cuento con informacion" not in result["response_text"]
+    assert "incluye" in result["response_text"].lower() or "trae" in result["response_text"].lower()
+
+
+@pytest.mark.asyncio
 async def test_zero_from_categories_goes_back_to_main_menu() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.PRODUCT_CATEGORY)
