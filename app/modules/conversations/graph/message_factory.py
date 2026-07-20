@@ -322,9 +322,19 @@ class BotMessageFactory:
         )
 
     @classmethod
-    def natural_order_added(cls, lines: list[CartLineState], total_cop: int) -> str:
+    def natural_order_added(
+        cls,
+        lines: list[CartLineState],
+        total_cop: int,
+        fulfillment_type: str = "DELIVERY",
+    ) -> str:
         added_lines = "\n".join(
             f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in lines
+        )
+        required_fields = (
+            ["Nombre completo", "Telefono", "Nota o especificacion (opcional)"]
+            if fulfillment_type == "PICKUP"
+            else ["Nombre completo", "Telefono", "Direccion", "Barrio", "Metodo de pago"]
         )
         return "\n\n".join(
             [
@@ -332,15 +342,7 @@ class BotMessageFactory:
                 added_lines,
                 f"🧾 Total acumulado: ${total_cop}",
                 "Para confirmar tu orden, enviame tus datos cuando puedas:",
-                "\n".join(
-                    [
-                        "Nombre completo",
-                        "Telefono",
-                        "Direccion",
-                        "Barrio",
-                        "Metodo de pago",
-                    ]
-                ),
+                "\n".join(required_fields),
             ]
         )
 
@@ -421,6 +423,15 @@ class BotMessageFactory:
         lines.append("3. Finalizar orden ✅")
         lines.append("4. Vaciar orden 🗑️")
         lines.append("0. Volver al inicio ⬅️")
+        return "\n".join(lines)
+
+    @classmethod
+    def order_items(cls, cart: list[CartLineState]) -> str:
+        if not cart:
+            return "🧾 Tu orden esta vacia. Escribe menu para ver opciones."
+        lines = ["🧾 Tu orden:", ""]
+        for line in cart:
+            lines.append(f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}")
         return "\n".join(lines)
 
     @classmethod
@@ -537,7 +548,7 @@ class BotMessageFactory:
             return "\n\n".join(
                 [
                     "✅ Datos recibidos. Revisa tu orden para recoger:",
-                    cls.cart(state.cart, state.subtotal_cop),
+                    cls.order_items(state.cart),
                     "\n".join(
                         [
                             f"👤 Cliente: {state.customer.name}",
@@ -559,7 +570,7 @@ class BotMessageFactory:
         return "\n\n".join(
             [
                 "✅ Datos recibidos. Revisa tu orden:",
-                cls.cart(state.cart, state.subtotal_cop),
+                cls.order_items(state.cart),
                 "\n".join(
                     [
                         f"👤 Cliente: {state.customer.name}",
