@@ -601,6 +601,10 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def payment_methods_answer(cls) -> str:
+        return "Si, recibimos Efectivo, Datafono, Nequi o Transferencia Bancolombia."
+
+    @classmethod
     def gratitude_answer(cls) -> str:
         return "Con mucho gusto, gracias a ti por elegirnos."
 

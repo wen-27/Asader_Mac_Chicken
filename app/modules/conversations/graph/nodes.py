@@ -206,6 +206,9 @@ async def detect_intent(
         state.query_type = "complaint"
         state.query_value = text
         return state
+    if _looks_like_other_channel_order(text):
+        state.intent = ConversationIntent.CANCELAR
+        return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
         text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "volver a la compra", "volver a la orden", "ver carrito", "ver compra", "ver orden", "carrito", "compra", "orden"))
     ):
@@ -261,19 +264,46 @@ async def detect_intent(
     if text in {"horarios", "horario"}:
         state.intent = ConversationIntent.HORARIOS
         return state
+    if _looks_like_empty_or_pointer_reply(state.raw_text, text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "gratitude"
+        state.query_value = text
+        return state
+    if state.cart and _looks_like_ready_to_checkout_reply(text):
+        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+        return state
+    if state.cart and _looks_like_cart_confirmation_or_review_request(text, state.raw_text):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    if not state.cart and _looks_like_confirmation_only_request(text, state.raw_text):
+        state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
     if _is_gratitude_only(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "gratitude"
         state.query_value = text
         return state
-    if state.cart and _looks_like_cart_total_query(text):
+    if state.current_step != ConversationState.ASK_CHICKEN_PART and _looks_like_chicken_part_followup(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "contents"
+        state.query_value = text
+        return state
+    if _looks_like_cart_total_query(text) and not _looks_like_delivery_cost_question(text):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
-    if state.cart and _looks_like_cart_confirmation_or_review_request(text, state.raw_text):
-        state.intent = ConversationIntent.MOSTRAR_CARRITO
+    if (
+        not state.cart
+        and not parsed_rules.items
+        and (
+            _looks_like_standalone_delivery_data_fragment(state.raw_text)
+            or _looks_like_payment_method(text)
+            or _looks_like_standalone_delivery_note(text)
+        )
+    ):
+        state.intent = ConversationIntent.INICIAR_DOMICILIO
         return state
-    if state.cart and _looks_like_ready_to_checkout_reply(text):
-        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+    if not state.cart and not parsed_rules.items and _looks_like_person_name_only(state.raw_text):
+        state.intent = ConversationIntent.INICIAR_DOMICILIO
         return state
     ambiguous_drink_request = _classify_ambiguous_drink_request(text)
     if ambiguous_drink_request is not None and not _looks_like_question(text) and (
@@ -294,7 +324,13 @@ async def detect_intent(
     if _looks_like_clear_cart_request(text):
         state.intent = ConversationIntent.VACIAR_CARRITO
         return state
+    if not state.cart and not parsed_rules.items and _looks_like_external_price_reference(text):
+        state.intent = ConversationIntent.MOSTRAR_MENU
+        return state
     if _looks_like_direct_order_with_products(text, parsed_rules):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return state
+    if _looks_like_quarter_part_without_style(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     query = _classify_business_query(text)
@@ -391,6 +427,9 @@ async def detect_intent(
         state.quantity = _extract_positive_integer(text) or 0
         return state
     if _detect_numbered_menu_intent(state):
+        return state
+    if _looks_like_lonely_quantity(text):
+        state.intent = ConversationIntent.MOSTRAR_MENU
         return state
     if state.current_step == ConversationState.POST_ADD:
         # After adding an item, short commands such as "3" or "finalizar" should
@@ -1719,7 +1758,7 @@ async def fallback_natural_language(
             return state
         if state.response_text:
             return state
-        if _looks_like_ambiguous_chicken_order(state.normalized_text):
+        if _looks_like_quarter_part_without_style(state.normalized_text):
             state.current_step = ConversationState.PRODUCT_CATEGORY
             state.response_text = BotMessageFactory.ambiguous_chicken_order()
             await _persist_step(state, services)
@@ -1795,6 +1834,9 @@ async def answer_query(
         return state
     if state.query_type == "payment_account":
         state.response_text = BotMessageFactory.payment_account_answer()
+        return state
+    if state.query_type == "payment_methods":
+        state.response_text = BotMessageFactory.payment_methods_answer()
         return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
@@ -1894,6 +1936,9 @@ async def answer_query(
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
         if product is not None:
             state.response_text = BotMessageFactory.product_price_answer(product)
+            return state
+        if _looks_like_generic_price_question(state.normalized_text):
+            state.response_text = BotMessageFactory.product_categories()
             return state
     if state.query_type == "delivery":
         neighborhood = state.query_value or _extract_delivery_neighborhood(state.normalized_text)
@@ -3397,6 +3442,33 @@ def _looks_like_cart_confirmation_or_review_request(text: str, raw_text: str = "
     )
 
 
+def _looks_like_confirmation_only_request(text: str, raw_text: str = "") -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    raw = raw_text.strip(" ¿?.,!¡")
+    if not raw and raw_text.strip() in {"?", "??"}:
+        return True
+    return _contains_any(normalized, ("me confirmas", "me confirma", "confirmame", "confírmame"))
+
+
+def _looks_like_delivery_cost_question(text: str) -> bool:
+    return _contains_any(text, ("domicilio", "domi", "envio", "envío", "llevar", "lleva"))
+
+
+def _looks_like_chicken_part_followup(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    if _contains_any(normalized, ("cuarto", "cuartos")) and _contains_any(normalized, ("pechuga", "pierna")):
+        return False
+    return normalized in {
+        "pechuga",
+        "pierna",
+        "pierna pernil",
+        "pechuga por favor",
+        "pierna por favor",
+        "pechuga si me hace el favor",
+        "pierna si me hace el favor",
+    }
+
+
 def _looks_like_checkout_note(text: str) -> bool:
     normalized = normalize_text(text)
     return _contains_any(
@@ -3442,8 +3514,23 @@ def _looks_like_checkout_data_fragment(text: str) -> bool:
     )
 
 
+def _looks_like_standalone_delivery_data_fragment(text: str) -> bool:
+    normalized = normalize_text(text)
+    return (
+        (_looks_like_address(normalized) and any(ch.isdigit() for ch in normalized))
+        or _looks_like_incomplete_delivery_address(normalized)
+        or _looks_like_customer_name_line(normalized)
+        or _looks_like_neighborhood_only(normalized)
+        or _looks_like_pickup_request(normalized)
+    )
+
+
+def _looks_like_standalone_delivery_note(text: str) -> bool:
+    return _contains_any(text, ("envias a las", "envías a las", "enviar a las", "mandar a las"))
+
+
 def _looks_like_customer_name_line(normalized: str) -> bool:
-    return normalized.startswith(("a nombre de ", "nombre de ", "para "))
+    return normalized.startswith(("a nombre de ", "nombre de ", "esta a nombre de ", "está a nombre de ", "a nombre "))
 
 
 def _looks_like_neighborhood_only(normalized: str) -> bool:
@@ -3561,7 +3648,24 @@ def _looks_like_complaint(text: str) -> bool:
 
 def _is_gratitude_only(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
-    return normalized in {
+    if normalized in {
+        "...",
+        "…",
+        "mandar",
+        "enserio",
+        "en serio",
+        "ok",
+        "okay",
+        "dale",
+        "bueno",
+        "vale",
+        "listo",
+        "porfa",
+        "por favor",
+        "si por favor",
+        "sí por favor",
+        "si dale",
+        "sí dale",
         "gracias",
         "muchas gracias",
         "mil gracias",
@@ -3569,7 +3673,60 @@ def _is_gratitude_only(text: str) -> bool:
         "ok gracias",
         "bueno gracias",
         "perfecto gracias",
+        "vale muchas gracias",
+        "vale gracias",
+    }:
+        return True
+    return _contains_any(
+        normalized,
+        (
+            "le agradezco",
+            "ya le paso el comprobante",
+            "ya le envío soporte",
+            "ya le envio soporte",
+            "ya le envío el soporte",
+            "ya le envio el soporte",
+            "ya le paso soporte",
+            "ya le paso el soporte",
+        ),
+    )
+
+
+def _looks_like_empty_or_pointer_reply(raw_text: str, normalized_text: str) -> bool:
+    raw = raw_text.strip()
+    return normalized_text == "" and raw in {"...", "…", "👆", "☝️", "☝"}
+
+
+def _looks_like_lonely_quantity(text: str) -> bool:
+    return text.strip(" ¿?.,!¡") in {
+        "dos",
+        "tres",
+        "cuatro",
+        "cinco",
+        "2",
+        "3",
+        "4",
+        "5",
     }
+
+
+def _looks_like_external_price_reference(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return _contains_any(normalized, ("dice que", "me dijeron que")) and any(ch.isdigit() for ch in normalized)
+
+
+def _looks_like_person_name_only(raw_text: str) -> bool:
+    value = raw_text.strip(" ¿?.,!¡")
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+){0,2}", value):
+        return False
+    if not all(word[:1].isupper() for word in value.split()):
+        return False
+    normalized = normalize_text(value)
+    if _is_greeting_only(normalized) or _is_menu_request(normalized):
+        return False
+    if normalized in {"pollo", "pechuga", "pierna", "nequi", "efectivo", "bucarica", "lagos", "manantial"}:
+        return False
+    return len(normalized) >= 4
 
 
 def _looks_like_customer_gave_up(text: str) -> bool:
@@ -3590,6 +3747,18 @@ def _looks_like_customer_gave_up(text: str) -> bool:
             "cancele",
             "cancelar",
             "cancela",
+        ),
+    )
+
+
+def _looks_like_other_channel_order(text: str) -> bool:
+    return _contains_any(
+        text.strip(" ¿?.,!¡"),
+        (
+            "por otro celular",
+            "pidiendo por otro celular",
+            "lo pedi por otro celular",
+            "lo pedí por otro celular",
         ),
     )
 
@@ -4163,6 +4332,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("unknown", text)
     if _looks_like_payment_account_query(text):
         return ("payment_account", text)
+    if _looks_like_payment_methods_query(text):
+        return ("payment_methods", text)
     if _looks_like_order_status_query(text):
         return ("order_status", text)
     if _looks_like_refund_followup_query(text):
@@ -4212,7 +4383,7 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("category", "bebidas")
         if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
             return ("category", "adicionales")
-        if any(word in text for word in ["asado", "pollo asado"]):
+        if any(word in text for word in ["asado", "pollo", "pollos", "pollo asado"]):
             return ("category", "asado")
         if _contains_any(text, BROASTER_TEXT_TERMS):
             return ("category", "broaster")
@@ -4243,6 +4414,9 @@ def _looks_like_contents_question(text: str) -> bool:
             "presa trae",
             "presa o dos",
             "una presa o dos",
+            "preseas traen",
+            "presas traen",
+            "cintas preseas",
         ),
     )
 
@@ -4287,6 +4461,10 @@ def _looks_like_service_question(text: str) -> bool:
             "hay atención",
             "me comunico a mac chicken",
             "me comunico a max chicken",
+            "es el de lagos",
+            "aqui en lagos",
+            "aquí en lagos",
+            "a qui en lagos",
         ),
     )
 
@@ -4310,6 +4488,11 @@ def _looks_like_sauce_option_question(text: str) -> bool:
             "con tártara",
             "sin aji",
             "sin ají",
+            "echame",
+            "échame",
+            "mandar aji",
+            "mandar ají",
+            "porfa",
         ),
     )
 
@@ -4401,9 +4584,10 @@ def _looks_like_order_status_query(text: str) -> bool:
         "como va",
         "como va mi pedido",
         "en cuanto lo traen",
-        "se demora veci",
-        "paso en 15 minutos",
-    }:
+            "se demora veci",
+            "paso en 15 minutos",
+            "en cuanto puedo pasar",
+        }:
         return True
     status_terms = (
         "demora",
@@ -4454,7 +4638,14 @@ def _looks_like_order_status_query(text: str) -> bool:
             "cuando llega",
             "cuándo llega",
             "en cuanto lo traen",
+            "en cuanto puedo pasar",
             "paso en 15",
+            "me van a mandar mi pedido",
+            "me van a mandar mí pedido",
+            "mandar mi pedido",
+            "mandar mí pedido",
+            "no llega mi pedido",
+            "no llega el pedido",
             "mi pedido llego",
             "mi pedido llegó",
             "ya se envio",
@@ -4539,6 +4730,42 @@ def _looks_like_payment_account_query(text: str) -> bool:
     return _contains_any(cleaned, payment_terms) and _contains_any(cleaned, account_terms)
 
 
+def _looks_like_payment_methods_query(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    return _contains_any(
+        cleaned,
+        (
+            "puedo pagar",
+            "se puede pagar",
+            "pagar alla",
+            "pagar allá",
+            "pagar al recibir",
+            "pago con tarjeta",
+            "pago con un billete",
+            "billete",
+            "con tarjeta",
+            "datafono",
+            "datáfono",
+            "efectivo",
+        ),
+    )
+
+
+def _looks_like_generic_price_question(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "precio",
+            "precios",
+            "valor",
+            "cuanto vale",
+            "cuánto vale",
+            "cuanto cuesta",
+            "cuánto cuesta",
+        ),
+    )
+
+
 def _looks_like_cart_total_query(text: str) -> bool:
     return _contains_any(
         text,
@@ -4582,11 +4809,25 @@ def _looks_like_ambiguous_chicken_order(text: str) -> bool:
     if not (
         _looks_like_natural_order(text)
         or _contains_any(text, ("tiene pollo", "tienen pollo", "hay pollo"))
+        or (_contains_any(text, ("cuarto", "cuartos", "1/4")) and _contains_any(text, ("pechuga", "pierna")))
     ):
         return False
-    if "pollo" not in text and "pollos" not in text:
+    has_chicken_reference = (
+        "pollo" in text
+        or "pollos" in text
+        or (_contains_any(text, ("cuarto", "cuartos", "1/4")) and _contains_any(text, ("pechuga", "pierna")))
+    )
+    if not has_chicken_reference:
         return False
     return not _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS)
+
+
+def _looks_like_quarter_part_without_style(text: str) -> bool:
+    return (
+        _contains_any(text, ("cuarto", "cuartos", "1/4"))
+        and _contains_any(text, ("pechuga", "pierna"))
+        and not _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS)
+    )
 
 
 def _category_route_from_text(text: str) -> tuple[ProductCategory, ConversationState] | None:

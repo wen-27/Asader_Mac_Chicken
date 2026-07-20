@@ -1032,6 +1032,131 @@ async def test_qa_history_chicken_piece_question_answers_contents() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["Ok", "Porfa", "Si por favor", "Vale muchas gracias"])
+async def test_qa_history_short_polite_replies_do_not_fall_back(message: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_other_phone_order_does_not_fall_back() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Ya estamos pidiendo por otro celular"))
+
+    assert "Cancele la orden actual" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Avenida Bucarica Bloque 5-2 apto 302",
+        "Para altos de Bellavista sector 3 bloque uno apartamento 504",
+        "#5-54",
+        "Bucarica",
+    ],
+)
+async def test_qa_history_loose_delivery_data_without_cart_starts_delivery(message: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert "domicilio" in result["response_text"].lower()
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_total_question_without_cart_shows_empty_cart() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cuanto seria todo"))
+
+    assert "orden esta vacia" in result["response_text"].lower()
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message", ["Pechuga", "Pierna si me hace el favor"])
+async def test_qa_history_loose_chicken_part_followup_does_not_fall_back(message: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+    assert "producto quieres saber" in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Me confirmas por favor", "orden esta vacia"),
+        ("Me das el precio por favor", "Elige una categoria"),
+        ("Puedo pagar allá con tarjeta?", "Datafono"),
+        ("Es el de lagos cierto", "servicio a domicilio"),
+        ("En cuanto puedo pasar", "40 minutos"),
+        ("Hola necesito saber si me van a mandar mí pedido gracias", "40 minutos"),
+        ("El ají porfa si échame unos cuantos", "salsas"),
+        ("Esta a nombre de fab leo per", "domicilio"),
+    ],
+)
+async def test_qa_history_misc_real_messages_do_not_fall_back(message: str, expected: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert expected in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_qa_history_quarter_part_without_style_asks_chicken_style() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pero q los dos cuartos sean pechuga"))
+
+    assert "Pollo asado" in result["response_text"]
+    assert "Pollo broaster" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("...", "Con mucho gusto"),
+        ("👆", "Con mucho gusto"),
+        ("Raul", "domicilio"),
+        ("Dice que 8 mil", "Bienvenid@ a Mac Chicken"),
+        ("Dos", "Bienvenid@ a Mac Chicken"),
+        ("Eso es a qui en Lagos verdad ?", "servicio a domicilio"),
+        ("Listo pago con un billete de 100 mil", "Efectivo"),
+    ],
+)
+async def test_qa_history_last_resort_real_messages_do_not_fall_back(message: str, expected: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert expected in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_zero_from_categories_goes_back_to_main_menu() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.PRODUCT_CATEGORY)
