@@ -375,11 +375,14 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
     items: list[ParsedOrderItem] = []
     matched_codes: set[str] = set()
     unsupported_cooked_food = looks_like_unsupported_cooked_food_request(normalized)
+    half_combo_order = _looks_like_half_asado_half_broaster_order(normalized)
 
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
         if rule.code in matched_codes:
+            continue
+        if half_combo_order and rule.code == "ASADO_ENTERO":
             continue
         if unsupported_cooked_food and rule.code.startswith(("ASADO_", "BROASTER_")):
             continue
@@ -456,6 +459,8 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "viene con sopa",
             "incluye sopa",
             "tiene sopa",
+            "dan sopa",
+            "me dan sopa",
             "con que viene",
             "con qué viene",
             "que trae",
@@ -464,6 +469,17 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "qué incluye",
         ),
     )
+
+
+def _looks_like_half_asado_half_broaster_order(text: str) -> bool:
+    if "?" in text or "puedo" in text or "pueden" in text:
+        return False
+    has_half_asado = re.search(r"\bmedio\s+(?:pollo\s+)?asado\b|\bmedio\s+a\s+la\s+asado\b", text) is not None
+    has_half_broaster = re.search(
+        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted)\b",
+        text,
+    ) is not None
+    return has_half_asado and has_half_broaster
 
 
 def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
@@ -713,7 +729,7 @@ def _order_segments(text: str) -> list[str]:
 
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
-        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
+        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
         r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")

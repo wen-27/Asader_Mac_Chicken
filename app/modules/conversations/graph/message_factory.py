@@ -327,18 +327,31 @@ class BotMessageFactory:
         lines: list[CartLineState],
         total_cop: int,
         missing_fields: list[str] | None = None,
+        fulfillment_type: str = "DELIVERY",
     ) -> str:
         added_lines = "\n".join(
             f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in lines
         )
-        missing = missing_fields if missing_fields is not None else [
-            "Nombre completo",
-            "Telefono",
-            "Direccion",
-            "Barrio",
-            "Metodo de pago",
-            "Nota o especificacion (opcional)",
-        ]
+        default_fields = (
+            ["Nombre completo", "Telefono", "Nota o especificacion (opcional)"]
+            if fulfillment_type == "PICKUP"
+            else [
+                "Nombre completo",
+                "Telefono",
+                "Direccion",
+                "Barrio",
+                "Metodo de pago",
+                "Nota o especificacion (opcional)",
+            ]
+        )
+        if missing_fields is not None and fulfillment_type == "PICKUP":
+            pickup_labels = {
+                "nombre completo": "Nombre completo",
+                "telefono": "Telefono",
+            }
+            missing = [pickup_labels.get(field, field) for field in missing_fields]
+        else:
+            missing = missing_fields if missing_fields is not None else default_fields
         customer_prompt = (
             "Para confirmar tu orden, enviame estos datos cuando puedas:"
             if missing_fields is not None
@@ -435,6 +448,15 @@ class BotMessageFactory:
         lines.append("3. Finalizar orden ✅")
         lines.append("4. Vaciar orden 🗑️")
         lines.append("0. Volver al inicio ⬅️")
+        return "\n".join(lines)
+
+    @classmethod
+    def order_items(cls, cart: list[CartLineState]) -> str:
+        if not cart:
+            return "🧾 Tu orden esta vacia. Escribe menu para ver opciones."
+        lines = ["🧾 Tu orden:", ""]
+        for line in cart:
+            lines.append(f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}")
         return "\n".join(lines)
 
     @classmethod
@@ -551,7 +573,7 @@ class BotMessageFactory:
             return "\n\n".join(
                 [
                     "✅ Datos recibidos. Revisa tu orden para recoger:",
-                    cls.cart(state.cart, state.subtotal_cop),
+                    cls.order_items(state.cart),
                     "\n".join(
                         [
                             f"👤 Cliente: {state.customer.name}",
@@ -573,7 +595,7 @@ class BotMessageFactory:
         return "\n\n".join(
             [
                 "✅ Datos recibidos. Revisa tu orden:",
-                cls.cart(state.cart, state.subtotal_cop),
+                cls.order_items(state.cart),
                 "\n".join(
                     [
                         f"👤 Cliente: {state.customer.name}",
