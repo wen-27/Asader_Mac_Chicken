@@ -733,6 +733,7 @@ async def test_unstyled_chickens_with_bodega_destination_adds_quantity_after_sty
     assert result["current_step"] == ConversationState.POST_ADD
     assert "3 x 1 Asado Entero" in result["response_text"]
     assert "Nombre completo" in result["response_text"]
+    assert "Nota o especificacion (opcional)" in result["response_text"]
     assert services.session.observations == "para la bodega 18"
     assert services.session.customer_address is None
     assert len(services.session.cart) == 1
@@ -2658,6 +2659,7 @@ async def test_labeled_address_extracts_embedded_barrio_and_payment_prefix_is_no
     assert services.session.customer_neighborhood == "Lagos 2"
     assert services.session.payment_method == "Efectivo"
     assert services.session.customer_name is None
+    assert "Que esté acá a la 1:00pm, por favor, antes no" in (services.session.observations or "")
 
 
 @pytest.mark.asyncio

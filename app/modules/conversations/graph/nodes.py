@@ -895,6 +895,8 @@ async def extract_customer_data(
             "especificacion",
         }:
             customer.observations = value
+        else:
+            free_lines.append(line)
     if free_lines:
         expanded_free_lines = _expand_checkout_free_lines(free_lines)
         if _looks_like_complete_checkout_payload(expanded_free_lines, state.fulfillment_type):
@@ -1095,6 +1097,8 @@ def _split_structured_checkout_lines(lines: list[str]) -> list[str] | None:
 
 
 def _split_delimited_checkout_line(line: str) -> list[str] | None:
+    if _looks_like_checkout_note(line):
+        return None
     parts = [part.strip() for part in re.split(r"\s*[,;|]\s*", line) if part.strip()]
     if len(parts) <= 1:
         return None
@@ -3601,7 +3605,13 @@ def _looks_like_checkout_note(text: str) -> bool:
             "frente",
             "veterinaria",
             "banco",
+            "que este aca",
+            "antes no",
         ),
+    ) or (
+        re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
+        is not None
+        and _contains_any(normalized, ("aca", "este", "pedido", "entrega", "enviar", "mandar"))
     )
 
 

@@ -339,6 +339,7 @@ class BotMessageFactory:
                         "Direccion",
                         "Barrio",
                         "Metodo de pago",
+                        "Nota o especificacion (opcional)",
                     ]
                 ),
             ]
