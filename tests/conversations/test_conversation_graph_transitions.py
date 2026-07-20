@@ -460,6 +460,25 @@ async def test_real_customer_polite_order_sends_welcome_menu_and_keeps_items() -
 
 
 @pytest.mark.asyncio
+async def test_direct_order_from_main_menu_does_not_repeat_welcome_menu() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.session.move_to(ConversationState.MAIN_MENU)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Quiero un pollo asado"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Bienvenid@ a Mac Chicken" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_natural_order_with_customer_data_goes_to_checkout_review() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -973,6 +992,22 @@ async def test_qa_history_cart_accepts_checkout_fragments_from_natural_order_sta
     assert services.session.customer_neighborhood == "Lagos 2"
     assert services.session.customer_name == "Gabriela"
     assert services.session.payment_method == "Nequi"
+
+
+@pytest.mark.asyncio
+async def test_checkout_fragment_strips_order_text_before_embedded_address() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.NATURAL_ORDER)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Buenos días necesito un pollo a la cra28a#195-33")
+    )
+
+    assert "barrio" in result["response_text"]
+    assert services.session.customer_address == "cra28a#195-33"
+    assert "Buenos días necesito un pollo" not in services.session.customer_address
 
 
 @pytest.mark.asyncio
@@ -3551,6 +3586,34 @@ async def test_contents_question_for_asado_defaults_to_whole_roasted_chicken() -
     assert "ají" in result["response_text"]
     assert "incluye 2 sopas sin costo" in result["response_text"].lower()
     assert "Dime de que producto" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_text", "expected"),
+    [
+        ("Cuántas presas trae un pollo entero?", "trae 8 presas"),
+        ("Cuantas piezas trae medio pollo broster?", "trae 4 presas"),
+        ("Cuantas porciones trae 3/4 de pollo asado?", "trae 6 presas"),
+        ("Cuantos trozos trae un cuarto broaster?", "trae 2 presas"),
+        ("Cuantas partes trae el pollo asado?", "trae 8 presas"),
+    ],
+)
+async def test_chicken_piece_count_questions_answer_by_presentation(raw_text: str, expected: str) -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert expected in result["response_text"]
+    assert "2 pechugas, 2 alas, 2 perniles y 2 muslos" in result["response_text"]
     assert services.session.cart == []
 
 

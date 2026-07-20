@@ -657,12 +657,25 @@ class BotMessageFactory:
         return f"{product.name.value} vale ${product.price.amount}."
 
     @classmethod
-    def product_contents_answer(cls, product: Product | None, soup_available: bool = True) -> str:
+    def product_contents_answer(
+        cls,
+        product: Product | None,
+        soup_available: bool = True,
+        piece_question: bool = False,
+    ) -> str:
         if product is None:
             return (
                 "Claro. Dime de que producto quieres saber que trae: pollo asado, "
                 "pollo broaster, adicionales o especiales."
             )
+        if piece_question:
+            pieces = cls._chicken_piece_count(product.code.value)
+            if pieces:
+                return (
+                    f"Si claro. {product.name.value} trae {pieces} presas. "
+                    "Tomamos el pollo entero como 8 presas: 2 pechugas, 2 alas, 2 perniles y 2 muslos. "
+                    "Puede variar un poco segun el corte del asadero."
+                )
         normalized_name = product.name.value.lower()
         if "broast" in normalized_name:
             soup_text = cls._included_soup_text(product.code.value, soup_available)
@@ -693,6 +706,19 @@ class BotMessageFactory:
         if product_code in {"ASADO_MEDIO", "BROASTER_MEDIO", "ASADO_CUARTO", "BROASTER_CUARTO"}:
             return "Mientras haya sopa disponible, esta presentacion incluye 1 sopa sin costo."
         return "La sopa depende de la presentacion del pollo."
+
+    @classmethod
+    def _chicken_piece_count(cls, product_code: str) -> int | None:
+        return {
+            "ASADO_ENTERO": 8,
+            "BROASTER_ENTERO": 8,
+            "ASADO_34": 6,
+            "BROASTER_34": 6,
+            "ASADO_MEDIO": 4,
+            "BROASTER_MEDIO": 4,
+            "ASADO_CUARTO": 2,
+            "BROASTER_CUARTO": 2,
+        }.get(product_code)
 
     @classmethod
     def soup_unavailable_prompt(cls) -> str:

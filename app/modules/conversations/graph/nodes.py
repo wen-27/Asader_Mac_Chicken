@@ -1214,6 +1214,7 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
     address, neighborhood, _note = _split_rich_address_line(text)
     if neighborhood:
         return (address or None, neighborhood)
+    text = address or text
     words = text.split()
     if len(words) < 3:
         return (text or None, None)
@@ -1229,7 +1230,7 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
 
 
 def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
-    raw = text.strip()
+    raw = _trim_address_leading_context(text.strip())
     normalized = normalize_text(raw)
     known_neighborhoods = (
         "floridablanca casco antiguo",
@@ -1273,6 +1274,17 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         neighborhood = f"{neighborhood} {after}".strip()
         after = ""
     return before or raw, neighborhood.strip(), after or None
+
+
+def _trim_address_leading_context(text: str) -> str:
+    match = re.search(
+        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|av|transversal|tv|diagonal|dg|manzana|mz)\s*[\w#-]*|#",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return text
+    return text[match.start() :].strip(" ,.-")
 
 
 def _looks_like_complete_checkout_payload(lines: list[str], fulfillment_type: str = "DELIVERY") -> bool:
@@ -1685,7 +1697,11 @@ async def fallback_natural_language(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
-    should_prepend_new_order_welcome = state.current_step == ConversationState.MAIN_MENU and not state.cart
+    should_prepend_new_order_welcome = (
+        state.current_step == ConversationState.MAIN_MENU
+        and not state.cart
+        and (_has_greeting_prefix(state.normalized_text) or _looks_like_new_order_followup(state.normalized_text))
+    )
     pending_lines = await _continue_pending_natural_order(state, services)
     if pending_lines:
         unavailable_notice = (
@@ -1908,7 +1924,11 @@ async def answer_query(
         if _is_soup_contents_question(state.normalized_text) and product is None:
             state.response_text = BotMessageFactory.generic_soup_inclusion_answer()
             return state
-        state.response_text = BotMessageFactory.product_contents_answer(product, soup_available)
+        state.response_text = BotMessageFactory.product_contents_answer(
+            product,
+            soup_available,
+            piece_question=_is_chicken_piece_count_question(state.normalized_text),
+        )
         return state
     if state.query_type == "combination":
         session = await services.load_or_create_session(ChatId(state.chat_id))
@@ -3622,6 +3642,48 @@ def _is_greeting_only(text: str) -> bool:
     return any(normalized == f"{greeting} {greeting}" for greeting in greetings)
 
 
+def _has_greeting_prefix(text: str) -> bool:
+    normalized = normalize_text(text)
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\bola\b", "hola", normalized)
+    normalized = re.sub(r"\bhol+a+\b", "hola", normalized)
+    normalized = re.sub(r"\bbuenas+\b", "buenas", normalized)
+    normalized = re.sub(r"\bbuena\b", "buenas", normalized)
+    normalized = re.sub(r"\bwenas+\b", "buenas", normalized)
+    prefixes = (
+        "hola",
+        "buenas",
+        "buenos dias",
+        "buen dia",
+        "buenas dias",
+        "buenas tardes",
+        "buena tarde",
+        "buenas noches",
+        "muy buenas",
+        "saludos",
+    )
+    return any(normalized == prefix or normalized.startswith(f"{prefix} ") for prefix in prefixes)
+
+
+def _looks_like_new_order_followup(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "ahora quiero tambien",
+            "ahora quiero también",
+            "tambien quiero",
+            "también quiero",
+            "quiero tambien",
+            "quiero también",
+            "otro pedido",
+            "otra orden",
+            "nuevo pedido",
+            "nueva orden",
+        ),
+    )
+
+
 def _looks_like_complaint(text: str) -> bool:
     return _contains_any(
         text,
@@ -4410,8 +4472,20 @@ def _looks_like_contents_question(text: str) -> bool:
             "cuántas presas",
             "cuanta presa",
             "cuánta presa",
+            "cuantas piezas",
+            "cuántas piezas",
+            "cuantas porciones",
+            "cuántas porciones",
+            "cuantos trozos",
+            "cuántos trozos",
+            "cuantas partes",
+            "cuántas partes",
             "presas trae",
             "presa trae",
+            "piezas trae",
+            "porciones trae",
+            "trozos trae",
+            "partes trae",
             "presa o dos",
             "una presa o dos",
             "preseas traen",
@@ -4515,6 +4589,10 @@ def _is_soup_contents_question(text: str) -> bool:
             "tiene sopa",
         ),
     )
+
+
+def _is_chicken_piece_count_question(text: str) -> bool:
+    return _contains_any(text, ("presa", "presas", "pieza", "piezas", "porcion", "porción", "porciones", "trozo", "trozos", "parte", "partes"))
 
 
 def _looks_like_soup_availability_question(text: str) -> bool:
@@ -5019,7 +5097,11 @@ async def _contents_answer_for_added_order_question(
     if product is None:
         return None
     soup_available = await _soup_is_available(services)
-    return BotMessageFactory.product_contents_answer(product, soup_available)
+    return BotMessageFactory.product_contents_answer(
+        product,
+        soup_available,
+        piece_question=_is_chicken_piece_count_question(state.normalized_text),
+    )
 
 
 async def _product_for_contents_question(
