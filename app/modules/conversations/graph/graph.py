@@ -65,8 +65,9 @@ class ConversationGraphRunner:
             previous_node = next_node
 
         if previous_node == "calculate_delivery":
-            state = await nodes.create_order(state, self._services)
-            previous_node = "create_order"
+            if not state.errors and not state.response_text:
+                state = await nodes.create_order(state, self._services)
+                previous_node = "create_order"
 
         if previous_node != "send_telegram_response":
             state = await nodes.send_telegram_response(state, self._services)

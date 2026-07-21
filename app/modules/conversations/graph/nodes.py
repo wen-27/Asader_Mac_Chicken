@@ -207,6 +207,11 @@ async def detect_intent(
         state.query_type = "payment_account"
         state.query_value = text
         return state
+    if await _delivery_orders_disabled_for_message(state, services, parsed_rules):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "delivery_unavailable"
+        state.query_value = text
+        return state
     replacement = _split_cart_replacement_request(text)
     if (
         state.cart
@@ -1805,6 +1810,12 @@ async def calculate_delivery(
     # The graph only stores the resulting integer COP price in conversation state.
     if state.fulfillment_type == "PICKUP":
         state.delivery_price_cop = 0
+    elif not await services.delivery_orders_enabled():
+        state.errors = ["domicilios deshabilitados"]
+        state.current_step = ConversationState.POST_ADD
+        state.response_text = BotMessageFactory.delivery_unavailable_answer()
+        await _persist_step(state, services)
+        return state
     elif state.customer.address and state.customer.neighborhood:
         result = await services.calculate_delivery(
             address=state.customer.address,
@@ -1870,6 +1881,11 @@ async def confirm_order(
         state.customer.neighborhood = "No aplica"
         state.customer.payment_method = "No aplica"
         state.delivery_price_cop = 0
+    elif not await services.delivery_orders_enabled():
+        state.current_step = ConversationState.POST_ADD
+        state.response_text = BotMessageFactory.delivery_unavailable_answer()
+        await _persist_step(state, services)
+        return state
     elif state.customer.address and state.customer.neighborhood:
         delivery = await services.calculate_delivery(
             address=state.customer.address,
@@ -2103,6 +2119,9 @@ async def start_delivery_order(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    if not await services.delivery_orders_enabled():
+        state.response_text = BotMessageFactory.delivery_unavailable_answer()
+        return state
     session = await services.load_or_create_session(ChatId(state.chat_id))
     session.fulfillment_type = "DELIVERY"
     session.move_to(ConversationState.PRODUCT_CATEGORY)
@@ -2125,6 +2144,9 @@ async def answer_query(
         return state
     if state.query_type == "payment_methods":
         state.response_text = BotMessageFactory.payment_methods_answer()
+        return state
+    if state.query_type == "delivery_unavailable":
+        state.response_text = BotMessageFactory.delivery_unavailable_answer()
         return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
@@ -4799,6 +4821,26 @@ def _looks_like_delivery_order_start(text: str) -> bool:
             "necesito",
         ),
     )
+
+
+async def _delivery_orders_disabled_for_message(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+    parsed_rules,
+) -> bool:
+    text = state.normalized_text
+    if state.fulfillment_type == "PICKUP" or _looks_like_pickup_request(text):
+        return False
+    has_delivery_signal = (
+        _looks_like_service_question(text)
+        or _looks_like_delivery_request(text)
+        or _looks_like_delivery_order_start(text)
+        or _has_checkout_data_signal(state.raw_text)
+        or bool(parsed_rules.items)
+    )
+    if not has_delivery_signal:
+        return False
+    return not await services.delivery_orders_enabled()
 
 
 async def _evaluate_product_availability(

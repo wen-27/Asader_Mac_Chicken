@@ -30,6 +30,7 @@ class FakeConversationServices:
         self.synced_orders: list[AdminOrderPayload] = []
         self.fail_sync = False
         self.soup_available = True
+        self.delivery_enabled = True
         self.created_orders: list[str] = []
         self.ai_parsed: NaturalLanguageOrderParse | None = None
         self.ai_calls: list[str] = []
@@ -227,6 +228,9 @@ class FakeConversationServices:
             distance_km=0.0,
             pricing_source="test",
         )
+
+    async def delivery_orders_enabled(self) -> bool:
+        return self.delivery_enabled
 
     async def soup_is_available(self) -> bool:
         return self.soup_available
@@ -4408,6 +4412,51 @@ async def test_generic_service_or_delivery_question_answers_yes_with_menu(raw_te
 
 
 @pytest.mark.asyncio
+async def test_delivery_disabled_answers_kindly_to_service_question() -> None:
+    services = FakeConversationServices()
+    services.delivery_enabled = False
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Tienen servicio a domicilio?"))
+
+    response = result["response_text"].lower()
+    assert "no estamos tomando pedidos a domicilio" in response
+    assert "no tenemos domiciliarios disponibles" in response
+    assert "recoger en el local" in response
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_delivery_disabled_blocks_new_delivery_order_without_touching_cart() -> None:
+    services = FakeConversationServices()
+    services.delivery_enabled = False
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Un pollo a la broaster porfa"))
+
+    assert "no estamos tomando pedidos a domicilio" in result["response_text"].lower()
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_delivery_disabled_still_allows_pickup_order() -> None:
+    services = FakeConversationServices()
+    services.delivery_enabled = False
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Buenas veci para pedir medio pollo asado para recoger a nombre de Santiago a la 1 pm",
+        )
+    )
+
+    assert "no estamos tomando pedidos a domicilio" not in result["response_text"].lower()
+    assert services.session.fulfillment_type == "PICKUP"
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+
+
+@pytest.mark.asyncio
 async def test_question_about_order_delay_gets_friendly_answer() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(chat_id=123, raw_text="Por que no llega mi pedido de pollo?")
@@ -5380,6 +5429,27 @@ async def test_confirm_order_with_nequi_includes_account_and_requests_proof() ->
     assert "Fabio Leonardo Perez" in state.response_text
     assert "comprobante de pago" in state.response_text
     assert state.current_step == ConversationState.MAIN_MENU
+
+
+@pytest.mark.asyncio
+async def test_confirm_order_blocks_delivery_when_delivery_is_disabled() -> None:
+    services = FakeConversationServices()
+    services.delivery_enabled = False
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.customer_name = "Angel David"
+    services.session.customer_phone = "3153327502"
+    services.session.customer_address = "Transversal 23 #52a-21"
+    services.session.customer_neighborhood = "Bosquesitos"
+    services.session.payment_method = "Efectivo"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    state = ConversationGraphState(chat_id=123, raw_text="si")
+
+    state = await nodes.confirm_order(state, services)
+
+    assert "no estamos tomando pedidos a domicilio" in state.response_text.lower()
+    assert services.session.cart
+    assert services.synced_orders == []
 
 
 @pytest.mark.asyncio

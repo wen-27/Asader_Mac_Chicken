@@ -805,6 +805,15 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def delivery_unavailable_answer(cls) -> str:
+        return "\n\n".join(
+            [
+                "Qué pena contigo, en este momento no estamos tomando pedidos a domicilio porque no tenemos domiciliarios disponibles.",
+                "Si deseas, con muchísimo gusto podemos dejarte tu pedido listo para recoger en el local. Gracias por entendernos.",
+            ]
+        )
+
+    @classmethod
     def order_status_answer(cls) -> str:
         return (
             "🍗 Estamos haciendo lo posible para despachar tu orden lo mas pronto posible. "
