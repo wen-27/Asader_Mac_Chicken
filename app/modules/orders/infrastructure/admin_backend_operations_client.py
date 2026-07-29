@@ -15,12 +15,9 @@ class AdminBackendOperationsClient:
     def __init__(self, settings: Settings) -> None:
         self._base_url = settings.admin_backend_base_url.rstrip("/")
         self._api_key = settings.internal_api_key
-        self._enabled = settings.admin_backend_sync_enabled
         self._timeout = settings.admin_backend_timeout_seconds
 
     async def delivery_orders_enabled(self) -> bool:
-        if not self._enabled:
-            return True
         if not self._api_key:
             logger.warning("internal api key is not configured; assuming delivery orders are enabled")
             return True
