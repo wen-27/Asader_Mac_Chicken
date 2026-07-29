@@ -267,6 +267,7 @@ async def detect_intent(
         or _looks_like_incomplete_delivery_address(text)
         or _looks_like_payment_method(text)
         or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+        or _looks_like_sauce_note_request(text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
@@ -1656,6 +1657,8 @@ def _is_ignorable_checkout_line(normalized: str) -> bool:
 
 
 def _looks_like_order_header_line(normalized: str) -> bool:
+    if _looks_like_checkout_note(normalized):
+        return False
     return _contains_any(
         normalized,
         (
@@ -3650,6 +3653,7 @@ def _extract_sauce_note(text: str) -> str | None:
         return "Salsas: sin salsas."
     mentioned = []
     sauce_labels = {
+        "salsa": "salsas",
         "aji": "ají",
         "tartara": "tártara",
         "tartar": "tártara",
@@ -3657,7 +3661,11 @@ def _extract_sauce_note(text: str) -> str | None:
         "miel": "miel",
     }
     for key, label in sauce_labels.items():
+        if key == "salsa" and _contains_any(text, ("sin salsa", "sin salsas")):
+            continue
         if key == "tartar" and "tartara" in text:
+            continue
+        if key == "salsa" and _contains_any(text, ("tartara", "tártara", "aji", "ají", "tomate", "miel")):
             continue
         if key in text:
             mentioned.append(label)
@@ -4069,10 +4077,13 @@ def _looks_like_checkout_note(text: str) -> bool:
             "sin salsas",
             "con salsa",
             "con salsas",
+            "salsa",
+            "salsas",
             "tartara",
             "tártara",
             "aji",
             "ají",
+            "miel",
             "nota",
             "observacion",
             "observación",
@@ -4088,6 +4099,44 @@ def _looks_like_checkout_note(text: str) -> bool:
         re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
         is not None
         and _contains_any(normalized, ("aca", "este", "pedido", "entrega", "enviar", "mandar"))
+    )
+
+
+def _looks_like_sauce_note_request(text: str) -> bool:
+    normalized = normalize_text(text)
+    if _looks_like_paid_sauce_extra(normalized):
+        return False
+    if not _contains_any(normalized, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "miel", "tomate")):
+        return False
+    if _looks_like_sauce_option_question(normalized) and not _contains_any(
+        normalized,
+        ("regala", "regalas", "envia", "envía", "envias", "envías", "echame", "échame", "echa", "mande", "manda"),
+    ):
+        return False
+    return _contains_any(
+        normalized,
+        (
+            "regala",
+            "regalas",
+            "envia",
+            "envía",
+            "envias",
+            "envías",
+            "mando",
+            "manda",
+            "mande",
+            "echame",
+            "échame",
+            "echa",
+            "buena",
+            "bastante",
+            "sin",
+            "no me",
+            "por favor",
+            "porfa",
+            "por fis",
+            "bien asado",
+        ),
     )
 
 

@@ -5306,6 +5306,57 @@ async def test_simple_sauce_request_after_cart_stays_note_without_charge() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_note"),
+    [
+        ("y me envias miel y salsas por favor.", "y me envias miel y salsas por favor."),
+        (
+            "Por favor me regalas bastante ají y tártara y no me envíes miel",
+            "Por favor me regalas bastante ají y tártara y no me envíes miel",
+        ),
+        ("Me regala buena tártara", "Me regala buena tártara"),
+        (
+            "Pero por fis bien asado y me regalas tártara y tienes sopa",
+            "Pero por fis bien asado y me regalas tártara y tienes sopa",
+        ),
+    ],
+)
+async def test_real_sauce_notes_after_cart_are_saved_without_opening_menus(
+    message: str,
+    expected_note: str,
+) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=message)
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion" in result["response_text"]
+    assert "Adicionales" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+    assert services.session.observations == expected_note
+
+
+@pytest.mark.asyncio
+async def test_generic_sauce_question_after_cart_is_saved_as_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Será que me podría regalar salsa?🥺")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+    assert services.session.observations == "Será que me podría regalar salsa?🥺"
+
+
+@pytest.mark.asyncio
 async def test_sauce_change_is_saved_as_observation_without_cost() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
