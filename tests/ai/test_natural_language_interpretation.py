@@ -252,11 +252,21 @@ def test_rule_based_parser_understands_real_chat_roasted_chicken_and_half_order(
     ]
 
 
+def test_rule_based_parser_does_not_convert_roasted_chicken_and_half_price_question_to_half_order() -> None:
+    parsed = parse_natural_order_rules("Pollo y medio q vale")
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
+
+
 def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_order() -> None:
     examples = [
         "ven ustedes venden pollo con sopa ?",
         "Disculpe le queda sopa?",
         "Hay aun sopa?",
+        "Todavía tienen sopita",
+        "Tiene sopita ?",
+        "Me guardas sopita cierto?",
         "Con sopa?",
         "Una pregunta vine con sopa?",
         "Vienen con sopa?",
@@ -266,6 +276,39 @@ def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_or
         parsed = parse_natural_order_rules(example)
         assert parsed.items == []
         assert parsed.intent == "unknown"
+
+
+def test_rule_based_parser_does_not_charge_included_roasted_sides_as_addons() -> None:
+    parsed = parse_natural_order_rules("Por favor me envía un pollo asado con papa y yuca, sopa y aji")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
+
+
+def test_rule_based_parser_respects_replaced_papa_side_without_addon() -> None:
+    parsed = parse_natural_order_rules(
+        "Me gustaría ordenar un pollo asado y en lugar de papá, me dieras solo yuca frita, es posible?"
+    )
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("YUCA_FRITA", 1),
+    ]
+
+
+def test_rule_based_parser_understands_platano_con_queso_as_maduro() -> None:
+    parsed = parse_natural_order_rules("Para pedir por favor 1 pollo asado, 2 plátanos con queso")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("MADURO_QUESO", 2),
+    ]
+
+
+def test_rule_based_parser_does_not_convert_cooking_instruction_to_whole_chicken() -> None:
+    parsed = parse_natural_order_rules("Pero por fis bien asado y me regalas tártara y tienes sopa")
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
 
 
 def test_rule_based_parser_understands_three_quarters() -> None:
