@@ -278,6 +278,7 @@ async def detect_intent(
             or _looks_like_address(text)
             or _looks_like_incomplete_delivery_address(text)
             or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+            or _looks_like_paid_receiver_note(text)
             or _looks_like_delivery_time_note(text)
         ):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
@@ -295,6 +296,7 @@ async def detect_intent(
         or _looks_like_incomplete_delivery_address(text)
         or (_looks_like_payment_method(text) and not _looks_like_order_total_request(text))
         or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+        or _looks_like_paid_receiver_note(text)
         or _looks_like_delivery_time_note(text)
         or _looks_like_sauce_note_request(text)
     ):
@@ -4325,11 +4327,37 @@ def _looks_like_checkout_note(text: str) -> bool:
             "banco",
             "que este aca",
             "antes no",
+            "ponle pagado",
+            "marcalo pagado",
+            "márcalo pagado",
+            "marcarlo pagado",
+            "dejarlo pagado",
+            "queda pagado",
+            "pongan problema",
+            "poner problema",
+            "abuelita",
         ),
     ) or (
         re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
         is not None
         and _contains_any(normalized, ("aca", "este", "pedido", "entrega", "enviar", "mandar"))
+    )
+
+
+def _looks_like_paid_receiver_note(text: str) -> bool:
+    normalized = normalize_text(text)
+    return _contains_any(
+        normalized,
+        (
+            "ponle pagado",
+            "marcalo pagado",
+            "márcalo pagado",
+            "marcarlo pagado",
+            "dejarlo pagado",
+            "queda pagado",
+            "pongan problema",
+            "poner problema",
+        ),
     )
 
 

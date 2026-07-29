@@ -5781,6 +5781,23 @@ async def test_real_sauce_notes_after_cart_are_saved_without_opening_menus(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("step", [ConversationState.POST_ADD, ConversationState.CHECKOUT_REVIEW])
+async def test_real_paid_receiver_note_after_cart_is_saved_without_fallback(step: ConversationState) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(step)
+    graph = build_conversation_graph(services)
+    message = "Mil gracias, porfa ponle pagado para que no le pongan problema a la abuelita que recibe"
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+    assert message in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
 async def test_generic_sauce_question_after_cart_is_saved_as_note() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
