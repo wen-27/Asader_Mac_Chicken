@@ -4184,6 +4184,20 @@ async def test_soup_availability_question_does_not_show_addons_or_add_soup() -> 
 
 
 @pytest.mark.asyncio
+async def test_real_sopita_availability_question_does_not_show_addons_or_add_soup() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Todavía tienen sopita")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye sopa" in result["response_text"].lower()
+    assert "🍟 Adicionales" not in result["response_text"]
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
 async def test_soup_rejection_does_not_open_addons_or_add_soup() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
@@ -4226,6 +4240,24 @@ async def test_post_add_soup_question_uses_last_chicken_product_without_adding_s
     assert "salsa de tomate" in result["response_text"].lower()
     assert "yuca cocida" not in result["response_text"].lower()
     assert "ají" not in result["response_text"].lower()
+    assert "Sopa Adicional" not in result["response_text"]
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
+
+
+@pytest.mark.asyncio
+async def test_real_post_add_sopita_question_uses_last_chicken_product_without_fallback() -> None:
+    services = FakeConversationServices()
+    product = services.products["BROASTER_ENTERO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Viene con sopita Veci?")
+
+    result = await graph.ainvoke(state)
+
+    assert "incluye 2 sopas sin costo" in result["response_text"].lower()
+    assert "Puedes escribirme tu orden" not in result["response_text"]
     assert "Sopa Adicional" not in result["response_text"]
     assert len(services.session.cart) == 1
     assert services.session.cart[0].product_code == ProductCode("BROASTER_ENTERO")
