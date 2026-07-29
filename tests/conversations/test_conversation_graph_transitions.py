@@ -1225,6 +1225,82 @@ async def test_real_single_line_quarter_order_with_address_and_transfer_cleans_p
 
 
 @pytest.mark.asyncio
+async def test_real_inline_order_name_is_saved_without_blocking_product() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Por fa me venden y un pollo asado a nombre de yesit",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert services.session.customer_name == "yesit"
+    assert "No encontre ese producto" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_pickup_inline_name_stops_before_order_text() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="A nombre de Laura para pedir un cuarto broaster pierna con sopita porfa. Paso por él ahorita",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_CUARTO"]
+    assert services.session.fulfillment_type == "PICKUP"
+    assert services.session.customer_name == "Laura"
+
+
+@pytest.mark.asyncio
+async def test_real_category_answer_keeps_context_for_short_size_followup() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    category = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Aún te queda pollo asado?"))
+    followup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Uno entero por favor"))
+
+    assert category["current_step"] == ConversationState.SELECT_ASADO
+    assert followup["current_step"] == ConversationState.ASK_QUANTITY
+    assert services.session.selected_product_code == ProductCode("ASADO_ENTERO")
+    assert "No encontre ese producto" not in followup["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_brosther_category_context_accepts_short_quarter_followup() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    category = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Trae el pollo a la brosther"))
+    quarter = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="El un cuarto"))
+
+    assert category["current_step"] == ConversationState.SELECT_BROASTER
+    assert quarter["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert services.session.selected_product_code == ProductCode("BROASTER_CUARTO")
+    assert "pierna o pechuga" in quarter["response_text"].lower()
+
+
+@pytest.mark.asyncio
 async def test_qa_history_total_question_without_cart_shows_empty_cart() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

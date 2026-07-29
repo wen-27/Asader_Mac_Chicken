@@ -72,6 +72,8 @@ BROASTER_TEXT_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "brosther",
+    "brother",
     "bruster",
     "brusters",
 )
@@ -197,6 +199,13 @@ async def detect_intent(
         and _has_checkout_data_signal(state.raw_text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
+    if (
+        state.current_step in {ConversationState.SELECT_ASADO, ConversationState.SELECT_BROASTER}
+        and not parsed_rules.items
+        and _contextual_chicken_product_code(text, _category_for_selection_step(state.current_step))
+    ):
+        state.intent = None
         return state
     if (
         state.current_step != ConversationState.ASK_CUSTOMER_DATA
@@ -683,15 +692,35 @@ async def _find_natural_product_selection(
     services: ConversationGraphServices,
 ) -> Product | None:
     parsed = parse_natural_order_rules(state.raw_text)
-    if not parsed.items:
-        return None
     current_category = _category_for_selection_step(state.current_step)
+    if not parsed.items:
+        contextual_code = _contextual_chicken_product_code(state.normalized_text, current_category)
+        if contextual_code:
+            return await services.find_product(contextual_code)
+        return None
     for item in parsed.items:
         product = await services.find_product(item.code)
         if product is None:
             continue
         if current_category is None or product.category == current_category:
             return product
+    return None
+
+
+def _contextual_chicken_product_code(text: str, category: ProductCategory | None) -> str | None:
+    if category not in {ProductCategory.POLLO_ASADO, ProductCategory.POLLO_BROASTER}:
+        return None
+    if not _contains_any(text, ("entero", "entera", "completo", "completa", "medio", "media", "mitad", "cuarto", "1/4", "1 4", "3/4", "3 4")):
+        return None
+    prefix = "ASADO" if category == ProductCategory.POLLO_ASADO else "BROASTER"
+    if _contains_any(text, ("3/4", "3 4", "tres cuartos", "tres cuarto")):
+        return f"{prefix}_34"
+    if _contains_any(text, ("medio", "media", "mitad", "1/2", "1 2")):
+        return f"{prefix}_MEDIO"
+    if _contains_any(text, ("cuarto", "1/4", "1 4")):
+        return f"{prefix}_CUARTO"
+    if _contains_any(text, ("entero", "entera", "completo", "completa")):
+        return f"{prefix}_ENTERO"
     return None
 
 
@@ -912,6 +941,9 @@ async def extract_customer_data(
     # objects between nodes, so direct nested mutation is easy to lose or leak.
     customer = state.customer.model_copy(deep=True)
     _clear_invalid_checkout_cached_fields(customer)
+    inline_name = _extract_inline_customer_name(state.raw_text)
+    if inline_name and not customer.name:
+        customer.name = inline_name
     if state.fulfillment_type == "PICKUP":
         _extract_inline_pickup_customer_data(customer, state.raw_text)
     if _is_checkout_filler_message(state.raw_text):
@@ -1129,13 +1161,9 @@ def _clean_checkout_note(note: str) -> str:
 
 def _extract_inline_pickup_customer_data(customer: CustomerDataState, text: str) -> None:
     normalized = normalize_text(text)
-    name_match = re.search(
-        r"\ba nombre de\s+(.+?)(?:\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if name_match and not customer.name:
-        customer.name = _clean_customer_name(name_match.group(1))
+    inline_name = _extract_inline_customer_name(text)
+    if inline_name and not customer.name:
+        customer.name = inline_name
 
     time_match = re.search(
         r"\b(?:a\s+la|a\s+las|para\s+la|para\s+las)\s+([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)",
@@ -1146,6 +1174,17 @@ def _extract_inline_pickup_customer_data(customer: CustomerDataState, text: str)
         customer.observations = f"Recoger a la {time_match.group(1).strip()}"
     elif "recoger" in normalized or "rercoger" in normalized:
         customer.observations = customer.observations or "Recoge en local"
+
+
+def _extract_inline_customer_name(text: str) -> str | None:
+    name_match = re.search(
+        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not name_match:
+        return None
+    return _clean_customer_name(name_match.group(1))
 
 
 def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
@@ -2291,6 +2330,12 @@ async def answer_query(
     if state.query_type == "category":
         category = _category_from_query_value(state.query_value or "")
         if category is not None:
+            step = _selection_step_for_category(category)
+            if step is not None:
+                session = await services.load_or_create_session(ChatId(state.chat_id))
+                session.move_to(step)
+                await services.persist_session(session)
+                state.current_step = step
             products = _visible_menu_products(await services.list_products_by_category(category))
             state.response_text = BotMessageFactory.product_list_answer(category.value, products)
             return state
@@ -3130,13 +3175,16 @@ async def _interpret_natural_order(
     message: str,
     services: ConversationGraphServices,
 ):
+    local_parse = parse_natural_order_rules(message)
+    if local_parse.items:
+        return local_parse
     interpreter = getattr(services, "interpret_natural_order", None)
     if interpreter is None:
-        return parse_natural_order_rules(message)
+        return local_parse
     try:
         return await interpreter(message)
     except Exception:
-        return parse_natural_order_rules(message)
+        return local_parse
 
 
 async def _replace_cart_items_from_natural_message(
@@ -3464,6 +3512,7 @@ def _looks_like_direct_order_with_products(text: str, parsed_rules) -> bool:
             "me da",
             "me vende",
             "me vendes",
+            "me venden",
             "me regala",
             "me regalas",
             "me puede regalar",
@@ -3482,8 +3531,16 @@ def _looks_like_direct_order_with_products(text: str, parsed_rules) -> bool:
             "me ayudas",
             "me envia",
             "me envía",
+            "me envias",
+            "me envías",
             "me puede enviar",
             "me puedes enviar",
+            "para pedir",
+            "para ordenar",
+            "para solicitar",
+            "para encargar",
+            "solicitar",
+            "encargar",
             "agrega",
             "agregar",
             "añade",
@@ -6035,6 +6092,16 @@ def _category_for_selection_step(step: ConversationState) -> ProductCategory | N
         ConversationState.SELECT_ADICIONAL: ProductCategory.ADICIONALES,
         ConversationState.SELECT_ESPECIAL: ProductCategory.ESPECIALES,
     }.get(step)
+
+
+def _selection_step_for_category(category: ProductCategory) -> ConversationState | None:
+    return {
+        ProductCategory.POLLO_ASADO: ConversationState.SELECT_ASADO,
+        ProductCategory.POLLO_BROASTER: ConversationState.SELECT_BROASTER,
+        ProductCategory.BEBIDAS: ConversationState.SELECT_BEBIDA,
+        ProductCategory.ADICIONALES: ConversationState.SELECT_ADICIONAL,
+        ProductCategory.ESPECIALES: ConversationState.SELECT_ESPECIAL,
+    }.get(category)
 
 
 async def _persist_step(
