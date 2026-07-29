@@ -6370,3 +6370,16 @@ async def test_real_failed_chat_included_soup_and_sauce_note_does_not_add_paid_s
     ]
     assert "Sopa Adicional" not in result["response_text"]
     assert "incluye 1 sopa sin costo" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_customer_cancelo_efectivo_without_cart_does_not_start_delivery() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cancelo efectivo"))
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert "recibimos Efectivo" in result["response_text"]
+    assert "domicilio" not in result["response_text"].lower()
+    assert services.session.cart == []
