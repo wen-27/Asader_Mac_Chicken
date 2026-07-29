@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +66,6 @@ class StockControlORM(TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(100), nullable=False)
     label: Mapped[str] = mapped_column(String(180), nullable=False)
     group_label: Mapped[str] = mapped_column(String(80), nullable=False)
-    product_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    variant_label: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    product_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    variant_label: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

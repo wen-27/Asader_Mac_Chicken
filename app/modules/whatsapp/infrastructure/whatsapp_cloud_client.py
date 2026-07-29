@@ -42,6 +42,8 @@ class WhatsAppCloudClient:
         if payload is None:
             payload = _half_combo_buttons_payload(chat_id, text)
         if payload is None:
+            payload = _manzana_25_buttons_payload(chat_id, text)
+        if payload is None:
             payload = {
                 "messaging_product": "whatsapp",
                 "to": str(chat_id.value),
@@ -265,6 +267,32 @@ def _half_combo_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object]
                     {
                         "type": "reply",
                         "reply": {"id": "half_combo_menu", "title": "Menú"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _manzana_25_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "gaseosa Manzana solo la manejamos en presentacion 2.5 L" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "manzana_25_add", "title": "Añadir 2.5 L"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "manzana_25_drinks", "title": "Ver bebidas"},
                     },
                 ]
             },

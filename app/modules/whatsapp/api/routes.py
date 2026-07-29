@@ -1237,30 +1237,7 @@ async def _should_ignore_stale_greeting(
     inbound,
     message_repository: SqlAlchemyTelegramMessageRepository,
 ) -> bool:
-    normalized = _compact_greeting_text(inbound.text)
-    if not _is_compact_greeting_only(normalized):
-        return False
-    if inbound.sent_at_epoch is None:
-        return False
-    sent_at = datetime.fromtimestamp(inbound.sent_at_epoch, tz=timezone.utc)
-    recent_messages = await message_repository.list_by_chat_id(ChatId(inbound.chat_id), limit=8)
-    latest_outbound = next(
-        (message for message in recent_messages if message.update_id == 0),
-        None,
-    )
-    if latest_outbound is None:
-        return False
-    if latest_outbound.received_at > sent_at:
-        return True
-    seconds_since_menu = (sent_at - latest_outbound.received_at).total_seconds()
-    latest_text = _compact_greeting_text(latest_outbound.text_raw or "")
-    return (
-        0 <= seconds_since_menu <= 120
-        and (
-            "hola bienvenido a asadero mc chicken express" in latest_text
-            or ("bienvenid" in latest_text and "mac chicken" in latest_text)
-        )
-    )
+    return False
 
 
 def _compact_greeting_text(text: str) -> str:

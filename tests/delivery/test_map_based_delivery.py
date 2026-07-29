@@ -21,6 +21,12 @@ class FakeDeliveryZones:
                 neighborhood=neighborhood,
                 delivery_price=MoneyCOP(7000),
             )
+        if neighborhood.value.lower() == "el olympo / olimpo":
+            return DeliveryZone(
+                code="DOMICILIO_EL_OLYMPO",
+                neighborhood=neighborhood,
+                delivery_price=MoneyCOP(7000),
+            )
         return None
 
     async def list_active(self):
@@ -33,6 +39,11 @@ class FakeDeliveryZones:
             DeliveryZone(
                 code="DOMICILIO_PROVENZA_DIAMANTE",
                 neighborhood=Neighborhood("Provenza / Diamante"),
+                delivery_price=MoneyCOP(7000),
+            ),
+            DeliveryZone(
+                code="DOMICILIO_EL_OLYMPO",
+                neighborhood=Neighborhood("El Olympo / Olimpo"),
                 delivery_price=MoneyCOP(7000),
             ),
             DeliveryZone(
@@ -101,6 +112,23 @@ async def test_map_delivery_matches_partial_manual_zone_names() -> None:
     assert diamante.delivery_price_cop == 7000
     assert provenza.pricing_source == "zone"
     assert diamante.pricing_source == "zone"
+
+
+@pytest.mark.asyncio
+async def test_map_delivery_matches_el_olympo_manual_price() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        FakeDistanceClient(),
+        DeliveryPricingConfig(origin_address="Lagos 2"),
+    )
+
+    olympo = await use_case.execute("", "El Olympo")
+    olimpo = await use_case.execute("", "Olimpo")
+
+    assert olympo.delivery_price_cop == 7000
+    assert olimpo.delivery_price_cop == 7000
+    assert olympo.pricing_source == "zone"
+    assert olimpo.pricing_source == "zone"
 
 
 @pytest.mark.asyncio

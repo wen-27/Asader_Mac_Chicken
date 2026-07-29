@@ -60,6 +60,8 @@ BROASTER_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "brosther",
+    "brother",
     "brosters",
     "broche",
     "broches",
@@ -335,7 +337,16 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "lasaña",
         ),
     ),
-    NaturalProductRule("MADURO_QUESO", ("maduro", "maduro con queso", "platano maduro")),
+    NaturalProductRule(
+        "MADURO_QUESO",
+        (
+            "maduro",
+            "maduro con queso",
+            "platano maduro",
+            "platano con queso",
+            "platanos con queso",
+        ),
+    ),
     NaturalProductRule("AGUA_BOTELLA", ("agua", "agua botella", "botella de agua")),
     NaturalProductRule(
         "JUGO_HIT_LITRO",
@@ -375,16 +386,41 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
     items: list[ParsedOrderItem] = []
     matched_codes: set[str] = set()
     unsupported_cooked_food = looks_like_unsupported_cooked_food_request(normalized)
+    half_combo_order = _looks_like_half_asado_half_broaster_order(normalized)
+
+    if _looks_like_roasted_chicken_and_half_order(normalized):
+        items.extend(
+            [
+                ParsedOrderItem(code="ASADO_ENTERO", quantity=1),
+                ParsedOrderItem(code="ASADO_MEDIO", quantity=1),
+            ]
+        )
+        matched_codes.update({"ASADO_ENTERO", "ASADO_MEDIO"})
+
+    for implicit_item in _implicit_quarter_piece_items(normalized):
+        if implicit_item.code not in matched_codes:
+            items.append(implicit_item)
+            matched_codes.add(implicit_item.code)
 
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
         if rule.code in matched_codes:
             continue
+        if half_combo_order and rule.code == "ASADO_ENTERO":
+            continue
+        if rule.code.startswith("ASADO_") and _looks_like_roasted_chicken_and_half_price_question(normalized):
+            continue
         if unsupported_cooked_food and rule.code.startswith(("ASADO_", "BROASTER_")):
             continue
+        if rule.code == "PAPA_FRANCESA" and (
+            _looks_like_included_or_replaced_papa(normalized) or _looks_like_implicit_broaster_piece_with_fries(normalized)
+        ):
+            continue
         if _matches_rule(normalized, rule):
-            if rule.code == "SOPA_ADICIONAL" and _looks_like_soup_or_contents_question(normalized):
+            if rule.code == "SOPA_ADICIONAL" and (
+                _looks_like_soup_or_contents_question(normalized) or _looks_like_included_soup_side(normalized)
+            ):
                 continue
             items.append(
                 ParsedOrderItem(
@@ -456,13 +492,170 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "viene con sopa",
             "incluye sopa",
             "tiene sopa",
+            "tiene sopita",
+            "tienen sopa",
+            "tienen sopita",
+            "dan sopa",
+            "me dan sopa",
+            "me guardas sopa",
+            "me guardas sopita",
             "con que viene",
             "con qué viene",
             "que trae",
             "qué trae",
             "que incluye",
             "qué incluye",
+            "pollo con sopa",
+            "pollo con sopas",
+            "venden pollo con sopa",
+            "venden pollo con sopas",
+            "hay sopa",
+            "hay sopas",
+            "hay sopita",
+            "hay aun sopa",
+            "hay aun sopita",
+            "hay aún sopa",
+            "hay aún sopita",
+            "queda sopa",
+            "queda sopita",
+            "queda sopas",
+            "le queda sopa",
+            "le queda sopita",
+            "les queda sopa",
+            "todavia tienen sopa",
+            "todavia tienen sopita",
+            "todavía tienen sopa",
+            "todavía tienen sopita",
+            "sopa no",
+            "sopita no",
+            "sin sopa",
+            "sin sopita",
+            "no sopa",
+            "no sopita",
+            "con sopa",
+            "con sopita",
+            "vine con sopa",
+            "viene con sopas",
+            "vienen con sopa",
+            "vienen con sopas",
         ),
+    )
+
+
+def _looks_like_included_or_replaced_papa(text: str) -> bool:
+    if not _contains_any_terms(text, ("papa", "papas")):
+        return False
+    if _contains_any_terms(
+        text,
+        (
+            "papa francesa",
+            "papas francesas",
+            "papa frita",
+            "papas fritas",
+            "papitas",
+            "adicional de papas",
+            "porcion de francesa",
+            "porción de francesa",
+        ),
+    ):
+        return False
+    return _contains_any_terms(
+        text,
+        (
+            "papa y yuca",
+            "papa con yuca",
+            "con papa y yuca",
+            "papa yuca",
+            "en lugar de papa",
+            "sin papa",
+            "solo yuca",
+        ),
+    ) or (
+        _contains_any_terms(text, CHICKEN_TERMS + ASADO_STYLE_TERMS + BROASTER_TERMS)
+        and _contains_any_terms(text, ("con papa", "con papas"))
+    )
+
+
+def _looks_like_included_soup_side(text: str) -> bool:
+    if not _contains_any_terms(text, ("sopa", "sopita")):
+        return False
+    if _contains_any_terms(text, ("sopa adicional", "una sopa", "un sopa", "dos sopas", "sopa con icopor")):
+        return False
+    return _contains_any_terms(text, CHICKEN_TERMS + ASADO_STYLE_TERMS + BROASTER_TERMS) and _contains_any_terms(
+        text,
+        (
+            "con papa y yuca sopa",
+            "papa y yuca sopa",
+            "sopa y aji",
+            "sopa y ají",
+            "con sopa que",
+            "con sopita porfa",
+            "con sopita por favor",
+        ),
+    )
+
+
+def _implicit_quarter_piece_items(text: str) -> list[ParsedOrderItem]:
+    if _contains_any_terms(text, ("cuarto", "cuartos", "1/4")):
+        return []
+    quantities_by_code: dict[str, int] = {}
+    patterns = (
+        ("ASADO_CUARTO", r"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+asad[oa]s?\b"),
+        (
+            "BROASTER_CUARTO",
+            rf"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+(?:{'|'.join(BROASTER_TERMS)})\b",
+        ),
+        (
+            "BROASTER_CUARTO",
+            r"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+con\s+papas?\s+francesas?\b",
+        ),
+    )
+    for code, pattern in patterns:
+        quantity = 0
+        for match in re.finditer(pattern, text):
+            raw_quantity = match.groupdict().get("qty")
+            if raw_quantity is None:
+                quantity += 1
+            elif raw_quantity.isdigit():
+                quantity += max(1, int(raw_quantity))
+            else:
+                quantity += NUMBER_WORDS.get(raw_quantity, 1)
+        if quantity:
+            quantities_by_code[code] = quantities_by_code.get(code, 0) + quantity
+    return [ParsedOrderItem(code=code, quantity=quantity) for code, quantity in quantities_by_code.items()]
+
+
+def _looks_like_implicit_broaster_piece_with_fries(text: str) -> bool:
+    return re.search(
+        rf"\b(?:pechuga|pierna(?:\s+pernil)?|pernil)(?:\s+(?:{'|'.join(BROASTER_TERMS)}))?\s+con\s+papas?\s+francesas?\b",
+        text,
+    ) is not None
+
+
+def _looks_like_half_asado_half_broaster_order(text: str) -> bool:
+    if "?" in text or "puedo" in text or "pueden" in text:
+        return False
+    has_half_asado = re.search(r"\bmedio\s+(?:pollo\s+)?asado\b|\bmedio\s+a\s+la\s+asado\b", text) is not None
+    has_half_broaster = re.search(
+        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted|brosther|brother)\b",
+        text,
+    ) is not None
+    return has_half_asado and has_half_broaster
+
+
+def _looks_like_roasted_chicken_and_half_order(text: str) -> bool:
+    if "?" in text or _contains_any_terms(text, ("que vale", "q vale", "cuanto vale", "cuánto vale")):
+        return False
+    return re.search(
+        r"\b(?:me\s+regala\s+|me\s+regalas\s+|quiero\s+|dame\s+|deme\s+|necesito\s+)?(?:un\s+|uno\s+)?pollo\s+y\s+medio\b",
+        text,
+    ) is not None
+
+
+def _looks_like_roasted_chicken_and_half_price_question(text: str) -> bool:
+    return re.search(r"\bpollo\s+y\s+medio\b", text) is not None and _contains_any_terms(
+        text,
+        ("que vale", "q vale", "cuanto vale", "cuánto vale", "precio", "cuanto cuesta", "cuánto cuesta"),
     )
 
 
@@ -493,6 +686,8 @@ def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
 
 
 def _looks_like_whole_roasted_chicken(text: str) -> bool:
+    if _contains_any_terms(text, ("bien asado", "quede bien asado")) and not _contains_any_terms(text, CHICKEN_TERMS):
+        return False
     if not _contains_any_terms(
         text,
         (
@@ -713,8 +908,8 @@ def _order_segments(text: str) -> list[str]:
 
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
-        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|medio|media|mitad)\s+"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []

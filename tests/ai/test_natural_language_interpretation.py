@@ -143,6 +143,8 @@ def test_rule_based_parser_tolerates_common_broaster_typos() -> None:
         "me vende dos pollos broasther": [("BROASTER_ENTERO", 2)],
         "necesito un pollo brouster": [("BROASTER_ENTERO", 1)],
         "dame 3/4 broasterr": [("BROASTER_34", 1)],
+        "Para pedir medio pollo asado y medio a la brother": [("ASADO_MEDIO", 1), ("BROASTER_MEDIO", 1)],
+        "Me puedes enviar medio pollo a la brosther porfa": [("BROASTER_MEDIO", 1)],
     }
 
     for message, expected in examples.items():
@@ -241,6 +243,83 @@ def test_rule_based_parser_understands_fractions_and_word_quantities() -> None:
     ]
 
 
+def test_rule_based_parser_understands_real_chat_roasted_chicken_and_half_order() -> None:
+    parsed = parse_natural_order_rules("Me regala pollo y medio entonces")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("ASADO_MEDIO", 1),
+    ]
+
+
+def test_rule_based_parser_does_not_convert_roasted_chicken_and_half_price_question_to_half_order() -> None:
+    parsed = parse_natural_order_rules("Pollo y medio q vale")
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
+
+
+def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_order() -> None:
+    examples = [
+        "ven ustedes venden pollo con sopa ?",
+        "Disculpe le queda sopa?",
+        "Hay aun sopa?",
+        "Todavía tienen sopita",
+        "Tiene sopita ?",
+        "Me guardas sopita cierto?",
+        "Sopa no",
+        "sin sopita por favor",
+        "no sopa",
+        "Con sopa?",
+        "Una pregunta vine con sopa?",
+        "Vienen con sopa?",
+    ]
+
+    for example in examples:
+        parsed = parse_natural_order_rules(example)
+        assert parsed.items == []
+        assert parsed.intent == "unknown"
+
+
+def test_rule_based_parser_keeps_chicken_when_customer_declines_soup() -> None:
+    parsed = parse_natural_order_rules("Me regala medio pollo asado sin sopa")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_MEDIO", 1)]
+
+
+def test_rule_based_parser_does_not_charge_included_roasted_sides_as_addons() -> None:
+    parsed = parse_natural_order_rules("Por favor me envía un pollo asado con papa y yuca, sopa y aji")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
+
+
+def test_rule_based_parser_respects_replaced_papa_side_without_addon() -> None:
+    parsed = parse_natural_order_rules(
+        "Me gustaría ordenar un pollo asado y en lugar de papá, me dieras solo yuca frita, es posible?"
+    )
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("YUCA_FRITA", 1),
+    ]
+
+
+def test_rule_based_parser_understands_platano_con_queso_as_maduro() -> None:
+    parsed = parse_natural_order_rules("Para pedir por favor 1 pollo asado, 2 plátanos con queso")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("MADURO_QUESO", 2),
+    ]
+
+
+def test_rule_based_parser_does_not_convert_cooking_instruction_to_whole_chicken() -> None:
+    parsed = parse_natural_order_rules("Pero por fis bien asado y me regalas tártara y tienes sopa")
+
+    assert parsed.items == []
+    assert parsed.intent == "unknown"
+
+
 def test_rule_based_parser_understands_three_quarters() -> None:
     parsed = parse_natural_order_rules("quiero 3/4 de pollo asado")
 
@@ -256,6 +335,23 @@ def test_rule_based_parser_understands_mixed_quarter_chicken_styles() -> None:
         ("ASADO_CUARTO", 1),
         ("BROASTER_CUARTO", 2),
     ]
+
+
+def test_rule_based_parser_understands_implicit_quarter_piece_with_style() -> None:
+    asado = parse_natural_order_rules("Pechuga asada")
+    broaster = parse_natural_order_rules("Y pechuga broaster")
+    mixed = parse_natural_order_rules("Buenas tardes para pedir medio a la broster y una pierna asada")
+    fries_piece = parse_natural_order_rules("me podría enviar entonces una pierna pernil con papa francesa")
+    styled_fries_piece = parse_natural_order_rules("pechuga broaster con papa francesa")
+
+    assert [(item.code, item.quantity) for item in asado.items] == [("ASADO_CUARTO", 1)]
+    assert [(item.code, item.quantity) for item in broaster.items] == [("BROASTER_CUARTO", 1)]
+    assert [(item.code, item.quantity) for item in mixed.items] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_MEDIO", 1),
+    ]
+    assert [(item.code, item.quantity) for item in fries_piece.items] == [("BROASTER_CUARTO", 1)]
+    assert [(item.code, item.quantity) for item in styled_fries_piece.items] == [("BROASTER_CUARTO", 1)]
 
 
 def test_rule_based_parser_understands_plural_coca_litro_medio() -> None:

@@ -34,6 +34,9 @@ from app.modules.orders.infrastructure.admin_backend_order_client import (
     AdminOrderItemPayload,
     AdminOrderPayload,
 )
+from app.modules.orders.infrastructure.admin_backend_operations_client import (
+    AdminBackendOperationsClient,
+)
 from app.shared.domain.money import MoneyCOP
 from app.shared.domain.value_object import (
     Address,
@@ -75,6 +78,9 @@ class ConversationGraphServices(Protocol):
         ...
 
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
+        ...
+
+    async def delivery_orders_enabled(self) -> bool:
         ...
 
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
@@ -184,6 +190,9 @@ class DefaultConversationGraphServices:
         if self.delivery_calculator is None:
             return CalculateDeliveryResult(found=True, delivery_price_cop=0, pricing_source="not_configured")
         return await self.delivery_calculator.execute(address=address, neighborhood=neighborhood)
+
+    async def delivery_orders_enabled(self) -> bool:
+        return await AdminBackendOperationsClient(get_settings()).delivery_orders_enabled()
 
     async def sync_confirmed_order(self, payload: AdminOrderPayload) -> None:
         if self.orders is not None:
