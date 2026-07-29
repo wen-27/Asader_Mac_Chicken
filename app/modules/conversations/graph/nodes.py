@@ -175,8 +175,20 @@ async def detect_intent(
             state.response_text = BotMessageFactory.coca_cola_clarification()
             state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
             return state
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    if (session.pending_order_json or {}).get("kind") == "manzana_25_offer":
+        if _is_manzana_25_offer_acceptance(text):
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.selected_product_code = "GASEOSA_25"
+            state.selected_chicken_part = "Manzana"
+            state.quantity = 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if _has_checkout_data_signal(state.raw_text):
+            session.clear_pending_order()
+            await services.persist_session(session)
     if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
-        session = await services.load_or_create_session(ChatId(state.chat_id))
         if session.pending_order_json:
             if _should_cancel_pending_order(text):
                 session.clear_pending_order()
@@ -2301,6 +2313,7 @@ async def fallback_natural_language(
                 )
             manzana_notice = await _manzana_25_only_notice(state.normalized_text, services)
             if manzana_notice:
+                await _remember_manzana_25_offer(state, services)
                 state.response_text = "\n\n".join([state.response_text, manzana_notice])
             if unavailable_notice:
                 state.response_text = "\n\n".join([state.response_text, unavailable_notice])
@@ -2329,6 +2342,7 @@ async def fallback_natural_language(
             return state
         manzana_notice = await _manzana_25_only_notice(state.normalized_text, services)
         if manzana_notice:
+            await _remember_manzana_25_offer(state, services)
             state.current_step = ConversationState.NATURAL_ORDER
             state.response_text = manzana_notice
             await _persist_step(state, services)
@@ -3866,6 +3880,24 @@ async def _manzana_25_only_notice(text: str, services: ConversationGraphServices
         f"💰 Precio: ${price}.\n"
         "Si deseas añadirla a tu orden, escribeme: Manzana 2.5."
     )
+
+
+async def _remember_manzana_25_offer(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.pending_order_json = {"kind": "manzana_25_offer"}
+    await services.persist_session(session)
+
+
+def _is_manzana_25_offer_acceptance(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    if cleaned in {"2.5", "2 5", "manzana 2.5", "manzana 2 5"}:
+        return True
+    if _contains_any(cleaned, ("anadir", "añadir", "agregar", "si", "sí", "dale", "listo")):
+        return _contains_any(cleaned, ("2.5", "2 5", "2.5 l", "2 5 l", "manzana"))
+    return False
 
 
 def _looks_like_manzana_unavailable_size(text: str) -> bool:
