@@ -5403,6 +5403,57 @@ async def test_mixed_quarter_chicken_order_adds_broaster_and_asado_in_one_messag
 
 
 @pytest.mark.asyncio
+async def test_implicit_piece_style_order_adds_quarters_with_parts() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    asado = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pechuga asada"))
+    broaster = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Y pechuga broaster"))
+
+    assert "1 x 1/4 Asado - Pechuga" in asado["response_text"]
+    assert "1 x 1/4 Broasted - Pechuga" in broaster["response_text"]
+    assert [(line.product_code.value, line.quantity) for line in services.session.cart] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_CUARTO", 1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mixed_half_broaster_and_implicit_asado_piece_order() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="Buenas tardes para pedir medio a la broster y una pierna asada",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert "1 x 1/2 Broasted" in result["response_text"]
+    assert "1 x 1/4 Asado - Pierna" in result["response_text"]
+    assert [(line.product_code.value, line.quantity) for line in services.session.cart] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_MEDIO", 1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_implicit_broaster_piece_with_fries_adds_quarter_without_extra_fries() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="me podría enviar entonces una pierna pernil con papa francesa",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert "1 x 1/4 Broasted - Pierna" in result["response_text"]
+    assert "Papa Francesa" not in result["response_text"]
+    assert [(line.product_code.value, line.quantity) for line in services.session.cart] == [("BROASTER_CUARTO", 1)]
+
+
+@pytest.mark.asyncio
 async def test_confirm_order_clears_cart() -> None:
     services = FakeConversationServices()
     product = services.products["ASADO_MEDIO"]

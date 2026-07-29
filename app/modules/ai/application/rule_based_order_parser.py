@@ -397,6 +397,11 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         )
         matched_codes.update({"ASADO_ENTERO", "ASADO_MEDIO"})
 
+    for implicit_item in _implicit_quarter_piece_items(normalized):
+        if implicit_item.code not in matched_codes:
+            items.append(implicit_item)
+            matched_codes.add(implicit_item.code)
+
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
@@ -408,7 +413,9 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
             continue
         if unsupported_cooked_food and rule.code.startswith(("ASADO_", "BROASTER_")):
             continue
-        if rule.code == "PAPA_FRANCESA" and _looks_like_included_or_replaced_papa(normalized):
+        if rule.code == "PAPA_FRANCESA" and (
+            _looks_like_included_or_replaced_papa(normalized) or _looks_like_implicit_broaster_piece_with_fries(normalized)
+        ):
             continue
         if _matches_rule(normalized, rule):
             if rule.code == "SOPA_ADICIONAL" and (
@@ -586,6 +593,43 @@ def _looks_like_included_soup_side(text: str) -> bool:
             "con sopita por favor",
         ),
     )
+
+
+def _implicit_quarter_piece_items(text: str) -> list[ParsedOrderItem]:
+    if _contains_any_terms(text, ("cuarto", "cuartos", "1/4")):
+        return []
+    quantities_by_code: dict[str, int] = {}
+    patterns = (
+        ("ASADO_CUARTO", r"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+asad[oa]s?\b"),
+        (
+            "BROASTER_CUARTO",
+            rf"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+(?:{'|'.join(BROASTER_TERMS)})\b",
+        ),
+        (
+            "BROASTER_CUARTO",
+            r"\b(?:(?P<qty>\d+|un|una|dos|tres|cuatro|cinco)\s+)?(?:pechuga|pierna(?:\s+pernil)?|pernil)\s+con\s+papas?\s+francesas?\b",
+        ),
+    )
+    for code, pattern in patterns:
+        quantity = 0
+        for match in re.finditer(pattern, text):
+            raw_quantity = match.groupdict().get("qty")
+            if raw_quantity is None:
+                quantity += 1
+            elif raw_quantity.isdigit():
+                quantity += max(1, int(raw_quantity))
+            else:
+                quantity += NUMBER_WORDS.get(raw_quantity, 1)
+        if quantity:
+            quantities_by_code[code] = quantities_by_code.get(code, 0) + quantity
+    return [ParsedOrderItem(code=code, quantity=quantity) for code, quantity in quantities_by_code.items()]
+
+
+def _looks_like_implicit_broaster_piece_with_fries(text: str) -> bool:
+    return re.search(
+        rf"\b(?:pechuga|pierna(?:\s+pernil)?|pernil)(?:\s+(?:{'|'.join(BROASTER_TERMS)}))?\s+con\s+papas?\s+francesas?\b",
+        text,
+    ) is not None
 
 
 def _looks_like_half_asado_half_broaster_order(text: str) -> bool:
