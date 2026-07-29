@@ -273,6 +273,7 @@ async def detect_intent(
             or _looks_like_address(text)
             or _looks_like_incomplete_delivery_address(text)
             or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+            or _looks_like_delivery_time_note(text)
         ):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
@@ -289,6 +290,7 @@ async def detect_intent(
         or _looks_like_incomplete_delivery_address(text)
         or (_looks_like_payment_method(text) and not _looks_like_order_total_request(text))
         or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+        or _looks_like_delivery_time_note(text)
         or _looks_like_sauce_note_request(text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
@@ -4347,6 +4349,7 @@ def _looks_like_checkout_data_fragment(text: str) -> bool:
         or _looks_like_neighborhood_only(normalized)
         or _looks_like_pickup_request(normalized)
         or (_looks_like_checkout_note(normalized) and not _looks_like_question(normalized))
+        or _looks_like_delivery_time_note(normalized)
     )
 
 
@@ -4363,6 +4366,34 @@ def _looks_like_standalone_delivery_data_fragment(text: str) -> bool:
 
 def _looks_like_standalone_delivery_note(text: str) -> bool:
     return _contains_any(text, ("envias a las", "envías a las", "enviar a las", "mandar a las"))
+
+
+def _looks_like_delivery_time_note(text: str) -> bool:
+    normalized = normalize_text(text)
+    return (
+        re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
+        is not None
+        and _contains_any(
+            normalized,
+            (
+                "lleven",
+                "llevar",
+                "llevarlo",
+                "lo lleven",
+                "puerta",
+                "colegio",
+                "entrega",
+                "entregar",
+                "enviar",
+                "envia",
+                "envía",
+                "mandar",
+                "manda",
+                "aca",
+                "acá",
+            ),
+        )
+    )
 
 
 def _looks_like_customer_name_line(normalized: str) -> bool:

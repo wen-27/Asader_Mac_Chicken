@@ -2873,6 +2873,27 @@ async def test_labeled_address_extracts_embedded_barrio_and_payment_prefix_is_no
 
 
 @pytest.mark.asyncio
+async def test_real_delivery_time_question_after_cart_is_saved_as_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Es posible que lo lleven a las 12 en punto a la puerta del colegio",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert "Es posible que lo lleven a las 12 en punto a la puerta del colegio" in (
+        services.session.observations or ""
+    )
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_before_payment_method() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
