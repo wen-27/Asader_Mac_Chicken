@@ -3083,16 +3083,21 @@ async def _continue_pending_natural_order(
         ]
         state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
         return added_lines
-    parsed_allocations = _extract_chicken_part_allocations(state.normalized_text, remaining)
     part = _extract_chicken_part(state.normalized_text)
     quantity = _extract_positive_integer(state.normalized_text)
+    if part and quantity is None and _looks_like_all_remaining_part_reply(state.normalized_text):
+        parsed_allocations = [{"part": part, "quantity": remaining}]
+    else:
+        parsed_allocations = _extract_chicken_part_allocations(state.normalized_text, remaining)
+        if part and quantity is None and remaining > 1:
+            parsed_allocations = []
     if not parsed_allocations and part and remaining <= 1:
         parsed_allocations = [{"part": part, "quantity": remaining}]
 
     awaiting_part = pending.get("awaiting_part")
     if awaiting_part and quantity is not None:
         parsed_allocations = [{"part": str(awaiting_part), "quantity": quantity}]
-    elif part and quantity is None and remaining > 1:
+    elif not parsed_allocations and part and quantity is None and remaining > 1:
         pending["awaiting_part"] = part
         session.pending_order_json = pending
         session.move_to(ConversationState.ASK_CHICKEN_PART)
@@ -3148,6 +3153,25 @@ def _ask_pending_quarter_part_message(product_name: str, remaining: int) -> str:
     if remaining <= 1:
         return BotMessageFactory.ask_chicken_part(product_name)
     return BotMessageFactory.ask_quarter_distribution(product_name, remaining)
+
+
+def _looks_like_all_remaining_part_reply(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    return _contains_any(
+        cleaned,
+        (
+            "que sea",
+            "que sean",
+            "solo",
+            "solamente",
+            "todas",
+            "todos",
+            "las dos",
+            "los dos",
+            "ambas",
+            "ambos",
+        ),
+    )
 
 
 def _chicken_style_prompt_title(product_code: str) -> str:

@@ -2042,6 +2042,25 @@ async def test_pending_four_quarters_accepts_quantity_and_part_in_one_message() 
 
 
 @pytest.mark.asyncio
+async def test_real_pending_quarters_apply_polite_single_part_to_all_remaining() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="2 cuartos de pollo ala broaster")
+    )
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "Me faltan definir 2 cuarto" in first["response_text"]
+
+    final = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Que sea pierna x favor"))
+
+    assert final["current_step"] == ConversationState.POST_ADD
+    assert "2 x 1/4 Broasted - Pierna" in final["response_text"]
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].quantity == 2
+
+
+@pytest.mark.asyncio
 async def test_pending_five_quarters_accepts_mixed_distribution_in_one_message() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
