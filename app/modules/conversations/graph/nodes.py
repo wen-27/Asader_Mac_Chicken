@@ -198,6 +198,7 @@ async def detect_intent(
         and state.cart
         and _has_checkout_data_signal(state.raw_text)
         and ("\n" in state.raw_text or not _looks_like_payment_account_query(text))
+        and not _looks_like_order_total_request(text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
@@ -218,6 +219,9 @@ async def detect_intent(
         state.query_value = text
         return state
     if _looks_like_payment_cancel_phrase(text) and not parsed_rules.items:
+        if state.cart and _looks_like_order_total_request(text):
+            state.intent = ConversationIntent.MOSTRAR_CARRITO
+            return state
         if state.cart and _looks_like_pay_on_delivery_phrase(text) and not _looks_like_question(text):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
@@ -283,7 +287,7 @@ async def detect_intent(
     if state.current_step == ConversationState.POST_ADD and (
         _looks_like_address(text)
         or _looks_like_incomplete_delivery_address(text)
-        or _looks_like_payment_method(text)
+        or (_looks_like_payment_method(text) and not _looks_like_order_total_request(text))
         or (_looks_like_checkout_note(text) and not _looks_like_question(text))
         or _looks_like_sauce_note_request(text)
     ):
@@ -4529,6 +4533,12 @@ def _is_gratitude_only(text: str) -> bool:
         "perfecto gracias",
         "vale muchas gracias",
         "vale gracias",
+        "ya le cancelo",
+        "ya le canceló",
+        "ya lo cancelo",
+        "ya lo canceló",
+        "ya cancele",
+        "ya cancelé",
     }:
         return True
     return _contains_any(
@@ -5741,6 +5751,8 @@ def _looks_like_payment_methods_query(text: str) -> bool:
 
 def _looks_like_payment_cancel_phrase(text: str) -> bool:
     cleaned = text.strip(" ¿?.,!¡")
+    if _contains_any(cleaned, ("ya le cancelo", "ya le canceló", "ya lo cancelo", "ya lo canceló", "ya cancele", "ya cancelé")):
+        return False
     if not re.search(r"\bcancel(?:ar|o|ó|a|e|as)\b", cleaned):
         return False
     if cleaned in {"cancelar", "cancele", "cancela", "cancelar pedido", "cancelar orden"}:

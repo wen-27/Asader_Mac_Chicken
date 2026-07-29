@@ -4900,6 +4900,65 @@ async def test_real_payment_support_followup_is_acknowledged_with_cart() -> None
 
 
 @pytest.mark.asyncio
+async def test_real_paid_confirmation_does_not_show_payment_methods() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Ya le canceló")
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.RESPONDER_CONSULTA
+    assert "gracias" in result["response_text"].lower()
+    assert "Efectivo, Datafono" not in result["response_text"]
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_total_to_pay_in_cash_shows_cart_instead_of_reasking_data() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Cuánto sería en total para cancelar en efectivo")
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.MOSTRAR_CARRITO
+    assert "1 x 1/2 Asado" in result["response_text"]
+    assert "Total" in result["response_text"]
+    assert "Me falta esta informacion" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_text", "expected_payment"),
+    [
+        ("Puedo abonar todo en efectivo al recibir?", "Efectivo"),
+        ("Me envía por favor el datáfono", "Datafono"),
+        ("Ok nequi", "Nequi"),
+    ],
+)
+async def test_real_payment_method_variants_update_checkout_data(
+    raw_text: str,
+    expected_payment: str,
+) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.customer_name = "Rosalba"
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.PROCESAR_DATOS_CLIENTE
+    assert services.session.payment_method == expected_payment
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
 async def test_gratitude_after_order_does_not_enter_natural_order_fallback() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
