@@ -1168,6 +1168,63 @@ async def test_qa_history_loose_delivery_data_without_cart_starts_delivery(messa
 
 
 @pytest.mark.asyncio
+async def test_real_bucarica_block_address_keeps_block_and_apartment_together() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Bloque 3-2, apto 102, Bucarica")
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert services.session.customer_address == "Bloque 3-2, apto 102"
+    assert services.session.customer_neighborhood == "Bucarica"
+
+
+@pytest.mark.asyncio
+async def test_real_bellavista_sector_address_keeps_sector_before_block() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Sector 16 bloque 3-7 apto 204 altos de bellavista",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert services.session.customer_address == "Sector 16 bloque 3-7 apto 204"
+    assert services.session.customer_neighborhood == "altos de bellavista"
+
+
+@pytest.mark.asyncio
+async def test_real_single_line_quarter_order_with_address_and_transfer_cleans_payment_residue() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Buenos días, para pedir un cuarto de pollo asado (pechuga) "
+                "para la calle 44 #6-31 Lagos 2 para pago por transferencia"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_CUARTO"]
+    assert services.session.customer_address == "calle 44 #6-31"
+    assert services.session.customer_neighborhood == "Lagos 2"
+    assert services.session.payment_method == "Transferencia Bancolombia"
+
+
+@pytest.mark.asyncio
 async def test_qa_history_total_question_without_cart_shows_empty_cart() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

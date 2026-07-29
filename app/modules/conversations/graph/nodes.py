@@ -1217,6 +1217,13 @@ def _split_delimited_checkout_line(line: str) -> list[str] | None:
     if len(parts) <= 1:
         return None
     normalized_parts = [normalize_text(part) for part in parts]
+    joined_normalized = normalize_text(" ".join(parts))
+    if (
+        not any(_looks_like_phone(part) for part in parts)
+        and not any(_looks_like_payment_method(part) for part in normalized_parts)
+        and _looks_like_address(joined_normalized)
+    ):
+        return None
     has_structured_checkout_signal = (
         len(parts) >= 3
         or any(_looks_like_phone(part) for part in parts)
@@ -1239,6 +1246,7 @@ def _split_payment_suffix(line: str) -> list[str]:
         line,
         flags=re.IGNORECASE,
     ).strip(" ,.-")
+    without_payment = _strip_payment_residue(without_payment)
     if not without_payment or normalize_text(without_payment) == normalized:
         return [line]
     if normalize_text(without_payment) in {"pago", "pago en", "pago con", "pagamos", "pagamos por"}:
@@ -1288,10 +1296,20 @@ def _split_composite_checkout_line(line: str) -> list[str] | None:
         after_phone,
         flags=re.IGNORECASE,
     ).strip(" ,.-")
+    after_without_payment = _strip_payment_residue(after_without_payment)
     address, neighborhood = _split_address_and_neighborhood(after_without_payment)
     if not address or not neighborhood:
         return None
     return [_clean_customer_name(before_phone), phone_match.group(0), address, neighborhood, payment]
+
+
+def _strip_payment_residue(text: str) -> str:
+    return re.sub(
+        r"\b(?:para\s+)?(?:pago|pagar|cancelar|cancelo|cancelas)\s*(?:por|en|con)?\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
 
 
 def _extract_payment_from_text(normalized: str) -> str | None:
@@ -1405,6 +1423,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         "olimpo",
         "altos de bellavista",
         "bellavista",
+        "bucarica",
         "lagos 2",
         "lagos ii",
         "provenza",
@@ -1424,6 +1443,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         "veterinaria",
         "banco",
         "torre",
+        "bloque",
         "apto",
         "apartamento",
     )
@@ -1447,8 +1467,22 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
 
 
 def _trim_address_leading_context(text: str) -> str:
+    normalized = normalize_text(text)
+    if normalized.startswith(
+        (
+            "sector ",
+            "altos de bellavista",
+            "bellavista",
+            "bucarica",
+            "lagos 2",
+            "lagos ii",
+            "el manantial",
+            "manantial",
+        )
+    ):
+        return text.strip(" ,.-")
     match = re.search(
-        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|av|transversal|tv|diagonal|dg|manzana|mz)\s*[\w#-]*|#",
+        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|av|transversal|tv|diagonal|dg|manzana|mz|sector|bloque)\s*[\w#-]*|#",
         text,
         flags=re.IGNORECASE,
     )
@@ -1522,6 +1556,7 @@ def _looks_like_address(normalized: str) -> bool:
         "casa",
         "apto",
         "apartamento",
+        "bloque",
         "#",
     }
     tokens = set(normalized.replace("#", " # ").split())
