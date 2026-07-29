@@ -3785,6 +3785,8 @@ async def test_lasagna_availability_question_shows_unavailable_alternative(monke
     [
         "En cuanto tiempo me despachan?",
         "En cuanto tiempo se demora",
+        "En cuanto llegaría?",
+        "Me confirmas en cuánto tiempo estaría",
         "cuanto se demora mi pedido",
         "Tiempo de espera",
     ],
@@ -3798,6 +3800,18 @@ async def test_order_timing_questions_answer_without_fallback(raw_text: str) -> 
 
     assert "40 minutos o menos" in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_pickup_hold_without_product_does_not_start_delivery_order() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Me apartas uno y ya en 10 minutos paso por el")
+
+    result = await graph.ainvoke(state)
+
+    assert "te colaboro con un domicilio" not in result["response_text"].lower()
+    assert services.session.cart == []
 
 
 @pytest.mark.asyncio

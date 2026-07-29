@@ -285,6 +285,9 @@ async def detect_intent(
         if state.cart or session.cart:
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return state
+        if not parsed_rules.items:
+            state.intent = ConversationIntent.MOSTRAR_MENU
+            return state
     elif _looks_like_delivery_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "DELIVERY"
@@ -310,6 +313,11 @@ async def detect_intent(
         return state
     if state.cart and _looks_like_ready_to_checkout_reply(text):
         state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+        return state
+    if _looks_like_order_status_query(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "order_status"
+        state.query_value = text
         return state
     if state.cart and _looks_like_cart_confirmation_or_review_request(text, state.raw_text):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
@@ -407,6 +415,9 @@ async def detect_intent(
         return state
     if _looks_like_delivery_order_start(text):
         state.intent = ConversationIntent.INICIAR_DOMICILIO
+        return state
+    if _looks_like_pickup_request(text) and not state.cart and not parsed_rules.items:
+        state.intent = ConversationIntent.MOSTRAR_MENU
         return state
     category_route = _category_route_from_text(text)
     if category_route is not None and not parsed_rules.items:
@@ -5357,6 +5368,12 @@ def _looks_like_order_status_query(text: str) -> bool:
             "cuando llega",
             "cuándo llega",
             "en cuanto lo traen",
+            "en cuanto llegaria",
+            "en cuanto llegaría",
+            "en cuanto estaria",
+            "en cuanto estaría",
+            "me confirmas en cuanto tiempo estaria",
+            "me confirmas en cuánto tiempo estaría",
             "en cuanto puedo pasar",
             "paso en 15",
             "me van a mandar mi pedido",
