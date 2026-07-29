@@ -5544,6 +5544,28 @@ async def test_asado_with_default_papa_and_yuca_does_not_charge_french_fries() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "El pollo asado lo podrían vender con francesa ?",
+        "El pollo asado se puede vender con papas francesas?",
+    ],
+)
+async def test_real_asado_french_fries_option_question_answers_without_fallback(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_CUARTO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["intent"] == ConversationIntent.RESPONDER_CONSULTA
+    assert "papa francesa como adicional" in result["response_text"].lower()
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_CUARTO"]
+
+
+@pytest.mark.asyncio
 async def test_asado_with_only_cooked_yuca_keeps_side_as_observation_without_charge() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

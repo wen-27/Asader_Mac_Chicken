@@ -840,6 +840,13 @@ class BotMessageFactory:
         return "Listo, lo tenemos presente: sin sopa."
 
     @classmethod
+    def asado_french_fries_option_answer(cls) -> str:
+        return (
+            "Si claro, el pollo asado se puede enviar con papa francesa como adicional. "
+            "Si deseas incluirla, escribeme `adicional de papa francesa` y la agrego a tu orden."
+        )
+
+    @classmethod
     def business_unknown_answer(cls) -> str:
         return (
             "Gracias por escribirme. No cuento con informacion sobre eso. "

@@ -442,6 +442,11 @@ async def detect_intent(
     if not state.cart and not parsed_rules.items and _looks_like_external_price_reference(text):
         state.intent = ConversationIntent.MOSTRAR_MENU
         return state
+    if _looks_like_asado_french_fries_option_question(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "asado_french_fries_option"
+        state.query_value = text
+        return state
     if _looks_like_direct_order_with_products(text, parsed_rules):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
@@ -2340,6 +2345,9 @@ async def answer_query(
         return state
     if state.query_type == "soup_rejection":
         state.response_text = BotMessageFactory.soup_rejection_answer()
+        return state
+    if state.query_type == "asado_french_fries_option":
+        state.response_text = BotMessageFactory.asado_french_fries_option_answer()
         return state
     if state.query_type == "coca_cola":
         session = await services.load_or_create_session(ChatId(state.chat_id))
@@ -5367,6 +5375,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("refund", text)
     if _looks_like_sauce_option_question(text):
         return ("sauce_option", text)
+    if _looks_like_asado_french_fries_option_question(text):
+        return ("asado_french_fries_option", text)
     if _looks_like_combination_question(text):
         return ("combination", text)
     if _looks_like_contents_question(text):
@@ -5545,6 +5555,29 @@ def _looks_like_sauce_option_question(text: str) -> bool:
             "mandar aji",
             "mandar ají",
             "porfa",
+        ),
+    )
+
+
+def _looks_like_asado_french_fries_option_question(text: str) -> bool:
+    if not _contains_any(text, ("asado", "pollo asado")):
+        return False
+    if not _contains_any(text, ("francesa", "francesas", "papa francesa", "papas francesas")):
+        return False
+    return _contains_any(
+        text,
+        (
+            "puede",
+            "pueden",
+            "podria",
+            "podría",
+            "podrian",
+            "podrían",
+            "se puede",
+            "vender",
+            "venden",
+            "con francesa",
+            "con papas francesas",
         ),
     )
 
