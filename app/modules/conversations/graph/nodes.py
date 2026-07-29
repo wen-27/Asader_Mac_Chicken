@@ -194,6 +194,15 @@ async def detect_intent(
             state.intent = ConversationIntent.LENGUAJE_NATURAL
             return state
     if (
+        state.current_step == ConversationState.ASK_CHICKEN_PART
+        and state.selected_product_code
+        and not _requires_chicken_selection(state.selected_product_code)
+        and _looks_like_normal_chicken_reply(text)
+    ):
+        state.selected_chicken_part = None
+        state.intent = ConversationIntent.PEDIR_CANTIDAD
+        return state
+    if (
         state.current_step == ConversationState.POST_ADD
         and state.cart
         and _looks_like_pickup_request(text)
@@ -4820,6 +4829,17 @@ def _requires_chicken_part(product_code: str | None) -> bool:
 
 def _requires_chicken_composition(product_code: str | None) -> bool:
     return product_code in {"ASADO_34", "BROASTER_34"}
+
+
+def _looks_like_normal_chicken_reply(text: str) -> bool:
+    normalized = text.strip(" .,!¡¿?")
+    return normalized in {
+        "normal",
+        "asi normal",
+        "así normal",
+        "normal por favor",
+        "normal porfa",
+    }
 
 
 def _extract_chicken_style(text: str) -> str | None:

@@ -1775,6 +1775,27 @@ async def test_chicken_part_response_then_asks_quantity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_real_half_broaster_normal_reply_does_not_start_delivery() -> None:
+    services = FakeConversationServices()
+    product = services.products["BROASTER_MEDIO"]
+    services.session.selected_product_code = product.code
+    services.session.selected_product_name = product.name
+    services.session.selected_unit_price_cop = product.price.amount
+    services.session.move_to(ConversationState.ASK_CHICKEN_PART)
+    state = ConversationGraphState(chat_id=123, raw_text="Normal")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+    state = await nodes.ask_quantity(state, services)
+
+    assert state.current_step == ConversationState.ASK_QUANTITY
+    assert services.session.selected_chicken_part is None
+    assert "1/2 Broasted" in state.response_text
+    assert "domicilio" not in state.response_text.lower()
+
+
+@pytest.mark.asyncio
 async def test_product_variant_response_by_name_then_asks_quantity() -> None:
     services = FakeConversationServices()
     services.session.selected_product_code = ProductCode("GASEOSA_25")
