@@ -256,6 +256,11 @@ async def detect_intent(
     if state.cart and _looks_like_paid_sauce_extra(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
+    if state.cart and _looks_like_order_status_query(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "order_status"
+        state.query_value = text
+        return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
         text == "0" or _is_back_request(text) or _contains_command(text, ("volver al carrito", "volver a la compra", "volver a la orden", "ver carrito", "ver compra", "ver orden", "carrito", "compra", "orden"))
     ):
@@ -1170,6 +1175,12 @@ def _extract_customer_data_from_free_lines(
         and len(remaining) == 1
     ):
         customer.neighborhood = remaining.pop(0)
+    if fulfillment_type != "PICKUP" and remaining:
+        delivery_time_notes = [line for line in remaining if _looks_like_delivery_time_note(line)]
+        if delivery_time_notes:
+            for note_line in delivery_time_notes:
+                customer.observations = _append_observation(customer.observations, note_line)
+            remaining = [line for line in remaining if line not in delivery_time_notes]
     if not customer.name and remaining:
         customer.name = _clean_customer_name(remaining.pop(0))
     if fulfillment_type == "PICKUP":
@@ -4371,8 +4382,14 @@ def _looks_like_standalone_delivery_note(text: str) -> bool:
 def _looks_like_delivery_time_note(text: str) -> bool:
     normalized = normalize_text(text)
     return (
-        re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
-        is not None
+        (
+            re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
+            is not None
+            or (
+                re.search(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized) is not None
+                and _contains_any(normalized, ("es posible", "puede ser", "podria", "podría"))
+            )
+        )
         and _contains_any(
             normalized,
             (
@@ -4391,6 +4408,7 @@ def _looks_like_delivery_time_note(text: str) -> bool:
                 "manda",
                 "aca",
                 "acá",
+                "posible",
             ),
         )
     )
@@ -5587,6 +5605,18 @@ def _looks_like_order_status_query(text: str) -> bool:
     if _looks_like_new_order_request(text):
         return False
     cleaned = text.strip(" ¿?.,!¡")
+    if _contains_any(
+        cleaned,
+        (
+            "ya salio",
+            "ya salió",
+            "si le salio",
+            "sí le salio",
+            "si le salió",
+            "sí le salió",
+        ),
+    ):
+        return True
     if cleaned in {
         "demora",
         "se demora",

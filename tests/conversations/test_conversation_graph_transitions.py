@@ -2894,6 +2894,35 @@ async def test_real_delivery_time_question_after_cart_is_saved_as_note() -> None
 
 
 @pytest.mark.asyncio
+async def test_real_possible_delivery_time_range_after_cart_is_saved_as_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="12:50 1pm es posible?"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert "12:50 1pm es posible?" in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_text", ["Veci ya salió ?", "Así si le salió?"])
+async def test_real_short_order_status_followups_answer_timing_with_cart(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "40 minutos" in result["response_text"]
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_before_payment_method() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
