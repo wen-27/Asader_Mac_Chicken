@@ -1301,6 +1301,49 @@ async def test_real_brosther_category_context_accepts_short_quarter_followup() -
 
 
 @pytest.mark.asyncio
+async def test_real_delivery_confirmation_after_cart_asks_for_delivery_data() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Con domicilio x favor"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert services.session.fulfillment_type == "DELIVERY"
+    assert "Nombre completo" in result["response_text"]
+    assert "El domicilio para x favor" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_send_time_question_after_cart_answers_timing() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="A q horas lo.envia"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "40 minutos" in result["response_text"]
+    assert "Me falta esta informacion" not in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_no_more_additional_sauces_after_cart_starts_checkout() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="No con esas 2 listo gracias"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Nombre completo" in result["response_text"]
+    assert "Puedes escribirme tu orden en texto normal" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_qa_history_total_question_without_cart_shows_empty_cart() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

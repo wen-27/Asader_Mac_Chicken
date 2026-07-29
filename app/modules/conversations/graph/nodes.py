@@ -324,6 +324,13 @@ async def detect_intent(
     if state.cart and _looks_like_ready_to_checkout_reply(text):
         state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
         return state
+    if state.cart and _looks_like_delivery_confirmation_reply(text):
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.fulfillment_type = "DELIVERY"
+        state.fulfillment_type = "DELIVERY"
+        await services.persist_session(session)
+        state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
+        return state
     if _looks_like_order_status_query(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "order_status"
@@ -4057,6 +4064,11 @@ def _is_no_reply(text: str) -> bool:
 
 def _looks_like_ready_to_checkout_reply(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
+    if _contains_any(normalized, ("no con esas", "solo esas", "sólo esas")) and _contains_any(
+        normalized,
+        ("listo", "gracias", "esta bien", "está bien"),
+    ):
+        return True
     return normalized in {
         "listo",
         "ok",
@@ -4072,6 +4084,20 @@ def _looks_like_ready_to_checkout_reply(text: str) -> bool:
         "asi esta bien",
         "así está bien",
         "ya",
+    }
+
+
+def _looks_like_delivery_confirmation_reply(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "con domicilio",
+        "con domicilio x favor",
+        "con domicilio por favor",
+        "con domicilio porfa",
+        "domicilio",
+        "domicilio x favor",
+        "domicilio por favor",
+        "domicilio porfa",
     }
 
 
@@ -4459,6 +4485,7 @@ def _is_gratitude_only(text: str) -> bool:
         (
             "le agradezco",
             "ya le paso el comprobante",
+            "ya le paso",
             "ya le envío soporte",
             "ya le envio soporte",
             "ya le envío el soporte",
@@ -4961,7 +4988,18 @@ def _looks_like_pickup_request(text: str) -> bool:
 
 
 def _looks_like_delivery_request(text: str) -> bool:
-    return _contains_any(text, ("domicilio", "domi", "envio", "envío", "me lo llevan", "para llevar a"))
+    return _contains_any(
+        text,
+        (
+            "domicilio",
+            "domi",
+            "envio",
+            "envío",
+            "con domicilio",
+            "me lo llevan",
+            "para llevar a",
+        ),
+    )
 
 
 def _looks_like_delivery_order_start(text: str) -> bool:
@@ -5183,7 +5221,7 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return None
     if any(word in text for word in ["domicilio", "domi", "envio", "envío", "llevar", "lleva"]):
         neighborhood = _extract_delivery_neighborhood(text)
-        if neighborhood:
+        if neighborhood and not _is_generic_delivery_neighborhood(neighborhood):
             return ("delivery", neighborhood)
         return ("service", text)
     if any(word in text for word in ["vale", "valor", "precio", "cuanto cuesta", "cuánto cuesta"]):
@@ -5513,6 +5551,12 @@ def _looks_like_order_status_query(text: str) -> bool:
             "en cuanto llegaría",
             "en cuanto estaria",
             "en cuanto estaría",
+            "a q horas lo envia",
+            "a q horas lo.envia",
+            "a que horas lo envia",
+            "a qué horas lo envía",
+            "a que hora lo envia",
+            "a qué hora lo envía",
             "me confirmas en cuanto tiempo estaria",
             "me confirmas en cuánto tiempo estaría",
             "en cuanto puedo pasar",
@@ -5865,7 +5909,10 @@ def _is_generic_delivery_neighborhood(value: str) -> bool:
         "para domicilio",
         "por favor",
         "porfavor",
+        "x favor",
         "favor",
+        "porfa",
+        "xfa",
         "servicio",
         "servicio domicilio",
         "domicilios",
