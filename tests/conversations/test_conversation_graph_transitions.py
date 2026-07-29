@@ -5037,6 +5037,8 @@ async def test_real_total_to_pay_in_cash_shows_cart_instead_of_reasking_data() -
     ("raw_text", "expected_payment"),
     [
         ("Puedo abonar todo en efectivo al recibir?", "Efectivo"),
+        ("Tengo un billete de 100", "Efectivo"),
+        ("Si con un billete de 50", "Efectivo"),
         ("Me envía por favor el datáfono", "Datafono"),
         ("Ok nequi", "Nequi"),
     ],

@@ -396,6 +396,11 @@ async def detect_intent(
     if _looks_like_unstyled_chicken_order(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
+    if not state.cart and not parsed_rules.items and _looks_like_cash_bill_payment_phrase(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "payment_methods"
+        state.query_value = text
+        return state
     if (
         not state.cart
         and not parsed_rules.items
@@ -1414,6 +1419,8 @@ def _extract_payment_from_text(normalized: str) -> str | None:
         return "Transferencia Bancolombia"
     if _looks_like_pay_on_delivery_phrase(normalized):
         return "Efectivo"
+    if _looks_like_cash_bill_payment_phrase(normalized):
+        return "Efectivo"
     if "efectivo" in normalized:
         return "Efectivo"
     return None
@@ -1685,7 +1692,10 @@ def _looks_like_incomplete_delivery_address(normalized: str) -> bool:
 
 
 def _looks_like_payment_method(normalized: str) -> bool:
-    return _looks_like_pay_on_delivery_phrase(normalized) or any(
+    return (
+        _looks_like_pay_on_delivery_phrase(normalized)
+        or _looks_like_cash_bill_payment_phrase(normalized)
+        or any(
         word in normalized
         for word in [
             "efectivo",
@@ -1702,6 +1712,7 @@ def _looks_like_payment_method(normalized: str) -> bool:
             "transferi",
             "transferí",
         ]
+        )
     )
 
 
@@ -1896,6 +1907,8 @@ def _normalize_payment_method(normalized: str, original: str) -> str:
     ):
         return "Transferencia Bancolombia"
     if _looks_like_pay_on_delivery_phrase(normalized):
+        return "Efectivo"
+    if _looks_like_cash_bill_payment_phrase(normalized):
         return "Efectivo"
     if "efectivo" in normalized:
         return "Efectivo"
@@ -5919,6 +5932,14 @@ def _looks_like_pay_on_delivery_phrase(text: str) -> bool:
             "pagar alla",
             "pagar allá",
         ),
+    )
+
+
+def _looks_like_cash_bill_payment_phrase(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    return _contains_any(
+        cleaned,
+        ("billete", "billete de", "con un billete", "tengo un billete", "con billete"),
     )
 
 
