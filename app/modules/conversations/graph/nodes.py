@@ -287,6 +287,40 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
+    if state.current_step == ConversationState.ASK_CUSTOMER_DATA and state.cart:
+        menu_intent = _detect_natural_menu_intent(text)
+        category_route = _category_route_from_text(text)
+        if menu_intent is None and category_route is not None:
+            category, _next_step = category_route
+            if category == ProductCategory.POLLO_ASADO:
+                menu_intent = ConversationIntent.MENU_ASADO
+            elif category == ProductCategory.POLLO_BROASTER:
+                menu_intent = ConversationIntent.MENU_BROASTER
+            elif category == ProductCategory.BEBIDAS:
+                menu_intent = ConversationIntent.MENU_BEBIDAS
+            elif category == ProductCategory.ADICIONALES:
+                menu_intent = ConversationIntent.MENU_ADICIONALES
+            elif category == ProductCategory.ESPECIALES:
+                menu_intent = ConversationIntent.MENU_ESPECIALES
+        if menu_intent in {
+            ConversationIntent.MENU_BEBIDAS,
+            ConversationIntent.MENU_ADICIONALES,
+            ConversationIntent.MENU_ASADO,
+            ConversationIntent.MENU_BROASTER,
+            ConversationIntent.MENU_ESPECIALES,
+        }:
+            state.intent = menu_intent
+            return state
+        if _looks_like_order_status_query(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "order_status"
+            state.query_value = text
+            return state
+        if _looks_like_order_waiting_followup(text) or _is_gratitude_only(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "gratitude"
+            state.query_value = text
+            return state
     if state.current_step == ConversationState.CHECKOUT_REVIEW:
         if _is_no_reply(text):
             state.intent = ConversationIntent.CANCELAR
@@ -1042,15 +1076,7 @@ async def extract_customer_data(
             customer.phone = value
         elif key in {"direccion", "dir"}:
             address, neighborhood, note = _split_rich_address_line(value)
-            if (
-                state.current_step != ConversationState.ASK_CUSTOMER_DATA
-                and address
-                and neighborhood
-                and "barrio" in normalize_text(value)
-                and "barrio" not in normalize_text(address)
-            ):
-                address = f"{address}, barrio"
-            customer.address = address
+            customer.address = _remove_inline_neighborhood_from_address(address, neighborhood)
             if neighborhood:
                 customer.neighborhood = neighborhood
             if note:
@@ -1178,7 +1204,7 @@ def _extract_customer_data_from_free_lines(
             continue
         if _looks_like_address(normalized):
             address, neighborhood, note = _split_rich_address_line(line)
-            customer.address = address
+            customer.address = _remove_inline_neighborhood_from_address(address, neighborhood)
             if neighborhood:
                 customer.neighborhood = neighborhood
             sauce_note = _extract_sauce_note(normalized)
@@ -1237,6 +1263,19 @@ def _clean_checkout_note(note: str) -> str:
     cleaned = re.sub(r",\s*por favor,?\s*", ". ", note.strip(), flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
+
+
+def _remove_inline_neighborhood_from_address(address: str | None, neighborhood: str | None) -> str | None:
+    if not address or not neighborhood:
+        return address
+    cleaned = re.sub(
+        rf"\s*,?\s*barrio\s+{re.escape(neighborhood)}\s*$",
+        "",
+        address.strip(),
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s*,?\s*barrio\s*$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip(" ,") or address
 
 
 def _extract_inline_pickup_customer_data(customer: CustomerDataState, text: str) -> None:
@@ -4694,6 +4733,10 @@ def _is_gratitude_only(text: str) -> bool:
         "perfecto gracias",
         "vale muchas gracias",
         "vale gracias",
+        "quedo atenta",
+        "quedo atento",
+        "vale quedo atenta",
+        "vale quedo atento",
         "ya le cancelo",
         "ya le canceló",
         "ya lo cancelo",
@@ -4706,6 +4749,9 @@ def _is_gratitude_only(text: str) -> bool:
         normalized,
         (
             "le agradezco",
+            "quedo pendiente",
+            "quedo atento",
+            "quedo atenta",
             "ya le paso el comprobante",
             "te envío soporte",
             "te envio soporte",
@@ -5779,6 +5825,9 @@ def _looks_like_order_status_query(text: str) -> bool:
         "demora",
         "se demora",
         "demora mucho",
+        "ya van 40 minuticos",
+        "ya van 40 minutos",
+        "ya van cuarenta minutos",
         "cuanto demora",
         "cuanto se demora",
         "cuanto tarda",
@@ -5848,6 +5897,8 @@ def _looks_like_order_status_query(text: str) -> bool:
     )
     if cleaned in status_terms or cleaned in {"cuanto demora", "cuánto demora", "cuanto se demora", "cuánto se demora"}:
         return True
+    if _looks_like_order_waiting_followup(text):
+        return True
     product_terms = ("pollo", "pedido", "domicilio", "orden", "comida")
     direct_time_question = _contains_any(
         text,
@@ -5907,6 +5958,14 @@ def _looks_like_order_status_query(text: str) -> bool:
     )
     return direct_time_question or (
         _contains_any(text, status_terms) and _contains_any(text, product_terms)
+    )
+
+
+def _looks_like_order_waiting_followup(text: str) -> bool:
+    return bool(
+        re.search(r"\bya\s+van\s+\d+\s*(?:min|mins|minuto|minutos|minuticos)\b", text)
+        or re.search(r"\bvan\s+\d+\s*(?:min|mins|minuto|minutos|minuticos)\b", text)
+        or _contains_any(text, ("ya van cuarenta minutos", "llevo esperando"))
     )
 
 
