@@ -60,6 +60,7 @@ BROASTER_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "brother",
     "brosters",
     "broche",
     "broches",
@@ -377,6 +378,15 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
     unsupported_cooked_food = looks_like_unsupported_cooked_food_request(normalized)
     half_combo_order = _looks_like_half_asado_half_broaster_order(normalized)
 
+    if _looks_like_roasted_chicken_and_half_order(normalized):
+        items.extend(
+            [
+                ParsedOrderItem(code="ASADO_ENTERO", quantity=1),
+                ParsedOrderItem(code="ASADO_MEDIO", quantity=1),
+            ]
+        )
+        matched_codes.update({"ASADO_ENTERO", "ASADO_MEDIO"})
+
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
@@ -467,6 +477,10 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "qué trae",
             "que incluye",
             "qué incluye",
+            "pollo con sopa",
+            "pollo con sopas",
+            "venden pollo con sopa",
+            "venden pollo con sopas",
         ),
     )
 
@@ -476,10 +490,19 @@ def _looks_like_half_asado_half_broaster_order(text: str) -> bool:
         return False
     has_half_asado = re.search(r"\bmedio\s+(?:pollo\s+)?asado\b|\bmedio\s+a\s+la\s+asado\b", text) is not None
     has_half_broaster = re.search(
-        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted)\b",
+        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted|brother)\b",
         text,
     ) is not None
     return has_half_asado and has_half_broaster
+
+
+def _looks_like_roasted_chicken_and_half_order(text: str) -> bool:
+    if "?" in text or _contains_any_terms(text, ("que vale", "q vale", "cuanto vale", "cuánto vale")):
+        return False
+    return re.search(
+        r"\b(?:me\s+regala\s+|me\s+regalas\s+|quiero\s+|dame\s+|deme\s+|necesito\s+)?(?:un\s+|uno\s+)?pollo\s+y\s+medio\b",
+        text,
+    ) is not None
 
 
 def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
@@ -730,7 +753,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []
