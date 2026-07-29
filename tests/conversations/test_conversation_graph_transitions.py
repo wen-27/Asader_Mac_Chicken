@@ -5798,6 +5798,25 @@ async def test_real_paid_receiver_note_after_cart_is_saved_without_fallback(step
 
 
 @pytest.mark.asyncio
+async def test_real_pickup_message_with_inline_name_saves_customer_name() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Para recoger por favor mi nombre es Diego Báez")
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert services.session.fulfillment_type == "PICKUP"
+    assert services.session.customer_name == "Diego Báez"
+    assert "telefono" in result["response_text"].lower()
+    assert "direccion" not in result["response_text"].lower()
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_generic_sauce_question_after_cart_is_saved_as_note() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))

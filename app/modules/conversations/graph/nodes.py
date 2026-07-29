@@ -196,6 +196,18 @@ async def detect_intent(
     if (
         state.current_step == ConversationState.POST_ADD
         and state.cart
+        and _looks_like_pickup_request(text)
+        and _has_pickup_customer_data_signal(state.raw_text)
+    ):
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.fulfillment_type = "PICKUP"
+        state.fulfillment_type = "PICKUP"
+        await services.persist_session(session)
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
+    if (
+        state.current_step == ConversationState.POST_ADD
+        and state.cart
         and _has_checkout_data_signal(state.raw_text)
         and ("\n" in state.raw_text or not _looks_like_payment_account_query(text))
         and not _looks_like_order_total_request(text)
@@ -315,6 +327,9 @@ async def detect_intent(
         state.fulfillment_type = "PICKUP"
         await services.persist_session(session)
         if state.cart or session.cart:
+            if _has_pickup_customer_data_signal(state.raw_text):
+                state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+                return state
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
             return state
         if not parsed_rules.items:
@@ -1239,6 +1254,12 @@ def _extract_inline_customer_name(text: str) -> str | None:
         flags=re.IGNORECASE | re.DOTALL,
     )
     if not name_match:
+        name_match = re.search(
+            r"\bmi nombre es\s+(.+?)(?:\s+<|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+    if not name_match:
         return None
     return _clean_customer_name(name_match.group(1))
 
@@ -1435,7 +1456,7 @@ def _extract_payment_from_text(normalized: str) -> str | None:
 
 def _has_checkout_data_signal(text: str) -> bool:
     normalized_text = normalize_text(text)
-    if "a nombre de" in normalized_text:
+    if _contains_any(normalized_text, ("a nombre de", "mi nombre es")):
         return True
     for line in text.splitlines():
         normalized = normalize_text(line)
@@ -1471,6 +1492,15 @@ def _has_checkout_data_signal(text: str) -> bool:
                 continue
             return True
     return False
+
+
+def _has_pickup_customer_data_signal(text: str) -> bool:
+    normalized = normalize_text(text)
+    return (
+        _has_checkout_data_signal(text)
+        or _contains_any(normalized, ("mi nombre es", "a nombre de"))
+        or _looks_like_phone(text)
+    )
 
 
 def _line_has_checkout_signal(line: str, normalized: str) -> bool:
