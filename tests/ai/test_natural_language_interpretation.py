@@ -267,6 +267,9 @@ def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_or
         "Todavía tienen sopita",
         "Tiene sopita ?",
         "Me guardas sopita cierto?",
+        "Sopa no",
+        "sin sopita por favor",
+        "no sopa",
         "Con sopa?",
         "Una pregunta vine con sopa?",
         "Vienen con sopa?",
@@ -276,6 +279,12 @@ def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_or
         parsed = parse_natural_order_rules(example)
         assert parsed.items == []
         assert parsed.intent == "unknown"
+
+
+def test_rule_based_parser_keeps_chicken_when_customer_declines_soup() -> None:
+    parsed = parse_natural_order_rules("Me regala medio pollo asado sin sopa")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_MEDIO", 1)]
 
 
 def test_rule_based_parser_does_not_charge_included_roasted_sides_as_addons() -> None:

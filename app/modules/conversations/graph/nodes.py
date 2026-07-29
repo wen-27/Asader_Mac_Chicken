@@ -373,6 +373,11 @@ async def detect_intent(
     if _looks_like_clear_cart_request(text):
         state.intent = ConversationIntent.VACIAR_CARRITO
         return state
+    if _looks_like_soup_rejection(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "soup_rejection"
+        state.query_value = text
+        return state
     if not state.cart and not parsed_rules.items and _looks_like_external_price_reference(text):
         state.intent = ConversationIntent.MOSTRAR_MENU
         return state
@@ -2156,6 +2161,9 @@ async def answer_query(
         return state
     if state.query_type == "complaint":
         state.response_text = BotMessageFactory.complaint_answer()
+        return state
+    if state.query_type == "soup_rejection":
+        state.response_text = BotMessageFactory.soup_rejection_answer()
         return state
     if state.query_type == "coca_cola":
         session = await services.load_or_create_session(ChatId(state.chat_id))
@@ -5220,6 +5228,28 @@ def _looks_like_soup_availability_question(text: str) -> bool:
             "quedan sopas",
             "les queda sopa",
             "les quedan sopas",
+        ),
+    )
+
+
+def _looks_like_soup_rejection(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "sopa no",
+        "sopita no",
+        "sin sopa",
+        "sin sopita",
+        "no sopa",
+        "no sopita",
+    } or _contains_any(
+        normalized,
+        (
+            "sin sopa por favor",
+            "sin sopita por favor",
+            "sin sopa porfa",
+            "sin sopita porfa",
+            "no quiero sopa",
+            "no quiero sopita",
         ),
     )
 

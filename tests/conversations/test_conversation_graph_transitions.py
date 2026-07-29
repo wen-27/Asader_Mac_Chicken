@@ -3925,6 +3925,31 @@ async def test_soup_availability_question_does_not_show_addons_or_add_soup() -> 
 
 
 @pytest.mark.asyncio
+async def test_soup_rejection_does_not_open_addons_or_add_soup() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Sopa no")
+
+    result = await graph.ainvoke(state)
+
+    assert "sin sopa" in result["response_text"].lower()
+    assert "🍟 Adicionales" not in result["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
+async def test_chicken_order_with_soup_rejection_keeps_only_chicken() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Me regala medio pollo asado sin sopa")
+
+    result = await graph.ainvoke(state)
+
+    assert "Añadido a tu orden" in result["response_text"]
+    assert [(line.product_code.value, line.quantity) for line in services.session.cart] == [("ASADO_MEDIO", 1)]
+
+
+@pytest.mark.asyncio
 async def test_post_add_soup_question_uses_last_chicken_product_without_adding_soup() -> None:
     services = FakeConversationServices()
     product = services.products["BROASTER_ENTERO"]

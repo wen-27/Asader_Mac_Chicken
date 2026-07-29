@@ -836,6 +836,10 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def soup_rejection_answer(cls) -> str:
+        return "Listo, lo tenemos presente: sin sopa."
+
+    @classmethod
     def business_unknown_answer(cls) -> str:
         return (
             "Gracias por escribirme. No cuento con informacion sobre eso. "
