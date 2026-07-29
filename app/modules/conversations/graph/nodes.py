@@ -197,6 +197,7 @@ async def detect_intent(
         state.current_step == ConversationState.POST_ADD
         and state.cart
         and _has_checkout_data_signal(state.raw_text)
+        and ("\n" in state.raw_text or not _looks_like_payment_account_query(text))
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
@@ -214,6 +215,14 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "payment_account"
+        state.query_value = text
+        return state
+    if _looks_like_payment_cancel_phrase(text) and not parsed_rules.items:
+        if state.cart and _looks_like_pay_on_delivery_phrase(text) and not _looks_like_question(text):
+            state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+            return state
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "payment_methods"
         state.query_value = text
         return state
     if await _delivery_orders_disabled_for_message(state, services, parsed_rules):
@@ -347,6 +356,17 @@ async def detect_intent(
         state.query_type = "gratitude"
         state.query_value = text
         return state
+    query = _classify_business_query(text)
+    if (
+        query is not None
+        and query[0] in {"payment_account", "payment_methods"}
+        and _looks_like_question(text)
+        and "\n" not in state.raw_text
+    ):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = query[0]
+        state.query_value = query[1]
+        return state
     if state.current_step != ConversationState.ASK_CHICKEN_PART and _looks_like_chicken_part_followup(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "contents"
@@ -413,7 +433,7 @@ async def detect_intent(
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     query = _classify_business_query(text)
-    if query is not None and _looks_like_question(text):
+    if query is not None and _looks_like_question(text) and "\n" not in state.raw_text:
         # Questions such as "les queda lasagna?" must be answered from the
         # catalog instead of being treated as a greeting.
         state.intent = ConversationIntent.RESPONDER_CONSULTA
@@ -529,7 +549,7 @@ async def detect_intent(
             state.intent = ConversationIntent.VACIAR_CARRITO
             return state
     query = _classify_business_query(text)
-    if query is not None:
+    if query is not None and not parsed_rules.items and "\n" not in state.raw_text:
         # Business questions such as prices, drink options and delivery costs are
         # answered locally from catalog/zones. Out-of-scope prompts do not spend IA.
         state.intent = ConversationIntent.RESPONDER_CONSULTA
@@ -1363,8 +1383,20 @@ def _extract_payment_from_text(normalized: str) -> str | None:
         return "Nequi"
     if "datafono" in normalized or "datáfono" in normalized:
         return "Datafono"
-    if "transferencia" in normalized or "bancolombia" in normalized:
+    if (
+        "transferencia" in normalized
+        or "bancolombia" in normalized
+        or "consignar" in normalized
+        or "consigno" in normalized
+        or "consignacion" in normalized
+        or "consignación" in normalized
+        or "transfiero" in normalized
+        or "transferi" in normalized
+        or "transferí" in normalized
+    ):
         return "Transferencia Bancolombia"
+    if _looks_like_pay_on_delivery_phrase(normalized):
+        return "Efectivo"
     if "efectivo" in normalized:
         return "Efectivo"
     return None
@@ -1636,7 +1668,7 @@ def _looks_like_incomplete_delivery_address(normalized: str) -> bool:
 
 
 def _looks_like_payment_method(normalized: str) -> bool:
-    return any(
+    return _looks_like_pay_on_delivery_phrase(normalized) or any(
         word in normalized
         for word in [
             "efectivo",
@@ -1645,6 +1677,13 @@ def _looks_like_payment_method(normalized: str) -> bool:
             "nequi",
             "transferencia",
             "bancolombia",
+            "consignar",
+            "consigno",
+            "consignacion",
+            "consignación",
+            "transfiero",
+            "transferi",
+            "transferí",
         ]
     )
 
@@ -1827,8 +1866,20 @@ def _normalize_payment_method(normalized: str, original: str) -> str:
         return "Nequi"
     if "datafono" in normalized or "datáfono" in normalized:
         return "Datafono"
-    if "transferencia" in normalized or "bancolombia" in normalized:
+    if (
+        "transferencia" in normalized
+        or "bancolombia" in normalized
+        or "consignar" in normalized
+        or "consigno" in normalized
+        or "consignacion" in normalized
+        or "consignación" in normalized
+        or "transfiero" in normalized
+        or "transferi" in normalized
+        or "transferí" in normalized
+    ):
         return "Transferencia Bancolombia"
+    if _looks_like_pay_on_delivery_phrase(normalized):
+        return "Efectivo"
     if "efectivo" in normalized:
         return "Efectivo"
     return original
@@ -4485,6 +4536,16 @@ def _is_gratitude_only(text: str) -> bool:
         (
             "le agradezco",
             "ya le paso el comprobante",
+            "te envío soporte",
+            "te envio soporte",
+            "te envío el soporte",
+            "te envio el soporte",
+            "te mando soporte",
+            "te mando el soporte",
+            "te envío comprobante",
+            "te envio comprobante",
+            "te envío el comprobante",
+            "te envio el comprobante",
             "ya le paso",
             "ya le envío soporte",
             "ya le envio soporte",
@@ -4535,6 +4596,8 @@ def _looks_like_person_name_only(raw_text: str) -> bool:
 
 def _looks_like_customer_gave_up(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
+    if _looks_like_payment_cancel_phrase(normalized):
+        return False
     return _contains_any(
         normalized,
         (
@@ -5198,6 +5261,8 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("unknown", text)
     if _looks_like_payment_account_query(text):
         return ("payment_account", text)
+    if _looks_like_payment_cancel_phrase(text):
+        return ("payment_methods", text)
     if _looks_like_payment_methods_query(text):
         return ("payment_methods", text)
     if _looks_like_order_status_query(text):
@@ -5640,7 +5705,7 @@ def _looks_like_payment_account_query(text: str) -> bool:
         "recibes",
         "recibe",
     )
-    if cleaned in {"nequi", "o nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia"}:
+    if cleaned in {"nequi", "o nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia", "el numero", "el número"}:
         return True
     if _contains_any(cleaned, ("numero de cuenta", "número de cuenta", "numero para transferir", "número para transferir", "a que numero", "a qué numero", "a que número", "a qué número", "me envias numero", "me envías numero", "m envias numero", "comparte el numero", "comparte el número")):
         return True
@@ -5670,6 +5735,58 @@ def _looks_like_payment_methods_query(text: str) -> bool:
             "datafono",
             "datáfono",
             "efectivo",
+        ),
+    )
+
+
+def _looks_like_payment_cancel_phrase(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    if not re.search(r"\bcancel(?:ar|o|ó|a|e|as)\b", cleaned):
+        return False
+    if cleaned in {"cancelar", "cancele", "cancela", "cancelar pedido", "cancelar orden"}:
+        return False
+    return _contains_any(
+        cleaned,
+        (
+            "se lo puedo",
+            "puedo cancelar",
+            "cancelar por",
+            "cancelar con",
+            "cancelar en",
+            "cancelo por",
+            "cancelo con",
+            "cancelo en",
+            "te cancelo",
+            "le cancelo",
+            "alla cancelo",
+            "allá cancelo",
+            "aca cancelo",
+            "acá cancelo",
+            "aca te cancelo",
+            "acá te cancelo",
+            "al recibir cancelo",
+            "cancelo al recibir",
+        ),
+    )
+
+
+def _looks_like_pay_on_delivery_phrase(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    return _contains_any(
+        cleaned,
+        (
+            "alla cancelo",
+            "allá cancelo",
+            "aca cancelo",
+            "acá cancelo",
+            "aca te cancelo",
+            "acá te cancelo",
+            "al recibir cancelo",
+            "cancelo al recibir",
+            "pagar al recibir",
+            "pago al recibir",
+            "pagar alla",
+            "pagar allá",
         ),
     )
 

@@ -4820,6 +4820,86 @@ async def test_punctuation_accents_and_spacing_do_not_break_payment_account_ques
 
 
 @pytest.mark.asyncio
+async def test_real_payment_cancel_phrase_does_not_cancel_cart() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Se lo puedo cancelar")
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.RESPONDER_CONSULTA
+    assert "Efectivo" in result["response_text"]
+    assert "Cancele la orden actual" not in result["response_text"]
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_text", "expected_payment"),
+    [
+        ("Si porfa acá te cancelo", "Efectivo"),
+        ("te consigno entonces 19.000", "Transferencia Bancolombia"),
+    ],
+)
+async def test_real_payment_followups_update_payment_without_losing_cart(
+    raw_text: str,
+    expected_payment: str,
+) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.customer_name = "Maria Leal"
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.PROCESAR_DATOS_CLIENTE
+    assert services.session.payment_method == expected_payment
+    assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "y regáleme el nequi para transferir",
+        "El  número",
+    ],
+)
+async def test_real_short_payment_account_followups_answer_account(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text=raw_text)
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.RESPONDER_CONSULTA
+    assert "3182705144" in result["response_text"]
+    assert "Fabio Leonardo Perez" in result["response_text"]
+    assert services.session.payment_method is None
+
+
+@pytest.mark.asyncio
+async def test_real_payment_support_followup_is_acknowledged_with_cart() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="Te envío soporte")
+
+    result = await graph.ainvoke(state)
+
+    assert result["intent"] == ConversationIntent.RESPONDER_CONSULTA
+    assert "gracias" in result["response_text"].lower()
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_gratitude_after_order_does_not_enter_natural_order_fallback() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
