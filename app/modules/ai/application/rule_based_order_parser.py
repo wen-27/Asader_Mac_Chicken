@@ -60,6 +60,7 @@ BROASTER_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "brosther",
     "brother",
     "brosters",
     "broche",
@@ -481,6 +482,22 @@ def _looks_like_soup_or_contents_question(text: str) -> bool:
             "pollo con sopas",
             "venden pollo con sopa",
             "venden pollo con sopas",
+            "hay sopa",
+            "hay sopas",
+            "hay aun sopa",
+            "hay aún sopa",
+            "queda sopa",
+            "queda sopita",
+            "queda sopas",
+            "le queda sopa",
+            "le queda sopita",
+            "les queda sopa",
+            "con sopa",
+            "con sopita",
+            "vine con sopa",
+            "viene con sopas",
+            "vienen con sopa",
+            "vienen con sopas",
         ),
     )
 
@@ -490,7 +507,7 @@ def _looks_like_half_asado_half_broaster_order(text: str) -> bool:
         return False
     has_half_asado = re.search(r"\bmedio\s+(?:pollo\s+)?asado\b|\bmedio\s+a\s+la\s+asado\b", text) is not None
     has_half_broaster = re.search(
-        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted|brother)\b",
+        r"\bmedio\s+(?:pollo\s+)?(?:a\s+la\s+)?(?:broaster|broasted|broster|broche|brosted|brosther|brother)\b",
         text,
     ) is not None
     return has_half_asado and has_half_broaster
@@ -753,7 +770,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []

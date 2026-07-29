@@ -144,6 +144,7 @@ def test_rule_based_parser_tolerates_common_broaster_typos() -> None:
         "necesito un pollo brouster": [("BROASTER_ENTERO", 1)],
         "dame 3/4 broasterr": [("BROASTER_34", 1)],
         "Para pedir medio pollo asado y medio a la brother": [("ASADO_MEDIO", 1), ("BROASTER_MEDIO", 1)],
+        "Me puedes enviar medio pollo a la brosther porfa": [("BROASTER_MEDIO", 1)],
     }
 
     for message, expected in examples.items():
@@ -252,10 +253,19 @@ def test_rule_based_parser_understands_real_chat_roasted_chicken_and_half_order(
 
 
 def test_rule_based_parser_does_not_convert_chicken_and_soup_question_to_soup_order() -> None:
-    parsed = parse_natural_order_rules("ven ustedes venden pollo con sopa ?")
+    examples = [
+        "ven ustedes venden pollo con sopa ?",
+        "Disculpe le queda sopa?",
+        "Hay aun sopa?",
+        "Con sopa?",
+        "Una pregunta vine con sopa?",
+        "Vienen con sopa?",
+    ]
 
-    assert parsed.items == []
-    assert parsed.intent == "unknown"
+    for example in examples:
+        parsed = parse_natural_order_rules(example)
+        assert parsed.items == []
+        assert parsed.intent == "unknown"
 
 
 def test_rule_based_parser_understands_three_quarters() -> None:
