@@ -3975,6 +3975,43 @@ async def test_real_customer_add_manzana_25_button_does_not_become_address() -> 
 
 
 @pytest.mark.asyncio
+async def test_real_customer_manzana_25_button_keeps_address_missing_with_compact_data() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Un pollo a la Broaster porfa y una gaseosa litro manzana",
+        )
+    )
+    added = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Añadir 2.5 L"))
+    checkout = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="wendy 3022873946 el manantial efectivo",
+        )
+    )
+
+    assert "1 x Gaseosa 2.5 L - Manzana" in added["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "BROASTER_ENTERO",
+        "GASEOSA_25",
+    ]
+    assert checkout["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion: direccion" in checkout["response_text"]
+    assert services.session.customer_name == "wendy"
+    assert services.session.customer_phone == "3022873946"
+    assert services.session.customer_address is None
+    assert services.session.customer_neighborhood == "el manantial"
+    assert services.session.payment_method == "Efectivo"
+    assert all(
+        item.product_name != ProductName("Manzana 2.5")
+        for item in services.session.cart
+    )
+
+
+@pytest.mark.asyncio
 async def test_manzana_litro_alone_warns_only_25_liter_available() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

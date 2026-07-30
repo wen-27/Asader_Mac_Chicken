@@ -1489,6 +1489,11 @@ def _split_name_phone_payment_line(line: str) -> list[str] | None:
     ).strip(" ,.-")
     after_without_payment = _strip_payment_residue(after_without_payment)
     if after_without_payment:
+        normalized_after = normalize_text(after_without_payment)
+        if _looks_like_address(normalized_after):
+            return None
+        if _looks_like_neighborhood_only(normalized_after):
+            return [_clean_customer_name(before_phone), phone_match.group(0), after_without_payment, payment]
         return None
     return [_clean_customer_name(before_phone), phone_match.group(0), payment]
 
