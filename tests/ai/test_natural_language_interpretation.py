@@ -152,6 +152,18 @@ def test_rule_based_parser_tolerates_common_broaster_typos() -> None:
         assert [(item.code, item.quantity) for item in parsed.items] == expected
 
 
+def test_rule_based_parser_tolerates_polo_typo_for_half_chicken() -> None:
+    parsed = parse_natural_order_rules("medio polo")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_MEDIO", 1)]
+
+
+def test_rule_based_parser_treats_numeric_three_quarters_as_34_presentation() -> None:
+    parsed = parse_natural_order_rules("3 cuartos de pollo a la broster (2pierna pernil 1 pechuga)")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("BROASTER_34", 1)]
+
+
 def test_rule_based_parser_understands_mixed_whole_brosters_and_asado() -> None:
     parsed = parse_natural_order_rules("Buenos días me vendes dos pollos brosters y un pollo asado")
 

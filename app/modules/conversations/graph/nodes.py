@@ -289,6 +289,15 @@ async def detect_intent(
     if state.cart and _looks_like_paid_sauce_extra(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
+    if (
+        state.current_step == ConversationState.CHECKOUT_REVIEW
+        and state.cart
+        and _looks_like_order_status_query(text)
+    ):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "checkout_status"
+        state.query_value = text
+        return state
     if state.cart and _looks_like_order_status_query(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "order_status"
@@ -1017,6 +1026,32 @@ async def prepare_checkout_summary(
     return state
 
 
+async def _prepare_open_checkout_status_answer(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    state.current_step = ConversationState.CHECKOUT_REVIEW
+    if state.fulfillment_type == "PICKUP":
+        state.delivery_price_cop = 0
+    elif state.customer.address and state.customer.neighborhood:
+        delivery = await services.calculate_delivery(
+            address=state.customer.address,
+            neighborhood=state.customer.neighborhood,
+        )
+        state.delivery_price_cop = delivery.delivery_price_cop
+    else:
+        state.delivery_price_cop = state.delivery_price_cop or 0
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+    state.total_cop = state.subtotal_cop + state.delivery_price_cop
+    state.response_text = join_outbound_messages(
+        [
+            BotMessageFactory.order_created(state),
+            BotMessageFactory.order_status_answer(),
+        ]
+    )
+    await _persist_step(state, services)
+
+
 async def ask_customer_data(
     state: ConversationGraphState,
     services: ConversationGraphServices,
@@ -1330,7 +1365,11 @@ def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
         return expanded_structured
     expanded: list[str] = []
     for line in lines:
-        split_line = _split_delimited_checkout_line(line) or _split_composite_checkout_line(line)
+        split_line = (
+            _split_delimited_checkout_line(line)
+            or _split_composite_checkout_line(line)
+            or _split_name_phone_payment_line(line)
+        )
         for expanded_line in split_line or [line]:
             expanded.extend(_split_payment_suffix(expanded_line))
     return expanded
@@ -1428,6 +1467,30 @@ def _split_payment_suffix(line: str) -> list[str]:
     if normalize_text(without_payment) in {"pago", "pago en", "pago con", "pagamos", "pagamos por"}:
         return [payment]
     return [without_payment, payment]
+
+
+def _split_name_phone_payment_line(line: str) -> list[str] | None:
+    normalized = normalize_text(line)
+    payment = _extract_payment_from_text(normalized)
+    if payment is None:
+        return None
+    phone_match = re.search(r"\b3\d{9}\b", line)
+    if phone_match is None:
+        return None
+    before_phone = line[: phone_match.start()].strip(" ,.-")
+    after_phone = line[phone_match.end() :].strip(" ,.-")
+    if not before_phone:
+        return None
+    after_without_payment = re.sub(
+        r"\b(efectivo|datafono|datáfono|nequi|transferencia(?:\s+bancolombia)?|bancolombia)\b",
+        "",
+        after_phone,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
+    after_without_payment = _strip_payment_residue(after_without_payment)
+    if after_without_payment:
+        return None
+    return [_clean_customer_name(before_phone), phone_match.group(0), payment]
 
 
 def _clean_customer_name(value: str) -> str:
@@ -2427,6 +2490,9 @@ async def answer_query(
         return state
     if state.query_type == "delivery_unavailable":
         state.response_text = BotMessageFactory.delivery_unavailable_answer()
+        return state
+    if state.query_type == "checkout_status":
+        await _prepare_open_checkout_status_answer(state, services)
         return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
@@ -5190,6 +5256,9 @@ def _mentions_count(text: str, word: str, count: int) -> bool:
     }
     tokens = text.split()
     for index, token in enumerate(tokens):
+        compact_match = re.fullmatch(r"([1-9]\d*)([a-záéíóúñ]+)", token)
+        if compact_match and int(compact_match.group(1)) == count and _is_close_word(compact_match.group(2), word):
+            return True
         if not _is_close_word(token, word):
             continue
         nearby = tokens[max(0, index - 2) : index]

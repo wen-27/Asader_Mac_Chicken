@@ -77,6 +77,8 @@ COOKING_STYLE_TERMS = ASADO_STYLE_TERMS + BROASTER_TERMS
 CHICKEN_TERMS = (
     "pollo",
     "pollos",
+    "polo",
+    "polos",
     "pollito",
     "pollitos",
 )
@@ -120,19 +122,19 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     # pollo" should become ASADO_MEDIO, not ASADO_ENTERO or a generic pollo.
     NaturalProductRule(
         "ASADO_34",
-        ("pollo", "pollos", "asado"),
+        ("pollo", "pollos", "polo", "polos", "asado"),
         ("3/4", "3 4", "tres cuartos", "tres cuarto"),
         BROASTER_TERMS,
     ),
     NaturalProductRule(
         "ASADO_MEDIO",
-        ("pollo", "pollos", "asado"),
+        ("pollo", "pollos", "polo", "polos", "asado"),
         ("1/2", "1 2", "medio", "medios", "media", "mitad"),
         BROASTER_TERMS,
     ),
     NaturalProductRule(
         "ASADO_CUARTO",
-        ("pollo", "pollos", "asado"),
+        ("pollo", "pollos", "polo", "polos", "asado"),
         ("1/4", "1 4", "cuarto", "cuartos"),
         BROASTER_TERMS + ("tres cuartos", "3/4"),
     ),
@@ -141,6 +143,8 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
         (
             "pollo",
             "pollos",
+            "polo",
+            "polos",
             "pollo asado",
             "pollos asados",
             "pollito asado",
@@ -459,6 +463,7 @@ def _normalize_for_matching(message: str) -> str:
     normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
     normalized = _collapse_repeated_vowels(normalized)
     normalized = re.sub(r"\bunpollo\b", "un pollo", normalized)
+    normalized = re.sub(r"\b3\s+cuartos?\b", "3/4", normalized)
     return " ".join(normalized.split())
 
 
@@ -909,7 +914,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|polo|polos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []
