@@ -3820,6 +3820,35 @@ async def test_coca_cola_clarification_then_number_adds_litro_y_medio() -> None:
 
 
 @pytest.mark.asyncio
+async def test_natural_order_coca_cola_clarification_then_number_adds_personal() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "muy buenas tardes me colaboras con\n\n"
+                "tres cuartos de asado 2 pechugas 1 pierna\n"
+                "una cocacola\n"
+                "cra28a#195-33\n"
+                "wendy"
+            ),
+        )
+    )
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+
+    assert "Veo que tambien quieres una gaseosa" in first["response_text"]
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "📋 Elige una categoria" not in result["response_text"]
+    assert "1 x Coca-Cola personal 400 ml" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "ASADO_34",
+        "PERSONAL_400",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_water_alone_asks_variant_with_price_without_adding_default() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

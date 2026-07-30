@@ -158,24 +158,24 @@ async def detect_intent(
         if state.cart and _looks_like_no_drink_continue(text):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
-        if (session.pending_order_json or {}).get("kind") == "coca_cola_options":
-            selected_code = _extract_coca_cola_option(text)
-            if selected_code:
-                session.clear_pending_order()
-                await services.persist_session(session)
-                state.selected_product_code = selected_code
-                state.quantity = 1
-                state.intent = ConversationIntent.AGREGAR_PRODUCTO
-                return state
-            if text == "0" or _is_back_request(text):
-                session.clear_pending_order()
-                await services.persist_session(session)
-                state.intent = ConversationIntent.MOSTRAR_MENU
-                return state
-            state.response_text = BotMessageFactory.coca_cola_clarification()
-            state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
-            return state
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    if (session.pending_order_json or {}).get("kind") == "coca_cola_options":
+        selected_code = _extract_coca_cola_option(text)
+        if selected_code:
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.selected_product_code = selected_code
+            state.quantity = 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if text == "0" or _is_back_request(text):
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.intent = ConversationIntent.MOSTRAR_MENU
+            return state
+        state.response_text = BotMessageFactory.coca_cola_clarification()
+        state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
+        return state
     if (session.pending_order_json or {}).get("kind") == "manzana_25_offer":
         if _is_manzana_25_offer_acceptance(text):
             session.clear_pending_order()
@@ -2373,6 +2373,8 @@ async def fallback_natural_language(
                 state.response_text = join_outbound_messages([state.response_text, contents_answer])
             ambiguous_drink_quantity = _ambiguous_drink_quantity(state.normalized_text)
             if ambiguous_drink_quantity:
+                if _contains_any(state.normalized_text, ("coca", "cocacola", "coca cola")):
+                    await _remember_coca_cola_options(state, services)
                 state.response_text = "\n\n".join(
                     [
                         state.response_text,
@@ -3959,6 +3961,15 @@ async def _remember_manzana_25_offer(
 ) -> None:
     session = await services.load_or_create_session(ChatId(state.chat_id))
     session.pending_order_json = {"kind": "manzana_25_offer"}
+    await services.persist_session(session)
+
+
+async def _remember_coca_cola_options(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.pending_order_json = {"kind": "coca_cola_options"}
     await services.persist_session(session)
 
 
