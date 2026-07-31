@@ -72,10 +72,28 @@ BROASTER_TEXT_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "broste",
     "brosther",
     "brother",
     "bruster",
     "brusters",
+)
+
+ASADO_TEXT_TERMS = (
+    "asado",
+    "asados",
+    "asadito",
+    "asaditos",
+    "asao",
+    "asaos",
+    "azado",
+    "azados",
+    "azao",
+    "azaos",
+    "asador",
+    "asadores",
+    "azadito",
+    "azaditos",
 )
 
 
@@ -680,7 +698,7 @@ async def detect_intent(
         state.intent = ConversationIntent.MENU_BROASTER
     elif "asado" in text:
         state.intent = ConversationIntent.MENU_ASADO
-    elif "bebida" in text or "gaseosa" in text:
+    elif "bebida" in text or "gaseosa" in text or "gaseoza" in text:
         state.intent = ConversationIntent.MENU_BEBIDAS
     elif "adicional" in text or "papa" in text or "sopa" in text:
         state.intent = ConversationIntent.MENU_ADICIONALES
@@ -3745,7 +3763,7 @@ def _replacement_add_text_for_parser(text: str) -> str:
         ("entero", "completo", "medio", "media", "cuarto", "cuartos", "3/4", "1/2", "1/4"),
     ):
         return "un broaster entero"
-    if _contains_any(cleaned, ("asado", "asadito")) and not _contains_any(
+    if _contains_any(cleaned, ASADO_TEXT_TERMS) and not _contains_any(
         cleaned,
         ("entero", "completo", "medio", "media", "cuarto", "cuartos", "3/4", "1/2", "1/4"),
     ):
@@ -3762,9 +3780,9 @@ def _cart_item_matches_replacement_removal(product_code: str, product_name: str,
     if product_code.startswith("BROASTER"):
         return _contains_any(text, BROASTER_TEXT_TERMS + ("a la broaster",))
     if product_code.startswith("ASADO"):
-        return _contains_any(text, ("asado", "asadito", "pollo asado"))
+        return _contains_any(text, ASADO_TEXT_TERMS + ("pollo asado",))
     if product_code in {"COCA_COLA_15", "GASEOSA_25", "QUATRO_15", "PERSONAL_400"}:
-        return _contains_any(text, ("gaseosa", "coca", "cocacola", "coca cola", "quatro", "kola", "pepsi"))
+        return _contains_any(text, ("gaseosa", "gaseoza", "coca", "cocacola", "coca cola", "quatro", "kola", "pepsi"))
     if product_code in {"PAPA_FRANCESA", "PAPA_SALADA"}:
         return _contains_any(text, ("papa", "papas"))
     if product_code == "YUCA_FRITA":
@@ -3938,7 +3956,7 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
         if match:
             return {"un": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5}.get(match.group(0).split()[0], 1)
         return 1
-    if not _contains_any(text, ("gaseosa", "gaseosas", "bebida", "bebidas")):
+    if not _contains_any(text, ("gaseosa", "gaseosas", "gaseoza", "gaseozas", "bebida", "bebidas")):
         return None
     if _contains_any(
         text,
@@ -3966,6 +3984,8 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
             "pepsi",
             "colombiana",
             "manzana",
+            "manzna",
+            "mansana",
             "pina",
             "piña",
             "hit",
@@ -4021,28 +4041,28 @@ async def _remember_coca_cola_options(
 
 def _is_manzana_25_offer_acceptance(text: str) -> bool:
     cleaned = text.strip(" ¿?.,!¡")
-    if cleaned in {"2.5", "2 5", "manzana 2.5", "manzana 2 5"}:
+    if cleaned in {"2.5", "2 5", "manzana 2.5", "manzana 2 5", "manzna 2.5", "manzna 2 5"}:
         return True
     if _contains_any(cleaned, ("anadir", "añadir", "agregar", "si", "sí", "dale", "listo")):
-        return _contains_any(cleaned, ("2.5", "2 5", "2.5 l", "2 5 l", "manzana"))
+        return _contains_any(cleaned, ("2.5", "2 5", "2.5 l", "2 5 l", "manzana", "manzna", "mansana"))
     return False
 
 
 def _looks_like_manzana_unavailable_size(text: str) -> bool:
-    if "manzana" not in text:
+    if not _contains_any(text, ("manzana", "manzna", "mansana")):
         return False
     if _contains_any(text, ("2.5", "2 5", "dos litros y medio", "2 litros y medio")):
         return False
     return _contains_any(
         text,
-        ("litro", "litros", "1.5", "1 5", "litro y medio", "litro medio", "personal", "400", "400 ml", "400ml"),
+        ("litro", "litros", "1.5", "1 5", "litro y medio", "litro medio", "litro imedio", "litro ymedio", "personal", "400", "400 ml", "400ml"),
     )
 
 
 def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | None:
     if _contains_any(text, ("coca", "cocacola", "coca cola")) and not _contains_any(
         text,
-        ("1.5", "1 5", "litro", "personal", "400", "400ml", "400 ml"),
+        ("1.5", "1 5", "litro", "personal", "personl", "400", "400ml", "400 ml"),
     ):
         return ("coca_cola", _ambiguous_drink_quantity(text))
     if _contains_any(text, ("agua", "aguita", "botella de agua")) and not _contains_any(
@@ -4050,7 +4070,7 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
         ("con gas", "sin gas", "saborizada"),
     ):
         return ("water", None)
-    if _contains_any(text, ("gaseosa", "gaseosas", "bebida", "bebidas")) and not _contains_any(
+    if _contains_any(text, ("gaseosa", "gaseosas", "gaseoza", "gaseozas", "bebida", "bebidas")) and not _contains_any(
         text,
         (
             "coca",
@@ -4061,12 +4081,15 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
             "pepsi",
             "colombiana",
             "manzana",
+            "manzna",
+            "mansana",
             "pina",
             "piña",
             "hit",
             "jugo",
             "agua",
             "personal",
+            "personl",
             "1.5",
             "1 5",
             "2.5",
@@ -4080,7 +4103,7 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
 
 def _extract_coca_cola_option(text: str) -> str | None:
     cleaned = text.strip(" ¿?.,!¡")
-    if cleaned in {"1", "personal", "la personal", "coca personal", "coca cola personal", "400", "400 ml", "400ml"}:
+    if cleaned in {"1", "personal", "personl", "la personal", "coca personal", "coca personl", "coca cola personal", "400", "400 ml", "400ml"}:
         return "PERSONAL_400"
     if cleaned in {
         "2",
@@ -4088,6 +4111,8 @@ def _extract_coca_cola_option(text: str) -> str | None:
         "1,5",
         "1 5",
         "litro y medio",
+        "litro imedio",
+        "litro ymedio",
         "litro medio",
         "la litro y medio",
         "coca 1.5",
@@ -4157,7 +4182,7 @@ def _extract_sauce_preference_note(text: str) -> str | None:
 
 
 def _extract_included_chicken_side_note(text: str) -> str | None:
-    is_asado = _contains_any(text, ("asado", "asados", "asadito", "pollo asado", "pollos asados"))
+    is_asado = _contains_any(text, ASADO_TEXT_TERMS + ("pollo asado", "pollos asados"))
     is_broaster = _contains_any(text, BROASTER_TEXT_TERMS)
     if not is_asado and not is_broaster:
         return None
@@ -4230,23 +4255,35 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
         text,
         (
             "sin yuca",
+            "sin yuka",
             "sin yuca cocida",
+            "sin yuka cocida",
             "sin yuca cosida",
+            "sin yuka cosida",
             "sin yuca salada",
             "sin yucas",
             "nada de yuca",
+            "nada de yuka",
             "nada de yuca cocida",
+            "nada de yuka cocida",
             "nada de yuca cosida",
+            "nada de yuka cosida",
             "nada de yuca salada",
             "nada de yucas",
             "no yuca",
+            "no yuka",
             "no yuca cocida",
+            "no yuka cocida",
             "no yuca cosida",
             "nu yuca",
+            "nu yuka",
             "nu yuca cocida",
+            "nu yuka cocida",
             "nu yuca cosida",
             "ni yuca",
+            "ni yuka",
             "ni yuca cocida",
+            "ni yuka cocida",
             "ni yuca cosida",
         ),
     )
@@ -4254,6 +4291,7 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
         text,
         (
             "solo yuca frita",
+            "solo yuka frita",
             "solo con yuca frita",
             "solamente yuca frita",
             "unicamente yuca frita",
@@ -4321,7 +4359,7 @@ def _needs_included_side_clarification(text: str) -> bool:
         return False
     if _contains_any(text, ("solo ", "solamente", "unicamente", "únicamente", "sin ")):
         return False
-    if _contains_any(text, ("asado", "asados", "asadito", "pollo asado", "pollos asados")):
+    if _contains_any(text, ASADO_TEXT_TERMS + ("pollo asado", "pollos asados")):
         return _contains_any(text, ("papa", "papas", "yuca", "yucas"))
     if _contains_any(text, BROASTER_TEXT_TERMS):
         return _contains_any(text, ("papa", "papas", "francesa", "francesas", "frita", "fritas"))
@@ -4339,9 +4377,9 @@ def _append_observation(current: str | None, addition: str) -> str:
 def _needs_side_extra_clarification(text: str) -> bool:
     if not _contains_any(text, BROASTER_TEXT_TERMS):
         return False
-    if "yuca" not in text:
+    if "yuca" not in text and "yuka" not in text:
         return False
-    return not _contains_any(text, ("yuca frita", "yuca salada", "papa o yuca salada"))
+    return not _contains_any(text, ("yuca frita", "yuka frita", "yuca salada", "yuka salada", "papa o yuca salada"))
 
 
 def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
@@ -5109,7 +5147,7 @@ def _extract_chicken_style(text: str) -> str | None:
         return "broster"
     if _contains_any(text, BROASTER_TEXT_TERMS):
         return "broster"
-    if _contains_any(text, ("asado", "asados", "asadito", "asaditos")):
+    if _contains_any(text, ASADO_TEXT_TERMS):
         return "asado"
     return None
 
@@ -5154,7 +5192,7 @@ def _is_ambiguous_quarter_style(product_code: str | None, text: str) -> bool:
 def _natural_order_segments(text: str) -> list[str]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
-        r"(?:pollo|pollos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|poyo|poyos|asado|asados|asao|asaos|azado|azados|azao|azaos|asador|asadores|cuarto|cuartos|quarto|quartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|broste|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|gaseoza|gaseozas|papa|papas|yuca|yuka|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[str] = []
@@ -5187,10 +5225,10 @@ def _segment_mentions_product_code(segment: str, product_code: str) -> bool:
     elif product_code.startswith("ASADO"):
         if _contains_any(segment, BROASTER_TEXT_TERMS):
             return False
-        if not _contains_any(segment, ("asado", "asados", "asadito", "pollo", "pollos", "cuarto", "cuartos", "medio", "media")):
+        if not _contains_any(segment, ASADO_TEXT_TERMS + ("pollo", "pollos", "poyo", "poyos", "cuarto", "cuartos", "quarto", "quartos", "medio", "media")):
             return False
     elif product_code in {"COCA_COLA_15", "GASEOSA_25", "QUATRO_15", "PERSONAL_400"}:
-        return _contains_any(segment, ("coca", "cocacola", "coca cola", "gaseosa", "quatro", "kola", "pepsi", "personal"))
+        return _contains_any(segment, ("coca", "cocacola", "coca cola", "gaseosa", "gaseoza", "quatro", "kola", "pepsi", "personal", "personl"))
     else:
         return normalize_text(product_code).replace("_", " ") in segment
 
@@ -6015,7 +6053,7 @@ def _looks_like_soup_rejection(text: str) -> bool:
 def _looks_like_combination_question(text: str) -> bool:
     if not _contains_any(text, ("puedo pedir", "se puede pedir", "puedo llevar", "me pueden vender")):
         return False
-    return _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS) and _contains_any(
+    return _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS) and _contains_any(
         text,
         (" y ", "con", "mitad", "medio"),
     )
@@ -6402,7 +6440,7 @@ def _looks_like_ambiguous_chicken_order(text: str) -> bool:
     )
     if not has_chicken_reference:
         return False
-    return not _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS)
+    return not _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS)
 
 
 def _looks_like_unstyled_chicken_order(text: str) -> bool:
@@ -6412,7 +6450,7 @@ def _looks_like_unstyled_chicken_order(text: str) -> bool:
         return False
     if _contains_any(text, ("medio", "media", "mitad", "cuarto", "cuartos", "1/2", "1 2", "1/4", "1 4", "3/4", "3 4", "tres cuartos")):
         return False
-    if _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS):
+    if _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS):
         return False
     if _contains_any(text, ("demora", "llega", "llego", "llegó", "pedido", "orden")):
         return False
@@ -6463,7 +6501,7 @@ def _looks_like_quarter_part_without_style(text: str) -> bool:
     return (
         _contains_any(text, ("cuarto", "cuartos", "1/4"))
         and _contains_any(text, ("pechuga", "pierna"))
-        and not _contains_any(text, ("asado",) + BROASTER_TEXT_TERMS)
+        and not _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS)
     )
 
 

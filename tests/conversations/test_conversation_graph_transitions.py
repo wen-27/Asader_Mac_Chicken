@@ -467,6 +467,12 @@ async def test_real_customer_polite_order_sends_welcome_menu_and_keeps_items() -
         category=ProductCategory.BEBIDAS,
         price=MoneyCOP(8500),
     )
+    services.products["PAPA_FRANCESA"] = Product(
+        code=ProductCode("PAPA_FRANCESA"),
+        name=ProductName("Papa Francesa"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(8200),
+    )
     graph = build_conversation_graph(services)
     state = ConversationGraphState(
         chat_id=123,
@@ -3460,6 +3466,12 @@ async def test_graph_adds_natural_order_items_to_cart() -> None:
         category=ProductCategory.BEBIDAS,
         price=MoneyCOP(8500),
     )
+    services.products["PAPA_FRANCESA"] = Product(
+        code=ProductCode("PAPA_FRANCESA"),
+        name=ProductName("Papa Francesa"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(8200),
+    )
     graph = build_conversation_graph(services)
     state = ConversationGraphState(
         chat_id=123,
@@ -6018,6 +6030,189 @@ async def test_asado_with_only_tartara_saves_sauce_as_checkout_note_without_char
     assert "Salsas asado solicitadas: tártara." in (services.session.observations or "")
     assert "Nota: Salsas asado solicitadas: tártara." in checkout["response_text"]
     assert "Subtotal: $44500" in checkout["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "expected_cart", "expected_step", "expected_text", "expected_note"),
+    [
+        (
+            "quiero dos asador y un broster",
+            [("ASADO_ENTERO", 2), ("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "2 x 1 Asado Entero",
+            None,
+        ),
+        (
+            "kiero 2 asador y 1 brosterr",
+            [("ASADO_ENTERO", 2), ("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x Broasted Entero",
+            None,
+        ),
+        (
+            "dame dos azados y un brosted",
+            [("ASADO_ENTERO", 2), ("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "2 x 1 Asado Entero",
+            None,
+        ),
+        (
+            "me regals 2 asaditos y un brouster",
+            [("ASADO_ENTERO", 2), ("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x Broasted Entero",
+            None,
+        ),
+        (
+            "nesesito un pollo azado con solo tartara",
+            [("ASADO_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x 1 Asado Entero",
+            "Salsas asado solicitadas: tártara.",
+        ),
+        (
+            "pollo asao con adicional de tartara",
+            [("ASADO_ENTERO", 1), ("ADICIONAL_SALSAS", 1)],
+            ConversationState.POST_ADD,
+            "Adicional de Salsas - Tártara",
+            None,
+        ),
+        (
+            "un brosther con papa cosida",
+            [("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x Broasted Entero",
+            "Acompanamiento broaster: papa cocida solicitada como nota.",
+        ),
+        (
+            "un broster con adicional de papa cosida",
+            [("BROASTER_ENTERO", 1), ("PAPA_SALADA", 1)],
+            ConversationState.POST_ADD,
+            "Papa o yuca salada",
+            None,
+        ),
+        (
+            "un asador con yuca frita nada de yuca cosida nu papa",
+            [("ASADO_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "Total acumulado: $44500",
+            "Acompanamiento asado: sin papa ni yuca cocida; solo yuca frita.",
+        ),
+        (
+            "medio brosterr con arta tartara",
+            [("BROASTER_MEDIO", 1)],
+            ConversationState.POST_ADD,
+            "1 x 1/2 Broasted",
+            "Salsas broaster solicitadas: tártara.",
+        ),
+        (
+            "tres quartos de asado 2 pechuga 1 pierna",
+            [("ASADO_34", 1)],
+            ConversationState.POST_ADD,
+            "3/4 Asado - 2 pechugas y 1 pierna",
+            None,
+        ),
+        (
+            "3 cuartos brostter dos piernas una pechuga",
+            [("BROASTER_34", 1)],
+            ConversationState.POST_ADD,
+            "3/4 Broasted - 2 piernas y 1 pechuga",
+            None,
+        ),
+        (
+            "una gaseoza personal",
+            [("PERSONAL_400", 1)],
+            ConversationState.POST_ADD,
+            "Coca-Cola personal 400 ml",
+            None,
+        ),
+        (
+            "una cocacola personl",
+            [("PERSONAL_400", 1)],
+            ConversationState.POST_ADD,
+            "Coca-Cola personal 400 ml",
+            None,
+        ),
+        (
+            "manzna litro",
+            [],
+            ConversationState.NATURAL_ORDER,
+            "Manzana solo la manejamos",
+            None,
+        ),
+        (
+            "coca litro imedio",
+            [("COCA_COLA_15", 1)],
+            ConversationState.POST_ADD,
+            "Coca-Cola 1.5 L",
+            None,
+        ),
+        (
+            "un polo asao",
+            [("ASADO_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x 1 Asado Entero",
+            None,
+        ),
+        (
+            "un poyo broster",
+            [("BROASTER_ENTERO", 1)],
+            ConversationState.POST_ADD,
+            "1 x Broasted Entero",
+            None,
+        ),
+        (
+            "quiero un asadito y papas fransezas adicional",
+            [("ASADO_ENTERO", 1), ("PAPA_FRANCESA", 1)],
+            ConversationState.POST_ADD,
+            "Papa Francesa",
+            None,
+        ),
+        (
+            "un broster con yuka",
+            [("BROASTER_ENTERO", 1)],
+            ConversationState.ASK_SIDE_EXTRA,
+            "La yuca para broaster seria un adicional",
+            None,
+        ),
+    ],
+)
+async def test_twenty_heavy_typo_customer_orders_still_route_correctly(
+    message: str,
+    expected_cart: list[tuple[str, int]],
+    expected_step: ConversationState,
+    expected_text: str,
+    expected_note: str | None,
+) -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["COCA_COLA_15"] = Product(
+        code=ProductCode("COCA_COLA_15"),
+        name=ProductName("Coca-Cola 1.5 L"),
+        category=ProductCategory.BEBIDAS,
+        price=MoneyCOP(8500),
+    )
+    services.products["PAPA_FRANCESA"] = Product(
+        code=ProductCode("PAPA_FRANCESA"),
+        name=ProductName("Papa Francesa"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(8200),
+    )
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert result["current_step"] == expected_step
+    assert expected_text in result["response_text"]
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == expected_cart
+    if expected_note:
+        assert expected_note in (services.session.observations or "")
 
 
 @pytest.mark.asyncio

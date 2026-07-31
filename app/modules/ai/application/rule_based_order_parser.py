@@ -44,8 +44,18 @@ ASADO_STYLE_TERMS = (
     "asados",
     "asada",
     "asadas",
+    "asao",
+    "asaos",
+    "azado",
+    "azados",
+    "azao",
+    "azaos",
+    "asador",
+    "asadores",
     "asadito",
     "asaditos",
+    "azadito",
+    "azaditos",
 )
 
 
@@ -60,6 +70,7 @@ BROASTER_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "broste",
     "brosther",
     "brother",
     "brosters",
@@ -81,6 +92,10 @@ CHICKEN_TERMS = (
     "polos",
     "pollito",
     "pollitos",
+    "poyo",
+    "poyos",
+    "poyito",
+    "poyitos",
 )
 
 
@@ -145,6 +160,8 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "pollos",
             "polo",
             "polos",
+            "poyo",
+            "poyos",
             "pollo asado",
             "pollos asados",
             "pollito asado",
@@ -152,8 +169,18 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "pollitos",
             "asado",
             "asados",
+            "asao",
+            "asaos",
+            "azado",
+            "azados",
+            "azao",
+            "azaos",
+            "asador",
+            "asadores",
             "asadito",
             "asaditos",
+            "azadito",
+            "azaditos",
         ),
         ("entero", "completo", "uno", "un"),
         BROASTER_TERMS + ("medio", "cuarto", "3/4", "1/2", "1/4"),
@@ -183,7 +210,7 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     NaturalProductRule(
         "COCA_COLA_15",
         ("coca", "cocas", "cocacola", "coca cola", "coca colas"),
-        ("1.5", "1,5", "1 5", "litro y medio", "litro medio", "litroymedio"),
+        ("1.5", "1,5", "1 5", "litro y medio", "litro medio", "litroymedio", "litro ymedio", "litro imedio"),
     ),
     NaturalProductRule(
         "GASEOSA_25",
@@ -200,7 +227,11 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "colombiana",
             "gaseosa colombiana",
             "manzana",
+            "manzna",
+            "mansana",
             "gaseosa manzana",
+            "gaseoza manzana",
+            "gaseoza",
             "gaseosa",
         ),
         ("2.5", "2,5", "2 5", "dos litros y medio", "2 litros y medio"),
@@ -212,8 +243,8 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "PERSONAL_400",
-        ("personal", "400", "400ml", "400 ml", "coca personal", "coca cola personal"),
-        ("coca", "cocacola", "coca cola", "gaseosa"),
+        ("personal", "personl", "perzonal", "400", "400ml", "400 ml", "coca personal", "coca cola personal"),
+        ("coca", "cocacola", "coca cola", "gaseosa", "gaseoza"),
     ),
     NaturalProductRule(
         "JUGO_HIT_PERSONAL",
@@ -236,6 +267,10 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
         (
             "papa francesa",
             "papas francesas",
+            "papa franseza",
+            "papas fransezas",
+            "papa franceza",
+            "papas francezas",
             "papa",
             "papas",
             "porcion de francesa",
@@ -252,13 +287,16 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "adicional de papas fritas",
         ),
     ),
-    NaturalProductRule("PAPA_SALADA", ("papa salada", "papas saladas", "papa cocida", "yuca salada", "papa o yuca salada")),
+    NaturalProductRule("PAPA_SALADA", ("papa salada", "papas saladas", "papa cocida", "papa cosida", "yuca salada", "yuka salada", "papa o yuca salada")),
     NaturalProductRule(
         "YUCA_FRITA",
         (
             "yuca frita",
             "yucas fritas",
+            "yuka frita",
+            "yukas fritas",
             "adicional de yuca frita",
+            "adicional de yuka frita",
             "porcion de yuca frita",
             "porción de yuca frita",
         ),
@@ -421,6 +459,8 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
             _looks_like_included_or_replaced_papa(normalized) or _looks_like_implicit_broaster_piece_with_fries(normalized)
         ):
             continue
+        if rule.code == "PAPA_FRANCESA" and _looks_like_cooked_or_salted_potato_extra(normalized):
+            continue
         if _matches_rule(normalized, rule):
             if rule.code == "SOPA_ADICIONAL" and (
                 _looks_like_soup_or_contents_question(normalized) or _looks_like_included_soup_side(normalized)
@@ -464,6 +504,8 @@ def _normalize_for_matching(message: str) -> str:
     normalized = _collapse_repeated_vowels(normalized)
     normalized = re.sub(r"\bunpollo\b", "un pollo", normalized)
     normalized = re.sub(r"\b3\s+cuartos?\b", "3/4", normalized)
+    normalized = re.sub(r"\b3\s+quartos?\b", "3/4", normalized)
+    normalized = re.sub(r"\btres\s+quartos?\b", "3/4", normalized)
     return " ".join(normalized.split())
 
 
@@ -573,11 +615,35 @@ def _looks_like_included_or_replaced_papa(text: str) -> bool:
             "papa yuca",
             "en lugar de papa",
             "sin papa",
+            "sin papas",
+            "nada de papa",
+            "nada de papas",
+            "no papa",
+            "no papas",
+            "nu papa",
+            "nu papas",
+            "ni papa",
+            "ni papas",
             "solo yuca",
         ),
     ) or (
         _contains_any_terms(text, CHICKEN_TERMS + ASADO_STYLE_TERMS + BROASTER_TERMS)
         and _contains_any_terms(text, ("con papa", "con papas"))
+    )
+
+
+def _looks_like_cooked_or_salted_potato_extra(text: str) -> bool:
+    return _contains_any_terms(
+        text,
+        (
+            "papa cocida",
+            "papas cocidas",
+            "papa cosida",
+            "papas cosidas",
+            "papa salada",
+            "papas saladas",
+            "papa o yuca salada",
+        ),
     )
 
 
@@ -691,6 +757,8 @@ def _matches_rule_in_any_segment(text: str, rule: NaturalProductRule) -> bool:
 
 
 def _looks_like_whole_roasted_chicken(text: str) -> bool:
+    if "?" in text or _contains_any_terms(text, ("que vale", "q vale", "cuanto vale", "cuánto vale")):
+        return False
     if _contains_any_terms(text, ("bien asado", "quede bien asado")) and not _contains_any_terms(text, CHICKEN_TERMS):
         return False
     if not _contains_any_terms(
@@ -701,16 +769,35 @@ def _looks_like_whole_roasted_chicken(text: str) -> bool:
             "pollito asado",
             "pollitos asados",
             "pollitos",
-            "asado",
-            "asados",
-            "asadito",
-            "asaditos",
+            *ASADO_STYLE_TERMS,
         ),
     ):
         return False
     if _contains_any_terms(text, ("medio", "media", "mitad", "cuarto", "cuartos", "3/4", "1/2", "1/4")):
         return False
-    if _has_quantity_before_any_term(text, ("pollo asado", "pollos asados", "asado", "asados")):
+    if (
+        _contains_any_terms(text, CHICKEN_TERMS)
+        and _contains_any_terms(text, ASADO_STYLE_TERMS)
+        and _contains_any_terms(
+            text,
+            (
+                "con",
+                "solo",
+                "sin",
+                "adicional",
+                "extra",
+                "porcion",
+                "porción",
+                "tartara",
+                "tártara",
+                "aji",
+                "ají",
+            ),
+        )
+        and not _contains_any_terms(text, ("que viene", "que trae", "que incluye", "con que viene", "con qué viene"))
+    ):
+        return True
+    if _has_quantity_before_any_term(text, ("pollo asado", "pollos asados", *ASADO_STYLE_TERMS)):
         return True
     return _contains_any_terms(
         text,
@@ -914,7 +1001,7 @@ def _order_segments(text: str) -> list[str]:
 def _order_segments_with_offsets(text: str) -> list[tuple[str, int]]:
     item_start = (
         r"(?:un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|[1-9]\d*|[1-9]\s*/\s*[1-9]|medio|media|mitad)\s+(?:de\s+)?(?:a\s+la\s+)?"
-        r"(?:pollo|pollos|polo|polos|asado|asados|cuarto|cuartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|papa|papas|yuca|sopa|lasagna|lasana|lasaña|maduro)\b"
+        r"(?:pollo|pollos|polo|polos|poyo|poyos|asado|asados|asao|asaos|azado|azados|azao|azaos|asador|asadores|cuarto|cuartos|quarto|quartos|broaster|broasterr|broasther|broasters|broasted|brouster|broster|brosters|broche|broches|brosted|brosterr|brostter|brostee|broste|brosther|brother|bruster|brusters|coca|cocas|cocacola|gaseosa|gaseosas|gaseoza|gaseozas|papa|papas|yuca|yuka|sopa|lasagna|lasana|lasaña|maduro)\b"
     )
     boundary = re.compile(rf"\s+y\s+(?={item_start})|\s+(?={item_start})")
     segments: list[tuple[str, int]] = []
