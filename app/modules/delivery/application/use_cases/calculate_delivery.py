@@ -67,6 +67,14 @@ class CalculateMapBasedDelivery:
         address: str,
         neighborhood: str,
     ) -> CalculateDeliveryResult:
+        sector_override = _bellavista_sector_delivery_override(address, neighborhood)
+        if sector_override is not None:
+            return CalculateDeliveryResult(
+                found=True,
+                delivery_price_cop=sector_override,
+                distance_km=None,
+                pricing_source="manual_sector_override",
+            )
         # Manual table first: Lagos/Manantial/Provenza/etc. should not depend on
         # external APIs, quota, geocoding quality or network availability.
         zone = await _find_manual_zone(self._delivery_zones, neighborhood)
@@ -132,6 +140,27 @@ def _price_from_distance(distance_km: float, config: DeliveryPricingConfig) -> i
     extra_price = int(math.ceil(extra_distance * config.price_per_km_cop))
     raw_price = calibrated_bands[-1][1] + extra_price
     return int(math.ceil(raw_price / config.round_to_cop) * config.round_to_cop)
+
+
+def _bellavista_sector_delivery_override(address: str, neighborhood: str) -> int | None:
+    text = normalize_alias(f"{address} {neighborhood}")
+    if "bellavista" not in text:
+        return None
+    if _mentions_sector(text, 2) or _mentions_sector(text, 4):
+        return 6000
+    return None
+
+
+def _mentions_sector(text: str, sector: int) -> bool:
+    return any(
+        pattern in text
+        for pattern in (
+            f"sector {sector}",
+            f"sec {sector}",
+            f"sector{sector}",
+            f"sec{sector}",
+        )
+    )
 
 
 def _is_base_delivery_neighborhood(neighborhood: str) -> bool:

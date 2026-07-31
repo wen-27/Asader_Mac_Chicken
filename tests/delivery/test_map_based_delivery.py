@@ -52,6 +52,11 @@ class FakeDeliveryZones:
                 delivery_price=MoneyCOP(4000),
             ),
             DeliveryZone(
+                code="DOMICILIO_BUCARICA_BELLAVISTA",
+                neighborhood=Neighborhood("Bucarica / Bellavista"),
+                delivery_price=MoneyCOP(4000),
+            ),
+            DeliveryZone(
                 code="DOMICILIO_GIRON_SAN_ANTONIO_CARRIZAL",
                 neighborhood=Neighborhood("San Antonio Carrizal, Girón"),
                 delivery_price=MoneyCOP(12000),
@@ -143,6 +148,26 @@ async def test_map_delivery_matches_el_manantial_manual_price() -> None:
 
     assert result.delivery_price_cop == 4000
     assert result.pricing_source == "zone"
+
+
+@pytest.mark.asyncio
+async def test_map_delivery_bellavista_sector_2_and_4_cost_six_thousand() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        FakeDistanceClient(),
+        DeliveryPricingConfig(origin_address="Lagos 2"),
+    )
+
+    sector_two = await use_case.execute("Sector 2 bloque 1 apto 101", "Bellavista")
+    sector_four = await use_case.execute("sec 4 torre 2", "Altos de Bellavista")
+    other_sector = await use_case.execute("Sector 3 bloque 1", "Bellavista")
+
+    assert sector_two.delivery_price_cop == 6000
+    assert sector_two.pricing_source == "manual_sector_override"
+    assert sector_four.delivery_price_cop == 6000
+    assert sector_four.pricing_source == "manual_sector_override"
+    assert other_sector.delivery_price_cop == 4000
+    assert other_sector.pricing_source == "zone"
 
 
 @pytest.mark.asyncio

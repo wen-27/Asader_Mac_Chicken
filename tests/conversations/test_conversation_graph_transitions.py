@@ -217,9 +217,17 @@ class FakeConversationServices:
 
     async def calculate_delivery(self, address: str, neighborhood: str) -> CalculateDeliveryResult:
         normalized_neighborhood = nodes.normalize_text(neighborhood)
+        normalized_destination = nodes.normalize_text(f"{address} {neighborhood}")
         delivery_price_cop = 2000
         if "olympo" in normalized_neighborhood or "olimpo" in normalized_neighborhood:
             delivery_price_cop = 7000
+        elif "bellavista" in normalized_destination and (
+            "sector 2" in normalized_destination
+            or "sec 2" in normalized_destination
+            or "sector 4" in normalized_destination
+            or "sec 4" in normalized_destination
+        ):
+            delivery_price_cop = 6000
         elif "bellavista" in normalized_neighborhood:
             delivery_price_cop = 4000
         return CalculateDeliveryResult(
@@ -6455,6 +6463,28 @@ async def test_real_failed_chat_three_broaster_quarters_with_inline_data_reaches
     assert "Total: $42200" in result["response_text"]
     assert services.session.customer_name == "Sandra Milena Rodríguez"
     assert services.session.payment_method == "Efectivo"
+
+
+@pytest.mark.asyncio
+async def test_bellavista_sector_2_checkout_uses_six_thousand_delivery() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "medio pollo broster\n"
+                "Wendy\n"
+                "3022873946\n"
+                "Bellavista sector 2 bloque 1 apto 101\n"
+                "Efectivo"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Domicilio: $6000" in result["response_text"]
 
 
 @pytest.mark.asyncio
