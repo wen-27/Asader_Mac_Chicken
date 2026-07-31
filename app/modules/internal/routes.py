@@ -7,10 +7,13 @@ from pydantic import BaseModel, Field
 
 from app.config.settings import Settings, get_settings
 from app.modules.catalog.application.stock_controls import OperationalAvailabilityService
+from app.modules.catalog.domain.product_alias import normalize_alias
 from app.modules.catalog.infrastructure.redis_catalog_cache import CachedProductRepository
 from app.modules.catalog.infrastructure.sqlalchemy_stock_control_repository import (
     SqlAlchemyStockControlRepository,
 )
+from app.modules.delivery.infrastructure.models import DeliveryZoneORM
+from app.modules.delivery.infrastructure.redis_delivery_cache import CachedDeliveryZoneRepository
 from app.modules.telegram.infrastructure.models import TelegramMessageORM
 from app.modules.whatsapp.infrastructure.media_cache import get_cached_or_fetch_whatsapp_media
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
@@ -18,6 +21,7 @@ from app.shared.domain.value_object import ChatId
 from app.shared.infrastructure.database.session import get_async_session
 from app.shared.infrastructure.redis.cache import RedisTextCache
 from app.shared.utils.text_normalizer import normalize_text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -31,6 +35,11 @@ class SendMessageRequest(BaseModel):
 
 class UpdateStockControlRequest(BaseModel):
     is_available: bool = Field(alias="isAvailable")
+
+
+class UpsertDeliveryZonePriceRequest(BaseModel):
+    neighborhood: str = Field(min_length=1)
+    delivery_price_cop: int = Field(ge=0, alias="deliveryPriceCop")
 
 
 def validate_internal_api_key(
@@ -118,6 +127,43 @@ async def update_stock_control(
             "productCode": control.product_code,
             "variantLabel": control.variant_label,
             "isAvailable": control.is_available,
+        }
+    }
+
+
+@router.put("/delivery-zones/manual-price")
+async def upsert_delivery_zone_manual_price(
+    payload: UpsertDeliveryZonePriceRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    _: Annotated[None, Depends(validate_internal_api_key)],
+) -> dict[str, object]:
+    neighborhood = payload.neighborhood.strip()
+    normalized = normalize_alias(neighborhood)
+    result = await session.execute(
+        select(DeliveryZoneORM).where(DeliveryZoneORM.normalized_neighborhood == normalized)
+    )
+    zone = result.scalar_one_or_none()
+    if zone is None:
+        zone = DeliveryZoneORM(
+            code=f"MANUAL_{normalized.replace(' ', '_').upper()[:80]}",
+            neighborhood=neighborhood,
+            normalized_neighborhood=normalized,
+            delivery_price_cop=payload.delivery_price_cop,
+            is_active=True,
+        )
+        session.add(zone)
+    else:
+        zone.neighborhood = neighborhood
+        zone.delivery_price_cop = payload.delivery_price_cop
+        zone.is_active = True
+
+    await session.commit()
+    await RedisTextCache(settings).delete(CachedDeliveryZoneRepository.LIST_ACTIVE_KEY)
+    return {
+        "data": {
+            "neighborhood": neighborhood,
+            "deliveryPriceCop": payload.delivery_price_cop,
         }
     }
 
