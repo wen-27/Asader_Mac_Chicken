@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -15,6 +16,8 @@ from app.shared.utils.text_normalizer import normalize_text
 
 
 class WhatsAppCloudClient:
+    _MENU_IMAGE_FIRST_DELAY_SECONDS = 0.8
+
     def __init__(self, settings: Settings, client: Optional[httpx.AsyncClient] = None) -> None:
         if not settings.whatsapp_access_token:
             raise InvalidValueError("whatsapp access token is not configured")
@@ -33,6 +36,8 @@ class WhatsAppCloudClient:
         payload = _main_menu_buttons_payload(chat_id, text)
         if payload is not None and self._menu_image_media_id:
             await self._send_payload(_image_payload(chat_id, self._menu_image_media_id))
+            if self._client is None:
+                await asyncio.sleep(self._MENU_IMAGE_FIRST_DELAY_SECONDS)
         if payload is None:
             payload = _confirmation_buttons_payload(chat_id, text)
         if payload is None:
