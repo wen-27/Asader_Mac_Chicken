@@ -461,7 +461,9 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
             continue
         if rule.code == "PAPA_FRANCESA" and _looks_like_cooked_or_salted_potato_extra(normalized):
             continue
-        if _matches_rule(normalized, rule):
+        if _matches_rule(normalized, rule) or (
+            rule.code == "ICOPOR_SOPA" and _looks_like_soup_icopor_container_request(normalized)
+        ):
             if rule.code == "SOPA_ADICIONAL" and (
                 _looks_like_soup_or_contents_question(normalized) or _looks_like_included_soup_side(normalized)
             ):
@@ -532,6 +534,8 @@ def _matches_rule(text: str, rule: NaturalProductRule) -> bool:
 
 
 def _looks_like_soup_or_contents_question(text: str) -> bool:
+    if _looks_like_soup_icopor_container_request(text):
+        return False
     return _contains_any_terms(
         text,
         (
@@ -643,6 +647,25 @@ def _looks_like_cooked_or_salted_potato_extra(text: str) -> bool:
             "papa salada",
             "papas saladas",
             "papa o yuca salada",
+        ),
+    )
+
+
+def _looks_like_soup_icopor_container_request(text: str) -> bool:
+    if not _contains_any_terms(text, ("sopa", "sopita")):
+        return False
+    return _contains_any_terms(
+        text,
+        (
+            "icopor",
+            "icopores",
+            "icopol",
+            "vaso",
+            "vasito",
+            "no en bolsa",
+            "no bolsa",
+            "sin bolsa",
+            "en empaque",
         ),
     )
 

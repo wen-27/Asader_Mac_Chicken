@@ -6357,6 +6357,33 @@ async def test_graph_polite_greeting_order_goes_directly_to_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_soup_in_icopor_is_charged_and_shown_in_order_detail() -> None:
+    services = FakeConversationServices()
+    services.products["SOPA_ADICIONAL"] = Product(
+        code=ProductCode("SOPA_ADICIONAL"),
+        name=ProductName("Sopa Adicional"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(3500),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="quiero sopa no en bolsa sino en icopor",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Sopa Adicional" in result["response_text"]
+    assert "1 x Icopor Sopa" in result["response_text"]
+    assert "$3850" in result["response_text"]
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == [
+        ("SOPA_ADICIONAL", 1),
+        ("ICOPOR_SOPA", 1),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_new_direct_order_from_main_menu_sends_welcome_and_keeps_order_items() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

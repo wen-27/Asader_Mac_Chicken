@@ -210,6 +210,8 @@ def test_rule_based_parser_charges_soup_icopor_with_irregular_text() -> None:
         "me da una sopita con icopor pa llevar",
         "quiero una sopa en vasito",
         "sopa con icopores porfa",
+        "quiero sopa no en bolsa sino en icopor",
+        "una sopa no en bolsa en vasito",
     ]
 
     for message in examples:
