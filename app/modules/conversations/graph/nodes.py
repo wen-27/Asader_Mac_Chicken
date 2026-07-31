@@ -163,6 +163,11 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if _looks_like_delivery_urgency_followup(text) and not parsed_rules.items:
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "delivery_urgency"
+        state.query_value = text
+        return state
     if (
         state.current_step == ConversationState.MAIN_MENU
         and not state.cart
@@ -353,6 +358,11 @@ async def detect_intent(
         if _looks_like_order_status_query(text):
             state.intent = ConversationIntent.RESPONDER_CONSULTA
             state.query_type = "order_status"
+            state.query_value = text
+            return state
+        if _looks_like_delivery_urgency_followup(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "delivery_urgency"
             state.query_value = text
             return state
         if _looks_like_order_waiting_followup(text) or _is_gratitude_only(text):
@@ -2554,6 +2564,9 @@ async def answer_query(
         return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
+        return state
+    if state.query_type == "delivery_urgency":
+        state.response_text = BotMessageFactory.delivery_urgency_answer()
         return state
     if state.query_type == "refund":
         state.response_text = BotMessageFactory.refund_followup_answer()
@@ -6289,6 +6302,34 @@ def _looks_like_order_waiting_followup(text: str) -> bool:
             text,
         )
         or _contains_any(text, ("ya van cuarenta minutos", "llevo esperando"))
+    )
+
+
+def _looks_like_delivery_urgency_followup(text: str) -> bool:
+    return bool(
+        _contains_any(
+            text,
+            (
+                "lo mas pronto",
+                "lo mas pronto posible",
+                "lo mas prontico",
+                "lo mas rapido",
+                "lo mas rapido posible",
+                "lo antes posible",
+                "lo antes que puedan",
+                "agradezco lo mas pronto",
+                "agradeceria lo mas pronto",
+                "me urge",
+                "es urgente",
+                "agilizar",
+                "agilicen",
+                "apurar",
+                "apuren",
+                "apuradito",
+            ),
+        )
+        or re.search(r"\bpor\s+eso\s+dije\s+si\s+pod(?:ia|ria)\s+ser\s+antes\s+de\b", text)
+        or re.search(r"\b(?:dije|pedi|pedí)\s+si\s+pod(?:ia|ria)\s+ser\s+antes\s+de\b", text)
     )
 
 

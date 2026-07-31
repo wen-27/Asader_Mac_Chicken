@@ -5070,6 +5070,25 @@ async def test_missed_promised_time_complaint_answers_waiting_time() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "Le agradezco lo más pronto porfavor",
+        "Por eso dije si podía ser antes de las 11:30",
+    ],
+)
+async def test_delivery_urgency_followups_answer_agilization(raw_text: str) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["response_text"] == "Sí señora, estamos haciendo lo posible por agilizar el proceso."
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert "Me falta esta informacion" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_order_status_question_breaks_out_of_free_order_fallback_loop() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.NATURAL_ORDER)

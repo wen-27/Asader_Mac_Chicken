@@ -822,6 +822,10 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def delivery_urgency_answer(cls) -> str:
+        return "Sí señora, estamos haciendo lo posible por agilizar el proceso."
+
+    @classmethod
     def refund_followup_answer(cls) -> str:
         return (
             "Entiendo. Para devoluciones o ajustes de pago, un administrador revisa la orden "
