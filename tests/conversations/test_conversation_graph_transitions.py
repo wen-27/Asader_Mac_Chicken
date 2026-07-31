@@ -942,6 +942,53 @@ async def test_natural_clear_my_cart_command_clears_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_clear_order_removes_stale_checkout_data_before_new_drink_order() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.customer_name = "muy buenas tardes me colaboras con"
+    services.session.customer_phone = "3022873946"
+    services.session.customer_address = "cra28a#195-33"
+    services.session.customer_neighborhood = "una cocacola"
+    services.session.observations = "tiene sopa? wendy"
+    services.session.payment_method = "Efectivo"
+    services.session.move_to(ConversationState.CHECKOUT_REVIEW)
+    graph = build_conversation_graph(services)
+
+    cleared = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Borra completamente esta orden"))
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Una gaseosa personal"))
+
+    assert cleared["current_step"] == ConversationState.MAIN_MENU
+    assert services.session.customer_name is None
+    assert services.session.customer_address is None
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Coca-Cola personal 400 ml" in result["response_text"]
+    assert "Ya tengo los datos" not in result["response_text"]
+    assert "Veo que tambien quieres una gaseosa" not in result["response_text"]
+    response = result["response_text"].lower()
+    assert "nombre completo" in response
+    assert "telefono" in response
+    assert "direccion" in response
+    assert "barrio" in response
+    assert "metodo de pago" in response
+    assert services.session.customer_name is None
+    assert services.session.customer_address is None
+
+    partial_data = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Wendy\nEfectivo"))
+    phone_only = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3022873946"))
+
+    assert "Me falta esta informacion" in partial_data["response_text"]
+    assert "telefono" in partial_data["response_text"]
+    assert "direccion" in partial_data["response_text"]
+    assert "barrio" in partial_data["response_text"]
+    assert phone_only["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Datos recibidos. Revisa tu orden" not in phone_only["response_text"]
+    assert "direccion" in phone_only["response_text"]
+    assert "barrio" in phone_only["response_text"]
+    assert services.session.customer_address is None
+    assert services.session.customer_neighborhood is None
+
+
+@pytest.mark.asyncio
 async def test_lasagna_request_uses_fast_rules_before_business_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(nodes, "_business_today", lambda: date(2026, 7, 14))
     services = FakeConversationServices()

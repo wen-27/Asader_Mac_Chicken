@@ -991,8 +991,11 @@ async def clear_cart(
     session.empty_cart()
     session.move_to(ConversationState.MAIN_MENU)
     session.clear_pending_order()
+    session.clear_customer_data()
     await services.persist_session(session)
     state.cart = []
+    state.customer = CustomerDataState()
+    state.fulfillment_type = "DELIVERY"
     state.subtotal_cop = 0
     state.current_step = ConversationState.MAIN_MENU
     state.response_text = BotMessageFactory.clear_cart()
@@ -2851,6 +2854,12 @@ async def _add_natural_order_to_cart(
         return []
 
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    if not session.cart and not state.cart:
+        fulfillment_type = state.fulfillment_type or session.fulfillment_type or "DELIVERY"
+        _clear_checkout_session(session)
+        state.customer = CustomerDataState()
+        session.fulfillment_type = fulfillment_type
+        state.fulfillment_type = fulfillment_type
     pending_prompt = await _maybe_start_pending_quarter_order(state, services, session, parsed.items)
     if pending_prompt:
         return []
@@ -3912,6 +3921,21 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
     if _contains_any(
         text,
         (
+            "personal",
+            "400",
+            "400ml",
+            "400 ml",
+            "1.5",
+            "1 5",
+            "2.5",
+            "2 5",
+            "litro",
+        ),
+    ):
+        return None
+    if _contains_any(
+        text,
+        (
             "coca",
             "cocacola",
             "coca cola",
@@ -4345,6 +4369,8 @@ def _is_order_confirmation_reply(text: str) -> bool:
     normalized = text.strip()
     if _is_yes_reply(normalized):
         return True
+    if "\n" in normalized or len(normalized.split()) > 6:
+        return False
     return _contains_any(
         normalized,
         (
