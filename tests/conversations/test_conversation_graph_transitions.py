@@ -5898,6 +5898,42 @@ async def test_broaster_with_default_fries_does_not_charge_french_fries() -> Non
 
 
 @pytest.mark.asyncio
+async def test_broaster_with_papa_cocida_without_additional_keeps_side_as_note() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="dame un pollo broster con papa cocida")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Broasted Entero" in result["response_text"]
+    assert "Papa o yuca salada" not in result["response_text"]
+    assert "Total acumulado: $51000" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_ENTERO"]
+    assert "Acompanamiento broaster: papa cocida solicitada como nota." in (
+        services.session.observations or ""
+    )
+
+
+@pytest.mark.asyncio
+async def test_broaster_with_additional_papa_cocida_charges_side_extra() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="dame un pollo broster con adicional de papa cocida")
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x Broasted Entero" in result["response_text"]
+    assert "1 x Papa o yuca salada" in result["response_text"]
+    assert "Total acumulado: $56000" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [
+        "BROASTER_ENTERO",
+        "PAPA_SALADA",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_side_extra_selection_asks_quantity() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_SIDE_EXTRA)

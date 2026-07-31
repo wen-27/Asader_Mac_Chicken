@@ -4157,6 +4157,21 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
     if is_broaster and _contains_any(
         text,
         (
+            "papa cocida",
+            "papas cocidas",
+            "papa cosida",
+            "papas cosidas",
+            "papa salada",
+            "papas saladas",
+            "yuca salada",
+            "yucas saladas",
+            "papa o yuca salada",
+        ),
+    ):
+        return "Acompanamiento broaster: papa cocida solicitada como nota."
+    if is_broaster and _contains_any(
+        text,
+        (
             "papa",
             "papas",
             "papa frita",
