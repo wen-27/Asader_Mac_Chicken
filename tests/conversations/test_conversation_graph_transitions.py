@@ -2835,13 +2835,13 @@ async def test_customer_data_accepts_free_line_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pickup_customer_data_only_requires_name_and_phone() -> None:
+async def test_pickup_customer_data_requires_name_phone_and_pickup_time() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
     services.session.fulfillment_type = "PICKUP"
     state = ConversationGraphState(
         chat_id=123,
-        raw_text="Angel David\n3153327502\nsin cebolla",
+        raw_text="Angel David\n3153327502\nEn 20 minutos\nsin cebolla",
         fulfillment_type="PICKUP",
         cart=[
             CartLineState(
@@ -2866,6 +2866,8 @@ async def test_pickup_customer_data_only_requires_name_and_phone() -> None:
     assert state.customer.address == "Recoge en local"
     assert state.customer.neighborhood == "No aplica"
     assert state.customer.payment_method == "No aplica"
+    assert "Recoge En 20 minutos" in (state.customer.observations or "")
+    assert "sin cebolla" in (state.customer.observations or "")
     assert state.delivery_price_cop == 0
     assert "Recoge en local" in state.response_text
     assert "Domicilio: $0" in state.response_text
@@ -3551,6 +3553,7 @@ async def test_natural_pickup_order_accepts_name_and_phone_next_message() -> Non
     checkout_prompt = first["response_text"].split("Para confirmar tu orden", 1)[1]
     assert "Nombre completo" in checkout_prompt
     assert "Telefono" in checkout_prompt
+    assert "En cuanto tiempo pasa a recoger" in checkout_prompt
     assert "Direccion" not in checkout_prompt
     assert services.session.fulfillment_type == "PICKUP"
 
@@ -3558,13 +3561,45 @@ async def test_natural_pickup_order_accepts_name_and_phone_next_message() -> Non
         ConversationGraphState(chat_id=123, raw_text="Wendy\n3022873846")
     )
 
-    assert second["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert second["current_step"] == ConversationState.ASK_CUSTOMER_DATA
     assert second["fulfillment_type"] == "PICKUP"
-    assert "Datos recibidos" in second["response_text"]
-    assert "orden para recoger" in second["response_text"]
+    assert "en cuanto tiempo pasa a recoger" in second["response_text"].lower()
     assert "Puedes escribirme tu orden en texto normal" not in second["response_text"]
     assert services.session.customer_name == "Wendy"
     assert services.session.customer_phone == "3022873846"
+
+
+@pytest.mark.asyncio
+async def test_pickup_receiver_name_asks_phone_and_pickup_time_not_address() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1/4 asado pierna con sopa"))
+    pickup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Recoge Luis Malagon"))
+
+    assert pickup["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert pickup["fulfillment_type"] == "PICKUP"
+    assert services.session.customer_name == "Luis Malagon"
+    assert "telefono" in pickup["response_text"].lower()
+    assert "en cuanto tiempo pasa a recoger" in pickup["response_text"].lower()
+    assert "direccion" not in pickup["response_text"].lower()
+    assert "barrio" not in pickup["response_text"].lower()
+
+    payment = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Efectivo"))
+    assert "telefono" in payment["response_text"].lower()
+    assert "en cuanto tiempo pasa a recoger" in payment["response_text"].lower()
+
+    phone = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3022873946"))
+    assert "telefono" not in phone["response_text"].lower()
+    assert "en cuanto tiempo pasa a recoger" in phone["response_text"].lower()
+
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="En 20 minutos"))
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Datos recibidos. Revisa tu orden para recoger" in review["response_text"]
+    assert "Cliente: Luis Malagon" in review["response_text"]
+    assert "Telefono: 3022873946" in review["response_text"]
+    assert "Recoge En 20 minutos" in review["response_text"]
+    assert services.session.fulfillment_type == "PICKUP"
 
 
 @pytest.mark.asyncio

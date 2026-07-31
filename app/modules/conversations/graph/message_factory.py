@@ -333,7 +333,12 @@ class BotMessageFactory:
             f"- {line.quantity} x {line.product_name}: ${line.subtotal_cop}" for line in lines
         )
         default_fields = (
-            ["Nombre completo", "Telefono", "Nota o especificacion (opcional)"]
+            [
+                "Nombre completo",
+                "Telefono",
+                "En cuanto tiempo pasa a recoger",
+                "Nota o especificacion (opcional)",
+            ]
             if fulfillment_type == "PICKUP"
             else [
                 "Nombre completo",
@@ -348,6 +353,7 @@ class BotMessageFactory:
             pickup_labels = {
                 "nombre completo": "Nombre completo",
                 "telefono": "Telefono",
+                "pickup_time": "En cuanto tiempo pasa a recoger",
             }
             missing = [pickup_labels.get(field, field) for field in missing_fields]
         else:
@@ -544,6 +550,7 @@ class BotMessageFactory:
                 [
                     "Nombre completo",
                     "Telefono",
+                    "En cuanto tiempo pasa a recoger",
                     "Nota o especificacion (opcional)",
                 ]
             ),
@@ -560,6 +567,10 @@ class BotMessageFactory:
 
     @classmethod
     def missing_customer_data(cls, missing: list[str]) -> str:
+        labels = {
+            "pickup_time": "en cuanto tiempo pasa a recoger",
+        }
+        missing = [labels.get(field, field) for field in missing]
         return "\n\n".join(
             [
                 "Me falta esta informacion: " + ", ".join(missing),

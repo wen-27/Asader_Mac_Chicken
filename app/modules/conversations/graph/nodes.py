@@ -1212,7 +1212,9 @@ async def validate_customer_data(
     if state.fulfillment_type == "PICKUP":
         state.customer.address = "Recoge en local"
         state.customer.neighborhood = "No aplica"
-        state.customer.payment_method = "No aplica"
+        state.customer.payment_method = state.customer.payment_method or "No aplica"
+        if not _has_pickup_time_observation(state.customer.observations):
+            missing.append("pickup_time")
     if state.fulfillment_type == "PICKUP" and missing:
         state.errors = missing
         state.current_step = ConversationState.ASK_CUSTOMER_DATA
@@ -1289,6 +1291,13 @@ def _extract_customer_data_from_free_lines(
         if fulfillment_type == "PICKUP":
             if not customer.phone and _looks_like_phone(line):
                 customer.phone = line
+            elif not customer.payment_method and _looks_like_payment_method(normalized):
+                customer.payment_method = _normalize_payment_method(normalized, line)
+            elif _looks_like_pickup_time_note(normalized) and not _has_pickup_time_observation(customer.observations):
+                customer.observations = _append_observation(
+                    _clear_generic_pickup_observation(customer.observations),
+                    _format_pickup_time_note(line),
+                )
             else:
                 remaining.append(line)
             continue
@@ -1338,9 +1347,12 @@ def _extract_customer_data_from_free_lines(
     if not customer.name and remaining:
         customer.name = _clean_customer_name(remaining.pop(0))
     if fulfillment_type == "PICKUP":
-        if not customer.observations and remaining:
+        if remaining:
             note = " ".join(remaining)
-            customer.observations = _clean_checkout_note(note) if clean_notes else note
+            customer.observations = _append_observation(
+                customer.observations,
+                _clean_checkout_note(note) if clean_notes else note,
+            )
         return
     if not customer.observations and remaining and _looks_like_empty_note(normalize_text(remaining[0])):
         customer.observations = remaining.pop(0)
@@ -1381,10 +1393,62 @@ def _extract_inline_pickup_customer_data(customer: CustomerDataState, text: str)
         text,
         flags=re.IGNORECASE,
     )
+    if "\n" in text:
+        if time_match and not customer.observations:
+            customer.observations = f"Recoger a la {time_match.group(1).strip()}"
+            return
+        if "recoger" in normalized or "rercoger" in normalized:
+            customer.observations = customer.observations or "Recoge en local"
+        return
     if time_match and not customer.observations:
         customer.observations = f"Recoger a la {time_match.group(1).strip()}"
+    elif _looks_like_pickup_time_note(normalized):
+        customer.observations = _append_observation(
+            _clear_generic_pickup_observation(customer.observations),
+            _format_pickup_time_note(text),
+        )
     elif "recoger" in normalized or "rercoger" in normalized:
         customer.observations = customer.observations or "Recoge en local"
+
+
+def _looks_like_pickup_time_note(text: str) -> bool:
+    normalized = normalize_text(text)
+    return bool(
+        re.search(r"\b(?:paso|pasa|recoge|recojo|recoger|recogerlo|pasamos)\s+en\s+\d+\s*(?:min|minutos|hora|horas)\b", normalized)
+        or re.search(r"\ben\s+\d+\s*(?:min|minutos|hora|horas)\b", normalized)
+        or re.search(r"\b(?:paso|pasa|recoge|recojo|recoger|recogerlo|pasamos)\s+en\s+(?:media hora|un rato|ratico|un momentico)\b", normalized)
+        or re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
+    )
+
+
+def _format_pickup_time_note(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    time_match = re.search(
+        r"\b(?:a\s+la|a\s+las|para\s+la|para\s+las)\s+([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if time_match:
+        return f"Recoger a la {time_match.group(1).strip()}"
+    if normalize_text(cleaned).startswith(("recoger ", "recoge ", "recojo ")):
+        return cleaned
+    return f"Recoge {cleaned}"
+
+
+def _has_pickup_time_observation(observations: str | None) -> bool:
+    normalized = normalize_text(observations)
+    if not normalized or normalized == "recoge en local":
+        return False
+    return _looks_like_pickup_time_note(normalized) or _contains_any(
+        normalized,
+        ("recoger a la", "recoge a la", "recoge en", "paso en", "pasa en"),
+    )
+
+
+def _clear_generic_pickup_observation(observations: str | None) -> str | None:
+    if normalize_text(observations) == "recoge en local":
+        return None
+    return observations
 
 
 def _extract_inline_customer_name(text: str) -> str | None:
@@ -1393,6 +1457,12 @@ def _extract_inline_customer_name(text: str) -> str | None:
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
+    if not name_match:
+        name_match = re.search(
+            r"\brecoge\s+(.+?)(?:\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|\s+en\s+\d|\s+en\s+media\s+hora|$)",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
     if not name_match:
         name_match = re.search(
             r"\bmi nombre es\s+(.+?)(?:\s+<|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
@@ -1671,7 +1741,9 @@ def _has_pickup_customer_data_signal(text: str) -> bool:
     normalized = normalize_text(text)
     return (
         _has_checkout_data_signal(text)
-        or _contains_any(normalized, ("mi nombre es", "a nombre de"))
+        or _contains_any(normalized, ("mi nombre es", "a nombre de", "recoge "))
+        or _looks_like_payment_method(normalized)
+        or _looks_like_pickup_time_note(normalized)
         or _looks_like_phone(text)
     )
 
@@ -2343,6 +2415,8 @@ def _missing_checkout_fields(state: ConversationGraphState) -> list[str]:
     if not state.customer.phone:
         missing.append("telefono")
     if state.fulfillment_type == "PICKUP":
+        if not _has_pickup_time_observation(state.customer.observations):
+            missing.append("pickup_time")
         return missing
     if not state.customer.address:
         missing.append("direccion")
@@ -5652,6 +5726,8 @@ def _business_today() -> date:
 
 def _looks_like_pickup_request(text: str) -> bool:
     text = normalize_text(text)
+    if _contains_any(text, ("domicilio lo recoge", "domicilio lo recoje", "pedido lo recoge", "orden lo recoge")):
+        return False
     return _contains_any(
         text,
         (
@@ -5662,6 +5738,7 @@ def _looks_like_pickup_request(text: str) -> bool:
             "lo recojo",
             "lo recogemos",
             "recogerlo",
+            "recoge ",
             "rercoger",
             "recoger en el local",
             "para recoger",
