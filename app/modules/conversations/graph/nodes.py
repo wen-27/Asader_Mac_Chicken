@@ -1782,12 +1782,34 @@ def _looks_like_complete_checkout_payload(lines: list[str], fulfillment_type: st
 
 
 def _reset_checkout_customer_data(customer: CustomerDataState) -> None:
+    observations = (
+        customer.observations
+        if _should_preserve_checkout_observations(customer.observations)
+        else None
+    )
     customer.name = None
     customer.phone = None
     customer.address = None
     customer.neighborhood = None
     customer.payment_method = None
-    customer.observations = None
+    customer.observations = observations
+
+
+def _should_preserve_checkout_observations(observations: str | None) -> bool:
+    if not observations:
+        return False
+    normalized = normalize_text(observations)
+    if _looks_like_question(normalized) or _looks_like_order_line_without_checkout_data(observations):
+        return False
+    return normalized.startswith(
+        (
+            "salsas solicitadas",
+            "salsas asado solicitadas",
+            "salsas broaster solicitadas",
+            "acompanamiento asado",
+            "acompanamiento broaster",
+        )
+    )
 
 
 def _looks_like_phone(text: str) -> bool:

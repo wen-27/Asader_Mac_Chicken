@@ -5982,6 +5982,45 @@ async def test_paid_sauce_extra_after_cart_adds_item_instead_of_checkout_note() 
 
 
 @pytest.mark.asyncio
+async def test_asado_with_only_tartara_saves_sauce_as_checkout_note_without_charge() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="me regals porfavor un pollo asado con solo tartara",
+        )
+    )
+    checkout = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "wendy\n"
+                "3022873946\n"
+                "cra28a#195-33\n"
+                "el manantial\n"
+                "efectivo"
+            ),
+        )
+    )
+
+    assert first["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in first["response_text"]
+    assert "Adicional de Salsas" not in first["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Salsas asado solicitadas: tártara." in (services.session.observations or "")
+    assert "Nota: Salsas asado solicitadas: tártara." in checkout["response_text"]
+    assert "Subtotal: $44500" in checkout["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_simple_sauce_request_after_cart_stays_note_without_charge() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
