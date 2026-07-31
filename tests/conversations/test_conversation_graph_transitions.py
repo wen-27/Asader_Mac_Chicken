@@ -5807,6 +5807,39 @@ async def test_asado_with_only_fried_yuca_keeps_side_as_observation_without_char
 
 
 @pytest.mark.asyncio
+async def test_asado_with_creative_fried_yuca_replacement_note_does_not_charge_extra() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products["YUCA_FRITA"] = Product(
+        code=ProductCode("YUCA_FRITA"),
+        name=ProductName("Yuca frita"),
+        category=ProductCategory.ADICIONALES,
+        price=MoneyCOP(5000),
+    )
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(
+        chat_id=123,
+        raw_text="dame un pollo asado con yuca frita nada de yuca cocida nu papa solo yuca frita",
+    )
+
+    result = await graph.ainvoke(state)
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1 Asado Entero" in result["response_text"]
+    assert "Yuca frita" not in result["response_text"]
+    assert "Total acumulado: $44500" in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_ENTERO"]
+    assert "Acompanamiento asado: sin papa ni yuca cocida; solo yuca frita." in (
+        services.session.observations or ""
+    )
+
+
+@pytest.mark.asyncio
 async def test_asado_with_explicit_fried_yuca_additional_still_charges_extra() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

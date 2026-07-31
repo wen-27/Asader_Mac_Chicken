@@ -4172,7 +4172,23 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
     if not is_asado:
         return None
 
-    without_potato = _contains_any(text, ("sin papa", "sin papas"))
+    without_potato = _contains_any(
+        text,
+        (
+            "sin papa",
+            "sin papas",
+            "nada de papa",
+            "nada de papas",
+            "no papa",
+            "no papas",
+            "nu papa",
+            "nu papas",
+            "ni papa",
+            "ni papas",
+            "sin ni papa",
+            "sin ni papas",
+        ),
+    )
     without_cooked_yuca = _contains_any(
         text,
         (
@@ -4181,6 +4197,20 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
             "sin yuca cosida",
             "sin yuca salada",
             "sin yucas",
+            "nada de yuca",
+            "nada de yuca cocida",
+            "nada de yuca cosida",
+            "nada de yuca salada",
+            "nada de yucas",
+            "no yuca",
+            "no yuca cocida",
+            "no yuca cosida",
+            "nu yuca",
+            "nu yuca cocida",
+            "nu yuca cosida",
+            "ni yuca",
+            "ni yuca cocida",
+            "ni yuca cosida",
         ),
     )
     with_only_fried_yuca = _contains_any(
@@ -4191,6 +4221,12 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
             "solamente yuca frita",
             "unicamente yuca frita",
             "únicamente yuca frita",
+            "cambiar por yuca frita",
+            "cambiame por yuca frita",
+            "cámbiame por yuca frita",
+            "cambiando por yuca frita",
+            "en vez de yuca cocida y papa",
+            "en vez de papa y yuca cocida",
         ),
     )
     if without_potato and without_cooked_yuca and (with_only_fried_yuca or "yuca frita" in text):
