@@ -3002,6 +3002,50 @@ async def test_real_possible_delivery_time_range_after_cart_is_saved_as_note() -
 
 
 @pytest.mark.asyncio
+async def test_real_broaster_quarter_with_delivery_time_keeps_name_and_soup_note() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Me puedes enviar porfavor un cuarto pierna broaster con sopita porfa",
+        )
+    )
+    assert first["current_step"] == ConversationState.POST_ADD
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_CUARTO"]
+    assert "Sopa Adicional" not in first["response_text"]
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pago en efectivo"))
+    await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Quizás me puedes enviar a eso de las 11:30 porfis")
+    )
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="O 11:40 por tarde"))
+
+    review = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Laura\nAltos de bellavista sector 16 bloque 3-7 apto 204\n3138127514",
+        )
+    )
+
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Laura" in review["response_text"]
+    assert "Quizás me puedes enviar a eso de las 11:30 porfis" in review["response_text"]
+    assert "O 11:40 por tarde" in review["response_text"]
+    assert "📝 Nota: Laura" not in review["response_text"]
+    assert services.session.customer_name == "Laura"
+
+    soup_note = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Con sopita porfa"))
+
+    assert soup_note["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert soup_note["response_text"].startswith("Sí señora, queda anotado con sopita.")
+    assert "Con sopita incluida." in soup_note["response_text"]
+    assert "Sopa Adicional" not in soup_note["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_CUARTO"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("raw_text", ["Veci ya salió ?", "Así si le salió?"])
 async def test_real_short_order_status_followups_answer_timing_with_cart(raw_text: str) -> None:
     services = FakeConversationServices()

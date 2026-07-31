@@ -372,6 +372,7 @@ async def detect_intent(
             or _looks_like_address(text)
             or _looks_like_incomplete_delivery_address(text)
             or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+            or _looks_like_included_soup_note_request(text)
             or _looks_like_paid_receiver_note(text)
             or _looks_like_delivery_time_note(text)
         ):
@@ -1288,6 +1289,8 @@ def _extract_customer_data_from_free_lines(
             customer.phone = line
         elif _looks_like_payment_method(normalized):
             customer.payment_method = _normalize_payment_method(normalized, line)
+        elif _looks_like_included_soup_note_request(normalized):
+            customer.observations = _append_observation(customer.observations, "Con sopita incluida.")
         elif _looks_like_checkout_note(normalized):
             note = _clean_checkout_note(line) if clean_notes else line
             customer.observations = _append_observation(customer.observations, note)
@@ -1941,6 +1944,9 @@ def _looks_like_empty_note(normalized: str) -> bool:
 def _clear_invalid_checkout_cached_fields(customer: CustomerDataState) -> None:
     if customer.name and _is_checkout_filler_line(normalize_text(customer.name)):
         customer.name = None
+    if customer.name and _looks_like_delivery_time_note(customer.name):
+        customer.observations = _append_observation(customer.observations, customer.name)
+        customer.name = None
     if customer.neighborhood and _is_checkout_filler_line(normalize_text(customer.neighborhood)):
         customer.neighborhood = None
     if customer.observations and _is_checkout_filler_line(normalize_text(customer.observations)):
@@ -2231,6 +2237,8 @@ async def create_order(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     state.response_text = BotMessageFactory.order_created(state)
+    if _looks_like_included_soup_note_request(state.normalized_text):
+        state.response_text = "Sí señora, queda anotado con sopita.\n\n" + state.response_text
     state.current_step = ConversationState.CHECKOUT_REVIEW
     session = await services.load_or_create_session(ChatId(state.chat_id))
     _copy_checkout_state_to_session(state, session)
@@ -4624,7 +4632,7 @@ def _looks_like_no_drink_continue(text: str) -> bool:
 
 def _looks_like_checkout_note(text: str) -> bool:
     normalized = normalize_text(text)
-    return _contains_any(
+    return _looks_like_included_soup_note_request(normalized) or _contains_any(
         normalized,
         (
             "para las",
@@ -4670,6 +4678,28 @@ def _looks_like_checkout_note(text: str) -> bool:
         re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
         is not None
         and _contains_any(normalized, ("aca", "este", "pedido", "entrega", "enviar", "mandar"))
+    )
+
+
+def _looks_like_included_soup_note_request(text: str) -> bool:
+    normalized = normalize_text(text)
+    if not _contains_any(normalized, ("sopa", "sopita")):
+        return False
+    return _contains_any(
+        normalized,
+        (
+            "con sopa",
+            "con sopita",
+            "me dan sopa",
+            "me dan sopita",
+            "me envias sopa",
+            "me envías sopa",
+            "me envias sopita",
+            "me envías sopita",
+            "porfa",
+            "porfis",
+            "por favor",
+        ),
     )
 
 
@@ -4759,6 +4789,22 @@ def _looks_like_standalone_delivery_note(text: str) -> bool:
 
 def _looks_like_delivery_time_note(text: str) -> bool:
     normalized = normalize_text(text)
+    has_time = re.search(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized) is not None
+    if has_time and _contains_any(
+        normalized,
+        (
+            "por tarde",
+            "por tardecito",
+            "mas tarde",
+            "más tarde",
+            "tardecito",
+            "porfis",
+            "porfa",
+            "por favor",
+            "a eso de",
+        ),
+    ):
+        return True
     return (
         (
             re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
