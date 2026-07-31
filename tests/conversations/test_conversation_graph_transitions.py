@@ -5056,6 +5056,20 @@ async def test_punctuation_accents_and_spacing_do_not_break_delay_questions(raw_
 
 
 @pytest.mark.asyncio
+async def test_missed_promised_time_complaint_answers_waiting_time() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+    state = ConversationGraphState(chat_id=123, raw_text="No lograron enviarme antes de las 11:30???")
+
+    result = await graph.ainvoke(state)
+
+    assert "40 minutos" in result["response_text"]
+    assert "Gracias por tu paciencia" in result["response_text"]
+    assert "Puedes escribirme tu orden" not in result["response_text"]
+    assert "Me falta esta informacion" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_order_status_question_breaks_out_of_free_order_fallback_loop() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.NATURAL_ORDER)

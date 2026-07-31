@@ -6234,6 +6234,18 @@ def _looks_like_order_status_query(text: str) -> bool:
             "me van a mandar mí pedido",
             "mandar mi pedido",
             "mandar mí pedido",
+            "no lograron enviarme antes",
+            "no lograron enviar antes",
+            "no lograron mandarme antes",
+            "no lograron mandar antes",
+            "no alcanzaron a enviarme antes",
+            "no alcanzaron a enviar antes",
+            "no pudieron enviarme antes",
+            "no pudieron enviar antes",
+            "no me lo enviaron antes",
+            "no lo enviaron antes",
+            "no me lo mandaron antes",
+            "no lo mandaron antes",
             "no llega mi pedido",
             "no llega el pedido",
             "mi pedido llego",
@@ -6265,6 +6277,17 @@ def _looks_like_order_waiting_followup(text: str) -> bool:
     return bool(
         re.search(r"\bya\s+van\s+\d+\s*(?:min|mins|minuto|minutos|minuticos)\b", text)
         or re.search(r"\bvan\s+\d+\s*(?:min|mins|minuto|minutos|minuticos)\b", text)
+        or re.search(
+            r"\bno\s+(?:lograron|alcanzaron|pudieron)\s+(?:a\s+)?"
+            r"(?:enviarme|enviarlo|enviar|mandarme|mandarlo|mandar|traerme|traerlo|traer|despacharme|despacharlo|despachar)"
+            r"\s+antes\s+de\b",
+            text,
+        )
+        or re.search(
+            r"\bno\s+(?:me\s+lo|lo|me)\s+"
+            r"(?:enviaron|mandaron|trajeron|despacharon)\s+antes\s+de\b",
+            text,
+        )
         or _contains_any(text, ("ya van cuarenta minutos", "llevo esperando"))
     )
 
