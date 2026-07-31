@@ -645,6 +645,14 @@ class BotMessageFactory:
         return "Con mucho gusto, gracias a ti por elegirnos."
 
     @classmethod
+    def greeting_followup_answer(cls) -> str:
+        return "Claro, estoy atenta para ayudarte con tu orden."
+
+    @classmethod
+    def cart_note_added(cls) -> str:
+        return "Sí señora, queda anotado en tu orden."
+
+    @classmethod
     def order_confirmation_failed(cls) -> str:
         return (
             "No pude registrar tu orden en este momento. No perdi tu orden ni tus datos. "

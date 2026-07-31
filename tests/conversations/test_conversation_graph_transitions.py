@@ -4461,6 +4461,27 @@ async def test_chicken_order_with_soup_rejection_keeps_only_chicken() -> None:
 
 
 @pytest.mark.asyncio
+async def test_split_greeting_and_followup_only_potato_without_soup_stays_as_note() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Buenas"))
+    second = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Tatdes"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Para un cuarto de pollo asado"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Pierna"))
+
+    note = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Solo papa sin sopa"))
+
+    assert "Bienvenid@ a Mac Chicken" in first["response_text"]
+    assert second["response_text"] == "Claro, estoy atenta para ayudarte con tu orden."
+    assert note["response_text"] == "Sí señora, queda anotado en tu orden."
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == [("ASADO_CUARTO", 1)]
+    assert "Papa Francesa" not in note["response_text"]
+    assert "Acompanamiento asado: solo papa." in (services.session.observations or "")
+    assert "Sin sopa." in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
 async def test_post_add_soup_question_uses_last_chicken_product_without_adding_soup() -> None:
     services = FakeConversationServices()
     product = services.products["BROASTER_ENTERO"]

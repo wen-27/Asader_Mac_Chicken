@@ -163,6 +163,11 @@ async def detect_intent(
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    if _looks_like_fragmented_greeting_followup(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "greeting_followup"
+        state.query_value = text
+        return state
     if _looks_like_delivery_urgency_followup(text) and not parsed_rules.items:
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "delivery_urgency"
@@ -556,6 +561,12 @@ async def detect_intent(
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "asado_french_fries_option"
         state.query_value = text
+        return state
+    followup_side_note = _extract_followup_included_chicken_side_note(text, state.cart)
+    if state.cart and followup_side_note:
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "cart_note_added"
+        state.query_value = followup_side_note
         return state
     if _looks_like_direct_order_with_products(text, parsed_rules):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
@@ -2547,6 +2558,9 @@ async def answer_query(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    if state.query_type == "greeting_followup":
+        state.response_text = BotMessageFactory.greeting_followup_answer()
+        return state
     if state.query_type == "gratitude":
         state.response_text = BotMessageFactory.gratitude_answer()
         return state
@@ -2567,6 +2581,13 @@ async def answer_query(
         return state
     if state.query_type == "delivery_urgency":
         state.response_text = BotMessageFactory.delivery_urgency_answer()
+        return state
+    if state.query_type == "cart_note_added":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.observations = _append_observation(session.observations, state.query_value or "")
+        await services.persist_session(session)
+        state.customer.observations = session.observations
+        state.response_text = BotMessageFactory.cart_note_added()
         return state
     if state.query_type == "refund":
         state.response_text = BotMessageFactory.refund_followup_answer()
@@ -4375,6 +4396,48 @@ def _extract_included_chicken_side_note(text: str) -> str | None:
     return None
 
 
+def _extract_followup_included_chicken_side_note(text: str, cart: list[CartLineState]) -> str | None:
+    if not cart:
+        return None
+    if _looks_like_question(text):
+        return None
+    if _contains_any(
+        text,
+        (
+            "adicional",
+            "adicionales",
+            "extra",
+            "extras",
+            "porcion",
+            "porción",
+            "aparte",
+            "otra",
+            "otras",
+        ),
+    ):
+        return None
+    if not _contains_any(text, ("papa", "papas", "yuca", "yuca", "sopa", "sopas", "sopita", "sopitas")):
+        return None
+    has_asado = any(line.product_code.startswith("ASADO_") for line in cart)
+    has_broaster = any(line.product_code.startswith("BROASTER_") for line in cart)
+    if not has_asado and not has_broaster:
+        return None
+
+    notes: list[str] = []
+    side_note = None
+    if has_asado:
+        side_note = _extract_included_chicken_side_note(f"pollo asado {text}")
+    if not side_note and has_broaster:
+        side_note = _extract_included_chicken_side_note(f"pollo broster {text}")
+    if side_note:
+        notes.append(side_note)
+    if _looks_like_soup_rejection(text) or _contains_any(text, ("sin sopa", "sin sopita")):
+        notes.append("Sin sopa.")
+    if not notes:
+        return None
+    return " ".join(notes)
+
+
 def _needs_included_side_clarification(text: str) -> bool:
     if _contains_any(text, ("adicional", "extra", "porcion", "porción", "aparte")):
         return False
@@ -4946,6 +5009,23 @@ def _is_greeting_only(text: str) -> bool:
     if normalized in greetings:
         return True
     return any(normalized == f"{greeting} {greeting}" for greeting in greetings)
+
+
+def _looks_like_fragmented_greeting_followup(text: str) -> bool:
+    normalized = normalize_text(text)
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized in {
+        "tardes",
+        "tardez",
+        "tatdes",
+        "tades",
+        "tarde",
+        "dias",
+        "dia",
+        "noches",
+        "noche",
+    }
 
 
 def _has_greeting_prefix(text: str) -> bool:
