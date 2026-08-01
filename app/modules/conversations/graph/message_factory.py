@@ -750,6 +750,29 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def chicken_availability_answer(
+        cls,
+        asado_available: bool,
+        broaster_available: bool,
+        scope: str = "pollo",
+    ) -> str:
+        if scope == "asado":
+            if asado_available:
+                return "Sí señora, en este momento tenemos Pollo asado disponible. Con mucho gusto puedes ordenar el tamaño que deseas."
+            return "Qué pena contigo, en este momento no tenemos Pollo asado disponible. Si deseas, puedo mostrarte otras opciones del menú."
+        if scope == "broaster":
+            if broaster_available:
+                return "Sí señora, en este momento tenemos Pollo broster disponible. Con mucho gusto puedes ordenar el tamaño que deseas."
+            return "Qué pena contigo, en este momento no tenemos Pollo broster disponible. Si deseas, puedo mostrarte otras opciones del menú."
+        if asado_available and broaster_available:
+            return "Sí señora, en este momento tenemos Pollo asado y Pollo broster disponible. Con mucho gusto puedes ordenar lo que deseas."
+        if asado_available:
+            return "Sí señora, en este momento tenemos Pollo asado disponible. Pollo broster no aparece disponible por ahora."
+        if broaster_available:
+            return "Sí señora, en este momento tenemos Pollo broster disponible. Pollo asado no aparece disponible por ahora."
+        return "Qué pena contigo, en este momento no tenemos pollo disponible. Si deseas, puedo mostrarte otras opciones del menú."
+
+    @classmethod
     def _included_soup_text(cls, product_code: str, soup_available: bool) -> str:
         if not soup_available:
             return (

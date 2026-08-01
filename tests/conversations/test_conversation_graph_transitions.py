@@ -1342,9 +1342,35 @@ async def test_real_category_answer_keeps_context_for_short_size_followup() -> N
     followup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Uno entero por favor"))
 
     assert category["current_step"] == ConversationState.SELECT_ASADO
+    assert "pollo asado disponible" in category["response_text"].lower()
     assert followup["current_step"] == ConversationState.ASK_QUANTITY
     assert services.session.selected_product_code == ProductCode("ASADO_ENTERO")
     assert "No encontre ese producto" not in followup["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_chicken_availability_question_answers_from_stock_state() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Buenas, queda pollo?"))
+
+    assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
+    assert "pollo asado y pollo broster disponible" in result["response_text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_chicken_availability_question_answers_when_out_of_stock() -> None:
+    services = FakeConversationServices()
+    for product in services.products.values():
+        if product.category in {ProductCategory.POLLO_ASADO, ProductCategory.POLLO_BROASTER}:
+            product.is_available = False
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Queda pollo?"))
+
+    assert result["current_step"] == ConversationState.PRODUCT_CATEGORY
+    assert "no tenemos pollo disponible" in result["response_text"].lower()
 
 
 @pytest.mark.asyncio

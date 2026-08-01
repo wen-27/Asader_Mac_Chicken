@@ -2802,6 +2802,23 @@ async def answer_query(
                 return state
             state.response_text = f"Si, {product.name.value} esta disponible en este momento."
             return state
+    if state.query_type == "chicken_availability":
+        scope = state.query_value or "pollo"
+        asado_available = await _category_has_available_products(ProductCategory.POLLO_ASADO, services)
+        broaster_available = await _category_has_available_products(ProductCategory.POLLO_BROASTER, services)
+        state.response_text = BotMessageFactory.chicken_availability_answer(
+            asado_available,
+            broaster_available,
+            scope,
+        )
+        if scope == "asado":
+            state.current_step = ConversationState.SELECT_ASADO
+        elif scope == "broaster":
+            state.current_step = ConversationState.SELECT_BROASTER
+        else:
+            state.current_step = ConversationState.PRODUCT_CATEGORY
+        await _persist_step(state, services)
+        return state
     if state.query_type == "price":
         product = await _find_product_for_query(state.query_value or state.raw_text, services)
         if product is None:
@@ -5921,6 +5938,18 @@ async def _soup_is_available(services: ConversationGraphServices) -> bool:
     return True
 
 
+async def _category_has_available_products(
+    category: ProductCategory,
+    services: ConversationGraphServices,
+) -> bool:
+    products = _visible_menu_products(await services.list_products_by_category(category))
+    for product in products:
+        availability = await _evaluate_product_availability(product, services)
+        if availability.is_available:
+            return True
+    return False
+
+
 def _is_menu_request(text: str) -> bool:
     if _contains_command(
         text,
@@ -6036,6 +6065,12 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         word in text
         for word in ["tienes", "tiene", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
     ):
+        if _looks_like_chicken_availability_question(text):
+            if _contains_any(text, BROASTER_TEXT_TERMS):
+                return ("chicken_availability", "broaster")
+            if _contains_any(text, ASADO_TEXT_TERMS):
+                return ("chicken_availability", "asado")
+            return ("chicken_availability", "pollo")
         if _looks_like_soup_availability_question(text):
             return ("contents", text)
         if any(word in text for word in ["lasagna", "lasana", "lasaña", "lazana", "lazaña"]):
@@ -6272,6 +6307,31 @@ def _looks_like_soup_availability_question(text: str) -> bool:
             "les quedan sopas",
             "les queda sopita",
             "les quedan sopitas",
+        ),
+    )
+
+
+def _looks_like_chicken_availability_question(text: str) -> bool:
+    if not _contains_any(text, ("pollo", "pollos", "asado", "asados") + BROASTER_TEXT_TERMS):
+        return False
+    return _contains_any(
+        text,
+        (
+            "queda",
+            "quedan",
+            "quedo",
+            "quedó",
+            "hay",
+            "tiene",
+            "tienen",
+            "les queda",
+            "les quedan",
+            "aun queda",
+            "aún queda",
+            "todavia queda",
+            "todavía queda",
+            "disponible",
+            "disponibles",
         ),
     )
 
