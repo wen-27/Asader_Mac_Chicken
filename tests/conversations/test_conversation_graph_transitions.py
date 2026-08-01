@@ -7059,6 +7059,40 @@ async def test_real_failed_chat_included_soup_and_sauce_note_does_not_add_paid_s
 
 
 @pytest.mark.asyncio
+async def test_confirmed_chicken_order_soup_followup_does_not_create_paid_soup_order() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Yuri Osorio\n"
+                "Calle 42 n 7-41 lagos 2\n"
+                "3203835168\n"
+                "Efectivo\n"
+                "Medio pollo asado\n"
+                "Medio pollo broster"
+            ),
+        )
+    )
+    assert "Nota: Sin nota" in result["response_text"]
+
+    confirmed = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="si"))
+    services.soup_available = False
+    soup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Me regala por favor sopa"))
+    question = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="La sopa no va con el pollo"))
+
+    assert "Orden confirmada" in confirmed["response_text"]
+    assert "sopa sí va incluida" in soup["response_text"]
+    assert "se nos agotó" in soup["response_text"]
+    assert "sopa sí va incluida" in question["response_text"]
+    assert "Sopa Adicional" not in soup["response_text"]
+    assert "Me falta esta informacion" not in soup["response_text"]
+    assert services.session.cart == []
+
+
+@pytest.mark.asyncio
 async def test_real_customer_cancelo_efectivo_without_cart_does_not_start_delivery() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

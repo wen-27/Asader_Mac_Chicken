@@ -793,6 +793,18 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def confirmed_order_soup_answer(cls, soup_available: bool = True) -> str:
+        if not soup_available:
+            return (
+                "Sí señora, la sopa sí va incluida con el pollo según la presentación, "
+                "pero en este momento ya se nos agotó. Qué pena contigo por la confusión."
+            )
+        return (
+            "Sí señora, la sopa va incluida con el pollo según la presentación. "
+            "Gracias por confirmarnos, lo tenemos presente."
+        )
+
+    @classmethod
     def continue_without_soup_menu(cls) -> str:
         return "\n\n".join(
             [

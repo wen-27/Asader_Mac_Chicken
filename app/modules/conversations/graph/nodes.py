@@ -216,6 +216,11 @@ async def detect_intent(
         if _has_checkout_data_signal(state.raw_text):
             session.clear_pending_order()
             await services.persist_session(session)
+    if _looks_like_confirmed_order_soup_followup(text, session.pending_order_json):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "confirmed_order_soup"
+        state.query_value = text
+        return state
     if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
         if session.pending_order_json:
             if _should_cancel_pending_order(text):
@@ -1243,6 +1248,10 @@ async def validate_customer_data(
         await services.persist_session(session)
         state.response_text = BotMessageFactory.missing_customer_data(missing)
     else:
+        state.customer.observations = _remove_duplicate_customer_name_observation(
+            state.customer.observations,
+            state.customer.name,
+        )
         state.current_step = ConversationState.CHECKOUT_REVIEW
         session = await services.load_or_create_session(ChatId(state.chat_id))
         _copy_checkout_state_to_session(state, session)
@@ -2046,6 +2055,23 @@ def _clear_invalid_checkout_cached_fields(customer: CustomerDataState) -> None:
         customer.observations = None
 
 
+def _remove_duplicate_customer_name_observation(
+    observations: str | None,
+    customer_name: str | None,
+) -> str | None:
+    if not observations or not customer_name:
+        return observations
+    normalized_observations = normalize_text(observations).strip(". ")
+    normalized_name = normalize_text(customer_name).strip(". ")
+    if normalized_observations == normalized_name:
+        return None
+    prefix = f"{customer_name.strip()}."
+    if observations.strip().lower().startswith(prefix.lower()):
+        cleaned = observations.strip()[len(prefix) :].strip()
+        return cleaned or None
+    return observations
+
+
 def _is_checkout_filler_message(text: str) -> bool:
     normalized_text = normalize_text(text)
     if (
@@ -2390,10 +2416,12 @@ async def confirm_order(
         state.response_text = BotMessageFactory.order_confirmation_failed()
         await _persist_step(state, services)
         return state
+    last_confirmed_order = _last_confirmed_order_payload(state)
     session.empty_cart()
     session.clear_selected_product()
     session.clear_pending_order()
     _clear_checkout_session(session)
+    session.pending_order_json = last_confirmed_order
     session.move_to(ConversationState.MAIN_MENU)
     await services.persist_session(session)
     state.current_step = ConversationState.MAIN_MENU
@@ -2671,6 +2699,10 @@ async def answer_query(
         return state
     if state.query_type == "soup_rejection":
         state.response_text = BotMessageFactory.soup_rejection_answer()
+        return state
+    if state.query_type == "confirmed_order_soup":
+        soup_available = await _soup_is_available(services)
+        state.response_text = BotMessageFactory.confirmed_order_soup_answer(soup_available)
         return state
     if state.query_type == "asado_french_fries_option":
         state.response_text = BotMessageFactory.asado_french_fries_option_answer()
@@ -6264,6 +6296,81 @@ def _looks_like_soup_rejection(text: str) -> bool:
             "no quiero sopita",
         ),
     )
+
+
+def _looks_like_confirmed_order_soup_followup(
+    text: str,
+    pending_order_json: dict[str, object] | None,
+) -> bool:
+    if not _last_confirmed_order_has_chicken(pending_order_json):
+        return False
+    if not _contains_any(text, ("sopa", "sopas", "sopita", "sopitas")):
+        return False
+    if _contains_any(
+        text,
+        (
+            "adicional",
+            "adicionales",
+            "extra",
+            "extras",
+            "porcion",
+            "porción",
+            "aparte",
+            "icopor",
+            "en vaso",
+            "en bolsa",
+        ),
+    ):
+        return False
+    return _contains_any(
+        text,
+        (
+            "me regala",
+            "me regalas",
+            "me da",
+            "me das",
+            "me puede dar",
+            "me pueden dar",
+            "va con",
+            "viene con",
+            "incluye",
+            "trae",
+            "no va con",
+            "no viene con",
+            "la sopa",
+            "sopa",
+            "sopita",
+        ),
+    )
+
+
+def _last_confirmed_order_payload(state: ConversationGraphState) -> dict[str, object]:
+    return {
+        "kind": "last_confirmed_order",
+        "items": [
+            {
+                "code": line.product_code,
+                "name": line.product_name,
+                "quantity": line.quantity,
+            }
+            for line in state.cart
+        ],
+    }
+
+
+def _last_confirmed_order_has_chicken(pending_order_json: dict[str, object] | None) -> bool:
+    if (pending_order_json or {}).get("kind") != "last_confirmed_order":
+        return False
+    items = pending_order_json.get("items") if pending_order_json else None
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "")
+        if code.startswith(("ASADO_", "BROASTER_")):
+            return True
+    return False
 
 
 def _looks_like_combination_question(text: str) -> bool:
