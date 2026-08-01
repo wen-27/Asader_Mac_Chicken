@@ -489,6 +489,18 @@ async def test_real_customer_polite_order_sends_welcome_menu_and_keeps_items() -
 
 
 @pytest.mark.asyncio
+async def test_greeting_with_order_intent_sends_welcome_menu() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola quiero hacer una orden"))
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert "Bienvenid@ a Mac Chicken" in result["response_text"]
+    assert "enviarnos tu orden" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_direct_order_from_main_menu_does_not_repeat_welcome_menu() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -537,6 +549,36 @@ async def test_natural_order_with_customer_data_goes_to_checkout_review() -> Non
     assert "Cliente: Juan Perez" in result["response_text"]
     assert services.session.customer_name == "Juan Perez"
     assert len(services.session.cart) == 1
+
+
+@pytest.mark.asyncio
+async def test_checkout_payload_accepts_address_before_phone_and_note_after_payment() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Juan Carlos mantilla\n"
+                "Cra31#155-24\n"
+                "3177594646\n"
+                "asovilagos\n"
+                "Transferencia\n"
+                "Buen ají"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Me falta esta informacion" not in result["response_text"]
+    assert "Cliente: Juan Carlos mantilla" in result["response_text"]
+    assert "Direccion: Cra31#155-24" in result["response_text"]
+    assert "Barrio: asovilagos" in result["response_text"]
+    assert "Pago: Transferencia Bancolombia" in result["response_text"]
+    assert "Nota: Buen ají" in result["response_text"]
 
 
 @pytest.mark.asyncio

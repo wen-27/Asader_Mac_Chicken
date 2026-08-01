@@ -1528,20 +1528,21 @@ def _split_structured_checkout_lines(lines: list[str]) -> list[str] | None:
     )
     if phone_index < 0 or address_index < 0:
         return None
-    name = _clean_customer_name(" ".join(before_payment[:phone_index]).strip())
+    first_signal_index = min(phone_index, address_index)
+    name = _clean_customer_name(" ".join(before_payment[:first_signal_index]).strip())
     if not name:
         return None
     address, embedded_neighborhood, embedded_note = _split_rich_address_line(before_payment[address_index])
-    between_phone_and_address = [
-        line for index, line in enumerate(before_payment[phone_index + 1 : address_index + 1], start=phone_index + 1)
-        if index != address_index
+    trailing = [
+        line
+        for index, line in enumerate(before_payment[first_signal_index + 1 :], start=first_signal_index + 1)
+        if index not in {phone_index, address_index}
     ]
-    trailing = before_payment[address_index + 1 :]
     if not trailing and not embedded_neighborhood:
         return None
     neighborhood = embedded_neighborhood or trailing[0]
     trailing_note_lines = trailing if embedded_neighborhood else trailing[1:]
-    note_lines = between_phone_and_address + ([embedded_note] if embedded_note else []) + trailing_note_lines + after_payment
+    note_lines = ([embedded_note] if embedded_note else []) + trailing_note_lines + after_payment
     result = [name, before_payment[phone_index], address, neighborhood]
     if note_lines:
         result.append(" ".join(note_lines))
@@ -4618,6 +4619,8 @@ def _detect_natural_menu_intent(text: str) -> ConversationIntent | None:
         ),
     ):
         return ConversationIntent.VACIAR_CARRITO
+    if _contains_command(text, ("hacer orden", "hacer una orden")):
+        return ConversationIntent.MOSTRAR_MENU
     if _contains_command(text, ("ver carrito", "ver compra", "ver orden", "mostrar carrito", "mostrar compra", "mostrar orden", "mi carrito", "mi compra", "mi orden", "carrito", "compra", "orden")):
         return ConversationIntent.MOSTRAR_CARRITO
     if _contains_command(text, ("quitar producto", "eliminar producto", "quitar ultimo", "quitar último")):
@@ -5984,6 +5987,8 @@ def _is_menu_request(text: str) -> bool:
             "quiero comprar",
             "hacer pedido",
             "hacer un pedido",
+            "hacer orden",
+            "hacer una orden",
             "pedir comida",
             "ordenar comida",
         ),
