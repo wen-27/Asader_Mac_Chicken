@@ -263,7 +263,12 @@ async def detect_intent(
         state.current_step == ConversationState.POST_ADD
         and state.cart
         and _has_checkout_data_signal(state.raw_text)
-        and ("\n" in state.raw_text or not _looks_like_payment_account_query(text))
+        and (
+            "\n" in state.raw_text
+            or _looks_like_phone(state.raw_text)
+            or _looks_like_address(text)
+            or not _looks_like_payment_account_query(text)
+        )
         and not _looks_like_order_total_request(text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
@@ -1179,7 +1184,7 @@ async def extract_customer_data(
         elif key in {"barrio", "sector"}:
             customer.neighborhood = value
         elif key in {"metodo de pago", "pago", "medio de pago", "forma de pago"}:
-            customer.payment_method = value
+            customer.payment_method = _normalize_payment_method(normalize_text(value), value)
         elif key in {
             "observaciones",
             "observacion",
@@ -1270,6 +1275,7 @@ def _extract_customer_data_from_free_lines(
     # Detect strong signals first, then assign the remaining human text by order.
     _clear_invalid_checkout_cached_fields(customer)
     first_useful_line_is_phone = False
+    first_useful_line_is_address = False
     for line in lines:
         line = _strip_leading_chicken_part_allocation(line)
         normalized = normalize_text(line)
@@ -1282,6 +1288,7 @@ def _extract_customer_data_from_free_lines(
         if _looks_like_invalid_phone_only(line):
             continue
         first_useful_line_is_phone = _looks_like_phone(line)
+        first_useful_line_is_address = _looks_like_address(normalized)
         break
     remaining: list[str] = []
     for line in lines:
@@ -1354,7 +1361,11 @@ def _extract_customer_data_from_free_lines(
                 customer.observations = _append_observation(customer.observations, note_line)
             remaining = [line for line in remaining if line not in delivery_time_notes]
     if not customer.name and remaining:
-        customer.name = _clean_customer_name(remaining.pop(0))
+        should_pick_best_name = first_useful_line_is_address or (
+            first_useful_line_is_phone and _has_multitoken_customer_name_candidate(remaining)
+        )
+        name_index = _best_customer_name_line_index(remaining) if should_pick_best_name else 0
+        customer.name = _clean_customer_name(remaining.pop(name_index))
     if fulfillment_type == "PICKUP":
         if remaining:
             note = " ".join(remaining)
@@ -1370,6 +1381,26 @@ def _extract_customer_data_from_free_lines(
     if not customer.observations and remaining:
         note = " ".join(remaining)
         customer.observations = _clean_checkout_note(note) if clean_notes else note
+
+
+def _best_customer_name_line_index(lines: list[str]) -> int:
+    for index, line in enumerate(lines):
+        normalized = normalize_text(line)
+        if _looks_like_customer_name_line(normalized):
+            return index
+    for index, line in enumerate(lines):
+        normalized = normalize_text(line)
+        if _looks_like_probable_customer_name(line) and len(normalized.split()) >= 2:
+            return index
+    return 0
+
+
+def _has_multitoken_customer_name_candidate(lines: list[str]) -> bool:
+    return any(
+        _looks_like_probable_customer_name(line)
+        and len(normalize_text(line).split()) >= 2
+        for line in lines
+    )
 
 
 def _clean_checkout_note(note: str) -> str:
@@ -1551,13 +1582,18 @@ def _split_structured_checkout_lines(lines: list[str]) -> list[str] | None:
 
 
 def _split_delimited_checkout_line(line: str) -> list[str] | None:
-    if _looks_like_checkout_note(line):
-        return None
     parts = [part.strip() for part in re.split(r"\s*[,;|]\s*", line) if part.strip()]
     if len(parts) <= 1:
         return None
     normalized_parts = [normalize_text(part) for part in parts]
     joined_normalized = normalize_text(" ".join(parts))
+    has_checkout_signal = (
+        any(_looks_like_phone(part) for part in parts)
+        or any(_looks_like_address(part) for part in normalized_parts)
+        or any(_looks_like_payment_method(part) for part in normalized_parts)
+    )
+    if _looks_like_checkout_note(line) and not has_checkout_signal:
+        return None
     if (
         not any(_looks_like_phone(part) for part in parts)
         and not any(_looks_like_payment_method(part) for part in normalized_parts)
@@ -1566,9 +1602,7 @@ def _split_delimited_checkout_line(line: str) -> list[str] | None:
         return None
     has_structured_checkout_signal = (
         len(parts) >= 3
-        or any(_looks_like_phone(part) for part in parts)
-        or any(_looks_like_address(part) for part in normalized_parts)
-        or any(_looks_like_payment_method(part) for part in normalized_parts)
+        or has_checkout_signal
     )
     if not has_structured_checkout_signal:
         return None
@@ -1824,6 +1858,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         "diamante",
         "cacique",
         "cabecera",
+        "asovilagos",
         "san antonio del carrizal",
         "san antonio carrizal",
     )
@@ -5056,6 +5091,7 @@ def _looks_like_neighborhood_only(normalized: str) -> bool:
         "bellfort",
         "bellavista",
         "provenza",
+        "asovilagos",
     }
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from itertools import permutations
 
 import pytest
 
@@ -579,6 +580,139 @@ async def test_checkout_payload_accepts_address_before_phone_and_note_after_paym
     assert "Barrio: asovilagos" in result["response_text"]
     assert "Pago: Transferencia Bancolombia" in result["response_text"]
     assert "Nota: Buen ají" in result["response_text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        (
+            "Juan Carlos mantilla\n"
+            "3177594646\n"
+            "Cra31#155-24\n"
+            "asovilagos\n"
+            "Transferencia\n"
+            "Buen ají"
+        ),
+        (
+            "Juan Carlos mantilla\n"
+            "Cra31#155-24\n"
+            "3177594646\n"
+            "asovilagos\n"
+            "Buen ají\n"
+            "Transferencia"
+        ),
+        (
+            "Juan Carlos mantilla\n"
+            "Cra31#155-24\n"
+            "asovilagos\n"
+            "3177594646\n"
+            "Transferencia\n"
+            "Buen ají"
+        ),
+    ],
+)
+async def test_checkout_payload_keeps_fields_in_place_across_common_line_orders(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert services.session.customer_name == "Juan Carlos mantilla"
+    assert services.session.customer_phone == "3177594646"
+    assert services.session.customer_address == "Cra31#155-24"
+    assert services.session.customer_neighborhood == "asovilagos"
+    assert services.session.payment_method == "Transferencia Bancolombia"
+    assert services.session.observations == "Buen ají"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        (
+            "3177594646\n"
+            "Juan Carlos mantilla\n"
+            "Cra31#155-24\n"
+            "asovilagos\n"
+            "Transferencia\n"
+            "Buen ají"
+        ),
+        (
+            "Juan Carlos mantilla, Cra31#155-24, 3177594646, asovilagos, transferencia, Buen ají"
+        ),
+        (
+            "Nombre: Juan Carlos mantilla\n"
+            "Pago: Transferencia\n"
+            "Nota: Buen ají\n"
+            "Barrio: asovilagos\n"
+            "Telefono: 3177594646\n"
+            "Direccion: Cra31#155-24"
+        ),
+        (
+            "Juan Carlos mantilla\n"
+            "3177594646\n"
+            "asovilagos\n"
+            "Cra31#155-24\n"
+            "Buen ají\n"
+            "Transferencia"
+        ),
+        (
+            "Juan Carlos mantilla\n"
+            "Cra31#155-24 barrio asovilagos\n"
+            "3177594646\n"
+            "Transferencia\n"
+            "Buen ají"
+        ),
+    ],
+)
+async def test_checkout_payload_does_not_swap_fields_in_messy_realistic_orders(raw_text: str) -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert services.session.customer_name == "Juan Carlos mantilla"
+    assert services.session.customer_phone == "3177594646"
+    assert services.session.customer_address == "Cra31#155-24"
+    assert services.session.customer_neighborhood == "asovilagos"
+    assert services.session.payment_method == "Transferencia Bancolombia"
+    assert services.session.observations == "Buen ají"
+
+
+@pytest.mark.asyncio
+async def test_checkout_payload_does_not_swap_fields_across_all_core_line_permutations() -> None:
+    fields = [
+        "Juan Carlos mantilla",
+        "Cra31#155-24",
+        "3177594646",
+        "asovilagos",
+        "Transferencia",
+    ]
+
+    for ordered_fields in permutations(fields):
+        services = FakeConversationServices()
+        services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+        services.session.move_to(ConversationState.POST_ADD)
+        graph = build_conversation_graph(services)
+
+        result = await graph.ainvoke(
+            ConversationGraphState(chat_id=123, raw_text="\n".join(ordered_fields))
+        )
+
+        assert result["current_step"] == ConversationState.CHECKOUT_REVIEW, ordered_fields
+        assert services.session.customer_name == "Juan Carlos mantilla", ordered_fields
+        assert services.session.customer_phone == "3177594646", ordered_fields
+        assert services.session.customer_address == "Cra31#155-24", ordered_fields
+        assert services.session.customer_neighborhood == "asovilagos", ordered_fields
+        assert services.session.payment_method == "Transferencia Bancolombia", ordered_fields
+        assert services.session.observations is None, ordered_fields
 
 
 @pytest.mark.asyncio
