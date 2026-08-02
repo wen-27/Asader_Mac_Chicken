@@ -17,6 +17,7 @@ DELIVERY_ZONE_SEEDS: tuple[DeliveryZoneSeed, ...] = (
     DeliveryZoneSeed("DOMICILIO_LAGOS_2_SANTA_COLOMA", "Lagos 2 / Santa Coloma", 2000),
     DeliveryZoneSeed("DOMICILIO_BUCARICA_BELLAVISTA", "Bucarica / Bellavista", 4000),
     DeliveryZoneSeed("DOMICILIO_EL_MANANTIAL", "El Manantial", 4000),
+    DeliveryZoneSeed("DOMICILIO_VILLA_PIEDRA", "Villa Piedra Del Sol / Villa Piedra / Villapiedra", 4000),
     DeliveryZoneSeed("DOMICILIO_CANAVERAL_FLORIDA", "Cañaveral / Florida", 6000),
     DeliveryZoneSeed("DOMICILIO_PROVENZA_DIAMANTE", "Provenza / Diamante", 7000),
     DeliveryZoneSeed("DOMICILIO_EL_OLYMPO", "El Olympo / Olimpo", 7000),

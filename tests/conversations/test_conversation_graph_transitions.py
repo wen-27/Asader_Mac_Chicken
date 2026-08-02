@@ -1260,6 +1260,20 @@ async def test_natural_clear_my_cart_command_clears_cart() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cancel_current_order_command_clears_cart() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero cancelar la orden actual"))
+
+    assert result["current_step"] == ConversationState.MAIN_MENU
+    assert services.session.cart == []
+    assert "Cancele la orden actual" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_clear_order_removes_stale_checkout_data_before_new_drink_order() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["ASADO_MEDIO"], 1))
@@ -6714,6 +6728,21 @@ async def test_paid_sauce_extra_after_cart_adds_item_instead_of_checkout_note() 
         "BROASTER_ENTERO",
         "ADICIONAL_SALSAS",
     ]
+
+
+@pytest.mark.asyncio
+async def test_simple_sauce_note_after_cart_is_saved_without_paid_extra() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_ENTERO"], 1))
+    services.session.move_to(ConversationState.POST_ADD)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="bastante tartara"))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion" in result["response_text"]
+    assert services.session.observations == "bastante tartara"
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_ENTERO"]
 
 
 @pytest.mark.asyncio

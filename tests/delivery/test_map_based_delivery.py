@@ -52,6 +52,11 @@ class FakeDeliveryZones:
                 delivery_price=MoneyCOP(4000),
             ),
             DeliveryZone(
+                code="DOMICILIO_VILLA_PIEDRA",
+                neighborhood=Neighborhood("Villa Piedra Del Sol / Villa Piedra / Villapiedra"),
+                delivery_price=MoneyCOP(4000),
+            ),
+            DeliveryZone(
                 code="DOMICILIO_BUCARICA_BELLAVISTA",
                 neighborhood=Neighborhood("Bucarica / Bellavista"),
                 delivery_price=MoneyCOP(4000),
@@ -148,6 +153,23 @@ async def test_map_delivery_matches_el_manantial_manual_price() -> None:
 
     assert result.delivery_price_cop == 4000
     assert result.pricing_source == "zone"
+
+
+@pytest.mark.asyncio
+async def test_map_delivery_matches_villa_piedra_manual_price() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        FakeDistanceClient(),
+        DeliveryPricingConfig(origin_address="Lagos 2"),
+    )
+
+    villa_piedra = await use_case.execute("Cra28a 193-26", "Villa Piedra Del Sol")
+    villapiedra = await use_case.execute("Cra28a 193-26", "villapiedra")
+
+    assert villa_piedra.delivery_price_cop == 4000
+    assert villa_piedra.pricing_source == "zone"
+    assert villapiedra.delivery_price_cop == 4000
+    assert villapiedra.pricing_source == "zone"
 
 
 @pytest.mark.asyncio

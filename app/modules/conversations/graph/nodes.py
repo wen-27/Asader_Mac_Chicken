@@ -405,6 +405,9 @@ async def detect_intent(
         state.query_type = "payment_account"
         state.query_value = text
         return state
+    if state.cart and _looks_like_cancel_current_order_request(text):
+        state.intent = ConversationIntent.CANCELAR
+        return state
     if _looks_like_payment_cancel_phrase(text) and not parsed_rules.items:
         if state.cart and _looks_like_order_total_request(text):
             state.intent = ConversationIntent.MOSTRAR_CARRITO
@@ -442,6 +445,9 @@ async def detect_intent(
         return state
     if state.cart and _looks_like_paid_sauce_extra(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
+        return state
+    if state.cart and _extract_sauce_note(text) and not _looks_like_sauce_option_question(text):
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
     if state.current_step == ConversationState.ASK_CHICKEN_PART:
         if state.selected_product_code and not _requires_chicken_selection(state.selected_product_code):
@@ -1110,7 +1116,7 @@ async def ask_quantity(
         state.selected_product_name = product.name.value
         state.selected_unit_price_cop = product.price.amount
     half_code = _half_chicken_code_from_name(state.selected_product_name)
-    if half_code:
+    if half_code and _direct_half_chicken_code(state.normalized_text or normalize_text(state.raw_text)):
         state.selected_product_code = half_code
         product = await services.find_product(half_code)
         if product is not None:
@@ -5979,6 +5985,15 @@ def _looks_like_customer_gave_up(text: str) -> bool:
     )
 
 
+def _looks_like_cancel_current_order_request(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    if _looks_like_payment_cancel_phrase(normalized):
+        return False
+    if not re.search(r"\bcancel(?:ar|o|ó|a|e|as)\b", normalized):
+        return False
+    return _contains_any(normalized, ("pedido", "orden", "carrito", "actual", "todo"))
+
+
 def _looks_like_other_channel_order(text: str) -> bool:
     return _contains_any(
         text.strip(" ¿?.,!¡"),
@@ -6033,9 +6048,21 @@ def _half_chicken_code_from_name(product_name: str | None) -> str | None:
 
 
 def _direct_half_chicken_code(text: str) -> str | None:
+    if "_" in text:
+        return None
     if not _contains_any(text, ("medio", "media", "mitad", "1/2", "1 2")):
         return None
     if not _contains_any(text, ("pollo", "pollos", "polo", "polos", "poyo", "poyos") + ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS):
+        return None
+    if "\n" in text or _looks_like_question(text) or _has_checkout_data_signal(text):
+        return None
+    if _contains_any(text, ASADO_TEXT_TERMS) and _contains_any(text, BROASTER_TEXT_TERMS):
+        return None
+    if _contains_any(text, ("cuarto", "1/4", "pierna", "pechuga", "pernil", "ala")):
+        return None
+    if _contains_any(text, (" con ", " yuca", " papa", " sopa", " hit ", " gaseosa", " coca")):
+        return None
+    if _extract_sauce_note(text) or _looks_like_included_soup_note_request(text):
         return None
     if _contains_any(text, BROASTER_TEXT_TERMS):
         return "BROASTER_MEDIO"
