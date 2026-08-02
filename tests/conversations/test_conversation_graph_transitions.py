@@ -873,6 +873,20 @@ async def test_half_chicken_order_adds_directly_without_part_prompt(
 
 
 @pytest.mark.asyncio
+async def test_half_chicken_after_welcome_adds_directly_without_part_prompt() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola quiero hacer una orden"))
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero medio pollo asado"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/2 Asado" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+
+
+@pytest.mark.asyncio
 async def test_real_asado_menu_number_three_adds_half_without_part_prompt() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
