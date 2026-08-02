@@ -7038,6 +7038,52 @@ async def test_real_sauce_notes_after_cart_are_saved_without_opening_menus(
 
 
 @pytest.mark.asyncio
+async def test_real_pre_order_part_and_sauce_replacement_checkout_flow() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    pre_order = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Y veci porfa que presa sea pierna pernil si me haces el favor y pago por nequi",
+        )
+    )
+    assert pre_order["current_step"] == ConversationState.NATURAL_ORDER
+    assert services.session.payment_method == "Nequi"
+    assert services.session.observations == "Presa solicitada: Pierna."
+
+    order = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Vecina para pedir 1/4 de pollo a la broaster para el sector 5 bloque 6-3 apto 401 bucarica",
+        )
+    )
+    assert order["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "1 x 1/4 Broasted - Pierna" in order["response_text"]
+    assert [item.product_name.value for item in services.session.cart] == ["1/4 Broasted - Pierna"]
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="wendy 3022873946"))
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="wensy"))
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Cliente: wensy" in review["response_text"]
+    assert "Telefono: 3022873946" in review["response_text"]
+    assert services.session.customer_phone == "3022873946"
+
+    sauce = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Y porfa en vez de enviarme miel me podrían enviar más tártara, muchas gracias",
+        )
+    )
+    assert sauce["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Adicional de Salsas" not in sauce["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["BROASTER_CUARTO"]
+    assert "en vez de enviarme miel" in sauce["response_text"]
+    assert "más tártara" in sauce["response_text"]
+    assert "Subtotal: $13500" in sauce["response_text"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("step", [ConversationState.POST_ADD, ConversationState.CHECKOUT_REVIEW])
 async def test_real_paid_receiver_note_after_cart_is_saved_without_fallback(step: ConversationState) -> None:
     services = FakeConversationServices()

@@ -1367,6 +1367,16 @@ async def extract_customer_data(
         customer.name = inline_name
     if state.fulfillment_type == "PICKUP":
         _extract_inline_pickup_customer_data(customer, state.raw_text)
+    if (
+        state.cart
+        and _contains_any(state.normalized_text, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "tomate", "miel"))
+        and not _looks_like_paid_sauce_extra(state.normalized_text)
+        and not _has_checkout_data_signal(state.raw_text)
+    ):
+        customer.observations = _append_observation(
+            customer.observations,
+            _clean_checkout_note(state.raw_text),
+        )
     if _is_checkout_filler_message(state.raw_text):
         state.customer = customer
         return state
@@ -1377,7 +1387,7 @@ async def extract_customer_data(
         if not line:
             continue
         if ":" not in line:
-            if _looks_like_order_line_without_checkout_data(line):
+            if _looks_like_order_line_without_checkout_data(line) and not _looks_like_checkout_note(normalize_text(line)):
                 continue
             free_lines.append(line)
             continue
@@ -1387,7 +1397,7 @@ async def extract_customer_data(
         if key in {"nombre", "nombre completo", "cliente", "nombres y apellidos", "nombres", "apellidos"}:
             customer.name = _clean_customer_name(value)
         elif key in {"telefono", "celular", "telefono de contacto", "teléfono de contacto"}:
-            customer.phone = value
+            customer.phone = _extract_phone_number(value) or value
         elif key in {"direccion", "dir", "direccion y barrio", "dirección y barrio"}:
             address, neighborhood, note = _split_rich_address_line(value)
             if not neighborhood:
@@ -1539,7 +1549,7 @@ def _extract_customer_data_from_free_lines(
             continue
         if _looks_like_chicken_part_allocation_line(normalized):
             continue
-        if _looks_like_order_line_without_checkout_data(line):
+        if _looks_like_order_line_without_checkout_data(line) and not _looks_like_checkout_note(normalized):
             continue
         if _looks_like_invalid_phone_only(line):
             continue
@@ -1595,7 +1605,7 @@ def _extract_customer_data_from_free_lines(
         elif not customer.neighborhood and _looks_like_neighborhood_only(normalized):
             customer.neighborhood = line
         elif _looks_like_phone(line):
-            customer.phone = line
+            customer.phone = _extract_phone_number(line) or line
         elif _pre_order_chicken_part_observation(normalized):
             customer.observations = _append_observation(
                 customer.observations,
@@ -2345,6 +2355,14 @@ def _looks_like_phone(text: str) -> bool:
     return 7 <= len(digits) <= 10
 
 
+def _extract_phone_number(text: str) -> str | None:
+    match = re.search(r"\b(?:57)?(3\d{9})\b", text)
+    if match:
+        return match.group(1)
+    digits = re.sub(r"\D", "", text)
+    return digits if 7 <= len(digits) <= 10 else None
+
+
 def _looks_like_invalid_phone_only(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
@@ -2694,6 +2712,8 @@ def _sanitize_observations_for_cart(
     cart: list[CartLineState],
 ) -> str | None:
     if not observations:
+        return observations
+    if not cart:
         return observations
     if any(_requires_chicken_part(line.product_code) for line in cart):
         return observations
@@ -4926,6 +4946,8 @@ def _extract_sauce_note(text: str) -> str | None:
 def _looks_like_paid_sauce_extra(text: str) -> bool:
     if not _contains_any(text, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "tomate", "miel", "pina", "piña")):
         return False
+    if _looks_like_sauce_replacement_note(text):
+        return False
     return _contains_any(
         text,
         (
@@ -4942,11 +4964,40 @@ def _looks_like_paid_sauce_extra(text: str) -> bool:
 
 
 def _extract_sauce_preference_note(text: str) -> str | None:
+    if _looks_like_sauce_replacement_note(text):
+        if _contains_any(text, ("tartara", "tártara")) and _contains_any(text, ("miel",)):
+            return "Salsas solicitadas: tártara en vez de miel."
+        if _contains_any(text, ("tartara", "tártara")) and _contains_any(text, ("aji", "ají")):
+            return "Salsas solicitadas: tártara en vez de ají."
+        if _contains_any(text, ("aji", "ají")) and _contains_any(text, ("tartara", "tártara")):
+            return "Salsas solicitadas: ají en vez de tártara."
+        sauce_note = _extract_sauce_note(text)
+        if sauce_note:
+            return sauce_note
     if _contains_any(text, ("tartara", "tártara")) and _contains_any(text, ("en vez de aji", "en vez de ají", "en lugar de aji", "en lugar de ají", "sin aji", "sin ají")):
         return "Salsas solicitadas: tártara en vez de ají."
     if _contains_any(text, ("aji", "ají")) and _contains_any(text, ("en vez de tartara", "en vez de tártara", "en lugar de tartara", "en lugar de tártara", "sin tartara", "sin tártara")):
         return "Salsas solicitadas: ají en vez de tártara."
     return None
+
+
+def _looks_like_sauce_replacement_note(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "en vez de",
+            "en lugar de",
+            "no me envies",
+            "no me envíes",
+            "no me envien",
+            "no me envíen",
+            "sin miel",
+            "sin aji",
+            "sin ají",
+            "sin tartara",
+            "sin tártara",
+        ),
+    )
 
 
 def _extract_included_chicken_side_note(text: str) -> str | None:
@@ -5181,7 +5232,7 @@ def _append_observation(current: str | None, addition: str) -> str:
         return addition
     if addition in current:
         return current
-    return f"{current}. {addition}"
+    return f"{current.rstrip(' .')}. {addition}"
 
 
 def _needs_side_extra_clarification(text: str) -> bool:

@@ -252,7 +252,7 @@ async def test_map_delivery_caps_bad_long_distance_estimates() -> None:
 
     assert result.found is True
     assert result.distance_km == 33.75
-    assert result.delivery_price_cop == 12000
+    assert result.delivery_price_cop == 14000
     assert result.pricing_source == "openrouteservice"
 
 

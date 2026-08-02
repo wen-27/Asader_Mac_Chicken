@@ -17,6 +17,9 @@ from app.modules.catalog.domain.product_alias import normalize_alias
 from app.shared.domain.value_object import Neighborhood
 
 
+AUTOMATIC_DELIVERY_MAX_PRICE_COP = 14000
+
+
 @dataclass(frozen=True)
 class CalculateDeliveryResult:
     found: bool
@@ -140,7 +143,7 @@ def _price_from_distance(distance_km: float, config: DeliveryPricingConfig) -> i
     extra_price = int(math.ceil(extra_distance * config.price_per_km_cop))
     raw_price = calibrated_bands[-1][1] + extra_price
     rounded_price = int(math.ceil(raw_price / config.round_to_cop) * config.round_to_cop)
-    return min(rounded_price, calibrated_bands[-1][1])
+    return min(rounded_price, AUTOMATIC_DELIVERY_MAX_PRICE_COP)
 
 
 def _bellavista_sector_delivery_override(address: str, neighborhood: str) -> int | None:
