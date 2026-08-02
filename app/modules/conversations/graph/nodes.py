@@ -1100,9 +1100,15 @@ async def ask_quantity(
         state.selected_product_name = product.name.value
         state.selected_unit_price_cop = product.price.amount
     half_code = _half_chicken_code_from_name(state.selected_product_name)
-    if half_code and state.current_step == ConversationState.ASK_CHICKEN_PART:
+    if half_code:
         state.selected_product_code = half_code
+        product = await services.find_product(half_code)
+        if product is not None:
+            state.selected_product_name = product.name.value
+            state.selected_unit_price_cop = product.price.amount
         state.selected_chicken_part = None
+        state.quantity = state.quantity or 1
+        return await add_to_cart(state, services)
     if _requires_chicken_selection(state.selected_product_code) and not state.selected_chicken_part:
         state.current_step = ConversationState.ASK_CHICKEN_PART
         state.response_text = _ask_chicken_selection_message(
