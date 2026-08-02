@@ -2039,6 +2039,72 @@ async def test_chicken_part_response_then_asks_quantity() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("product_code", "reply", "expected_part"),
+    [
+        ("ASADO_CUARTO", "pierna", "Pierna"),
+        ("ASADO_CUARTO", "1", "Pierna"),
+        ("ASADO_CUARTO", "pechuga", "Pechuga"),
+        ("ASADO_CUARTO", "2", "Pechuga"),
+        ("BROASTER_CUARTO", "pierna", "Pierna"),
+        ("BROASTER_CUARTO", "1", "Pierna"),
+        ("BROASTER_CUARTO", "pechuga", "Pechuga"),
+        ("BROASTER_CUARTO", "2", "Pechuga"),
+        ("ASADO_34", "1", "2 piernas y 1 pechuga"),
+        ("ASADO_34", "2", "2 pechugas y 1 pierna"),
+        ("BROASTER_34", "1", "2 piernas y 1 pechuga"),
+        ("BROASTER_34", "2", "2 pechugas y 1 pierna"),
+    ],
+)
+async def test_pending_chicken_part_replies_are_not_treated_as_contents_questions(
+    product_code: str,
+    reply: str,
+    expected_part: str,
+) -> None:
+    services = FakeConversationServices()
+    product = services.products[product_code]
+    services.session.selected_product_code = product.code
+    services.session.selected_product_name = product.name
+    services.session.selected_unit_price_cop = product.price.amount
+    services.session.move_to(ConversationState.ASK_CHICKEN_PART)
+    state = ConversationGraphState(chat_id=123, raw_text=reply)
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert state.intent == ConversationIntent.PEDIR_CANTIDAD
+    assert state.query_type is None
+    assert state.selected_chicken_part == expected_part
+
+    state = await nodes.ask_quantity(state, services)
+
+    assert state.current_step == ConversationState.ASK_QUANTITY
+    assert "Claro. Dime de que producto quieres saber" not in state.response_text
+    assert expected_part in (services.session.selected_chicken_part or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("product_code", ["ASADO_MEDIO", "BROASTER_MEDIO"])
+async def test_unexpected_half_chicken_part_prompt_does_not_route_to_contents(product_code: str) -> None:
+    services = FakeConversationServices()
+    product = services.products[product_code]
+    services.session.selected_product_code = product.code
+    services.session.selected_product_name = product.name
+    services.session.selected_unit_price_cop = product.price.amount
+    services.session.move_to(ConversationState.ASK_CHICKEN_PART)
+    state = ConversationGraphState(chat_id=123, raw_text="pierna")
+
+    state = await nodes.normalize_message(state, services)
+    state = await nodes.load_or_create_session(state, services)
+    state = await nodes.detect_intent(state, services)
+
+    assert state.intent == ConversationIntent.PEDIR_CANTIDAD
+    assert state.query_type is None
+    assert "Claro. Dime de que producto quieres saber" not in state.response_text
+
+
+@pytest.mark.asyncio
 async def test_real_half_broaster_normal_reply_does_not_start_delivery() -> None:
     services = FakeConversationServices()
     product = services.products["BROASTER_MEDIO"]

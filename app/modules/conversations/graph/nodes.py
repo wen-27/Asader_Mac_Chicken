@@ -433,6 +433,20 @@ async def detect_intent(
     if state.cart and _looks_like_paid_sauce_extra(text):
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
+    if state.current_step == ConversationState.ASK_CHICKEN_PART:
+        state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
+        quantity = _extract_positive_integer(text)
+        if (
+            state.selected_chicken_part
+            and quantity is not None
+            and text.strip() not in {"1", "2"}
+            and not _requires_chicken_composition(state.selected_product_code)
+        ):
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            state.quantity = quantity
+            return state
+        state.intent = ConversationIntent.PEDIR_CANTIDAD
+        return state
     if (
         state.current_step == ConversationState.CHECKOUT_REVIEW
         and state.cart
@@ -757,20 +771,6 @@ async def detect_intent(
             state.intent = ConversationIntent.MENU_ADICIONALES
         elif category == ProductCategory.ESPECIALES:
             state.intent = ConversationIntent.MENU_ESPECIALES
-        return state
-    if state.current_step == ConversationState.ASK_CHICKEN_PART:
-        state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
-        quantity = _extract_positive_integer(text)
-        if (
-            state.selected_chicken_part
-            and quantity is not None
-            and text.strip() not in {"1", "2"}
-            and not _requires_chicken_composition(state.selected_product_code)
-        ):
-            state.intent = ConversationIntent.AGREGAR_PRODUCTO
-            state.quantity = quantity
-            return state
-        state.intent = ConversationIntent.PEDIR_CANTIDAD
         return state
     if state.current_step == ConversationState.ASK_PRODUCT_VARIANT:
         state.selected_chicken_part = _extract_product_variant(state.selected_product_code, text)
