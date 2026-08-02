@@ -914,6 +914,25 @@ async def test_real_asado_menu_number_three_adds_half_without_part_prompt() -> N
 
 
 @pytest.mark.asyncio
+async def test_half_chicken_name_corrects_wrong_part_code_and_adds_directly() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_CUARTO"] = Product(
+        code=ProductCode("ASADO_CUARTO"),
+        name=ProductName("1/2 Asado"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(22300),
+    )
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero medio pollo asado"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/2 Asado" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == [("ASADO_MEDIO", 1)]
+
+
+@pytest.mark.asyncio
 async def test_order_with_contents_question_inside_asado_menu_does_not_ask_quantity() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(

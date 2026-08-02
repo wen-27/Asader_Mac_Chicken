@@ -1099,6 +1099,10 @@ async def ask_quantity(
             return await fallback_natural_language(state, services)
         state.selected_product_name = product.name.value
         state.selected_unit_price_cop = product.price.amount
+    half_code = _half_chicken_code_from_name(state.selected_product_name)
+    if half_code and state.current_step == ConversationState.ASK_CHICKEN_PART:
+        state.selected_product_code = half_code
+        state.selected_chicken_part = None
     if _requires_chicken_selection(state.selected_product_code) and not state.selected_chicken_part:
         state.current_step = ConversationState.ASK_CHICKEN_PART
         state.response_text = _ask_chicken_selection_message(
@@ -3563,8 +3567,11 @@ async def _add_natural_order_to_cart(
                 restricted_recommendation = getattr(availability, "recommended_alternative", None)
                 restricted_reason = availability.reason
                 continue
+        resolved_code = _half_chicken_code_from_name(product.name.value) or item.code
+        if resolved_code != item.code:
+            product = await services.find_product(resolved_code) or product
         allocations = _extract_chicken_part_allocations(item_text, int(item.quantity or 1))
-        if _requires_chicken_part(item.code) and allocations:
+        if _requires_chicken_part(resolved_code) and allocations:
             allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
             if allocated_quantity == int(item.quantity or 1):
                 for allocation in allocations:
@@ -3585,8 +3592,8 @@ async def _add_natural_order_to_cart(
                     state.cart.append(line)
                     added_lines.append(line)
                 continue
-        chicken_part = _extract_chicken_selection(item.code, item_text)
-        if _requires_chicken_selection(item.code) and not chicken_part:
+        chicken_part = _extract_chicken_selection(resolved_code, item_text)
+        if _requires_chicken_selection(resolved_code) and not chicken_part:
             session.selected_product_code = product.code
             session.selected_chicken_part = None
             session.move_to(ConversationState.ASK_CHICKEN_PART)
@@ -3596,7 +3603,7 @@ async def _add_natural_order_to_cart(
             state.selected_unit_price_cop = product.price.amount
             state.selected_chicken_part = None
             state.current_step = ConversationState.ASK_CHICKEN_PART
-            state.response_text = _ask_chicken_selection_message(item.code, product.name.value)
+            state.response_text = _ask_chicken_selection_message(resolved_code, product.name.value)
             return []
         if chicken_part:
             availability = await _evaluate_product_availability(product, services, chicken_part)
@@ -5969,6 +5976,17 @@ def _requires_chicken_part(product_code: str | None) -> bool:
 
 def _requires_chicken_composition(product_code: str | None) -> bool:
     return product_code in {"ASADO_34", "BROASTER_34"}
+
+
+def _half_chicken_code_from_name(product_name: str | None) -> str | None:
+    normalized = normalize_text(product_name or "")
+    if not ("1/2" in normalized or "medio" in normalized):
+        return None
+    if _contains_any(normalized, BROASTER_TEXT_TERMS):
+        return "BROASTER_MEDIO"
+    if _contains_any(normalized, ASADO_TEXT_TERMS):
+        return "ASADO_MEDIO"
+    return None
 
 
 def _looks_like_normal_chicken_reply(text: str) -> bool:
