@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from app.modules.conversations.application.ports import TelegramSessionRepository
 from app.modules.conversations.domain.conversation_state import ConversationState
@@ -75,6 +76,7 @@ def _session_to_dict(session: TelegramSession) -> dict[str, object]:
         "payment_method": session.payment_method,
         "observations": session.observations,
         "fulfillment_type": session.fulfillment_type,
+        "last_seen_at": session.last_seen_at.isoformat(),
     }
 
 
@@ -94,6 +96,7 @@ def _session_from_dict(data: dict[str, object]) -> TelegramSession:
         payment_method=data.get("payment_method") or None,
         observations=data.get("observations") or None,
         fulfillment_type=str(data.get("fulfillment_type") or "DELIVERY"),
+        last_seen_at=_optional_datetime(data.get("last_seen_at")),
     )
 
 
@@ -102,3 +105,12 @@ def _optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_datetime(value: object):
+    if value is None:
+        return datetime.now().astimezone()
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return datetime.now().astimezone()

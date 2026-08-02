@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from time import perf_counter, time
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -61,9 +61,15 @@ from app.modules.orders.infrastructure.admin_backend_order_client import AdminBa
 from app.modules.orders.infrastructure.models import OrderORM
 from app.modules.orders.infrastructure.sqlalchemy_order_repository import SqlAlchemyOrderRepository
 from app.modules.whatsapp.api.schemas import WhatsAppWebhookPayload
+from app.modules.whatsapp.application.message_interpreter import (
+    WhatsAppContextMessage,
+    WhatsAppGeminiMessageInterpreter,
+    interpret_whatsapp_message_locally,
+)
 from app.modules.whatsapp.infrastructure.admin_backend_message_client import (
     AdminBackendMessageClient,
 )
+from app.modules.ai.infrastructure.gemini_llm_client import GeminiLLMClient
 from app.modules.whatsapp.infrastructure.media_cache import fetch_and_cache_whatsapp_media
 from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import WhatsAppCloudClient
 from app.shared.infrastructure.database.session import get_async_session
@@ -400,6 +406,18 @@ async def whatsapp_webhook(
                 await session.rollback()
             continue
 
+        conversation_text = inbound.text
+        direct_response_text = None
+        interpretation = await _interpret_whatsapp_message_for_conversation(
+            session,
+            settings,
+            inbound,
+        )
+        if interpretation.clarification_text:
+            direct_response_text = interpretation.clarification_text
+        elif interpretation.conversation_text:
+            conversation_text = interpretation.conversation_text
+
         try:
             result = await use_case.execute(
                 TelegramInboundMessage(
@@ -407,6 +425,8 @@ async def whatsapp_webhook(
                     message_id=inbound.message_id,
                     chat_id=inbound.chat_id,
                     text=inbound.text,
+                    conversation_text=conversation_text,
+                    direct_response_text=direct_response_text,
                     first_name=inbound.first_name,
                     username=None,
                     message_type="text",
@@ -612,6 +632,55 @@ async def _answer_outside_business_hours(
     except Exception:
         logger.exception("failed to sync whatsapp outside-hours autoresponse to admin backend")
     return True
+
+
+async def _interpret_whatsapp_message_for_conversation(
+    session: AsyncSession,
+    settings: Settings,
+    inbound,
+):
+    recent_messages = await _recent_whatsapp_context_messages(session, inbound)
+    if not settings.llm_fallback_enabled or not settings.resolved_google_api_key:
+        return interpret_whatsapp_message_locally(
+            current_message=inbound.text,
+            recent_messages=recent_messages,
+        )
+    try:
+        interpreter = WhatsAppGeminiMessageInterpreter(GeminiLLMClient(settings))
+        return await interpreter.interpret(
+            current_message=inbound.text,
+            recent_messages=recent_messages,
+        )
+    except Exception:
+        logger.exception("failed to interpret whatsapp message with gemini")
+        return interpret_whatsapp_message_locally(
+            current_message=inbound.text,
+            recent_messages=recent_messages,
+        )
+
+
+async def _recent_whatsapp_context_messages(
+    session: AsyncSession,
+    inbound,
+) -> list[WhatsAppContextMessage]:
+    since = datetime.now(timezone.utc) - timedelta(seconds=60)
+    result = await session.execute(
+        select(TelegramMessageORM)
+        .where(
+            TelegramMessageORM.chat_id == inbound.chat_id,
+            TelegramMessageORM.created_at >= since,
+        )
+        .order_by(TelegramMessageORM.created_at.desc())
+        .limit(5)
+    )
+    rows = list(result.scalars().all())
+    rows.reverse()
+    context = [
+        WhatsAppContextMessage(direction=row.direction, text=row.message_text)
+        for row in rows
+        if row.message_text.strip()
+    ]
+    return context[-5:]
 
 
 async def _answer_whatsapp_call_event(

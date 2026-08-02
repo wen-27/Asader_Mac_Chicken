@@ -46,6 +46,7 @@ def route_after_intent(state: ConversationGraphState) -> str:
         ConversationIntent.RESUMEN_CHECKOUT: "prepare_checkout_summary",
         ConversationIntent.PEDIR_DATOS_CLIENTE: "ask_customer_data",
         ConversationIntent.PROCESAR_DATOS_CLIENTE: "extract_customer_data",
+        ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO: "save_customer_data_without_order",
         ConversationIntent.CONFIRMAR_PEDIDO: "confirm_order",
         ConversationIntent.CANCELAR: "cancel_order",
         ConversationIntent.HORARIOS: "show_schedules",

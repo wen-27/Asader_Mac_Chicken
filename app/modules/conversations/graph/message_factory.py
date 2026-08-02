@@ -579,6 +579,18 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def customer_data_saved_without_order(cls, missing: list[str]) -> str:
+        sections = [
+            "Gracias, ya tengo tus datos para la orden.",
+        ]
+        if missing:
+            sections.append("Todavia me falta: " + ", ".join(missing) + ".")
+        sections.append(
+            "¿Que deseas ordenar? Puedes escribirme tu orden en texto normal y con gusto te muestro el resumen completo."
+        )
+        return "\n\n".join(sections)
+
+    @classmethod
     def order_created(cls, state: ConversationGraphState) -> str:
         if state.fulfillment_type == "PICKUP":
             return "\n\n".join(
@@ -840,14 +852,45 @@ class BotMessageFactory:
     @classmethod
     def product_combination_answer(cls) -> str:
         return (
-            "Si, puedes ordenar medio asado y medio broaster en la misma orden. "
+            "Sí señora, en este momento tenemos 1/2 pollo asado y 1/2 pollo broaster disponibles. "
+            "Puedes ordenar medio asado y medio broaster sin problema. "
             "Te los añado como productos separados: 1/2 Asado y 1/2 Broasted.\n\n"
             "¿Deseas ordenarlos ahora o prefieres seguir viendo el menu?"
         )
 
     @classmethod
+    def soup_included_or_additional_prompt(cls) -> str:
+        return (
+            "Sí señora, mientras haya sopa disponible va incluida con el pollo según la presentación. "
+            "¿La deseas como la sopa incluida o quieres añadir una sopa adicional aparte?"
+        )
+
+    @classmethod
+    def confirmed_order_note_added(cls, observations: str | None = None) -> str:
+        note = observations or "la nota solicitada"
+        return "\n\n".join(
+            [
+                "Sí señora, con mucho gusto. Ya dejé esa nota en tu orden.",
+                f"📝 Nota actualizada: {note}",
+            ]
+        )
+
+    @classmethod
+    def account_holder_confirmation(cls) -> str:
+        return f"Sí señora, a nombre de {cls.NEQUI_ACCOUNT_HOLDER}."
+
+    @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:
         return f"El domicilio para {neighborhood} cuesta ${price_cop}."
+
+    @classmethod
+    def product_available_offer(cls, product: Product) -> str:
+        return "\n\n".join(
+            [
+                f"Sí señora, {product.name.value} está disponible en este momento.",
+                "¿Deseas ordenarla ahora o prefieres ver el menu?",
+            ]
+        )
 
     @classmethod
     def service_available_answer(cls) -> str:

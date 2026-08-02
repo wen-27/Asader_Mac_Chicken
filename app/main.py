@@ -14,6 +14,9 @@ from app.modules.catalog.api.routes import router as catalog_admin_router
 from app.modules.internal.routes import router as internal_router
 from app.modules.orders.api.admin_routes import router as orders_admin_router
 from app.modules.orders.application.payment_proofs import run_payment_proof_reminder_loop
+from app.modules.conversations.application.checkout_reminders import (
+    run_checkout_confirmation_reminder_loop,
+)
 from app.modules.telegram.api.routes import router as telegram_router
 from app.modules.whatsapp.api.routes import router as whatsapp_router
 from app.shared.infrastructure.health import check_chromadb, check_postgres, check_redis
@@ -82,27 +85,41 @@ def create_app() -> FastAPI:
         }
 
     @app.on_event("startup")
-    async def start_payment_proof_reminders() -> None:
+    async def start_background_reminders() -> None:
         if settings.app_env not in {"staging", "production"}:
             return
-        stop_event = asyncio.Event()
-        app.state.payment_proof_reminder_stop = stop_event
+        payment_stop_event = asyncio.Event()
+        checkout_stop_event = asyncio.Event()
+        app.state.payment_proof_reminder_stop = payment_stop_event
+        app.state.checkout_confirmation_reminder_stop = checkout_stop_event
         app.state.payment_proof_reminder_task = asyncio.create_task(
-            run_payment_proof_reminder_loop(settings, stop_event)
+            run_payment_proof_reminder_loop(settings, payment_stop_event)
+        )
+        app.state.checkout_confirmation_reminder_task = asyncio.create_task(
+            run_checkout_confirmation_reminder_loop(settings, checkout_stop_event)
         )
 
     @app.on_event("shutdown")
-    async def stop_payment_proof_reminders() -> None:
-        stop_event = getattr(app.state, "payment_proof_reminder_stop", None)
-        task = getattr(app.state, "payment_proof_reminder_task", None)
-        if stop_event is not None:
-            stop_event.set()
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    async def stop_background_reminders() -> None:
+        reminder_pairs = (
+            (
+                getattr(app.state, "payment_proof_reminder_stop", None),
+                getattr(app.state, "payment_proof_reminder_task", None),
+            ),
+            (
+                getattr(app.state, "checkout_confirmation_reminder_stop", None),
+                getattr(app.state, "checkout_confirmation_reminder_task", None),
+            ),
+        )
+        for stop_event, task in reminder_pairs:
+            if stop_event is not None:
+                stop_event.set()
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     app.include_router(whatsapp_router)
     app.include_router(telegram_router)

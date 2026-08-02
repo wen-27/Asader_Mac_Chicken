@@ -31,6 +31,8 @@ class TelegramInboundMessage:
     first_name: str | None
     username: str | None
     message_type: str
+    conversation_text: str | None = None
+    direct_response_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,10 +118,31 @@ class HandleTelegramUpdateUseCase:
         )
         await self._messages.add(inbound_message, direction="inbound")
 
+        if inbound.direct_response_text:
+            response_text = inbound.direct_response_text
+            response_texts = split_outbound_messages(response_text)
+            sent_messages = [
+                await self._telegram_client.send_text_message(chat_id, outbound_text)
+                for outbound_text in response_texts
+            ]
+            if self._idempotency is not None:
+                await self._idempotency.mark_processed(
+                    idempotency_key,
+                    self._idempotency_ttl_seconds,
+                )
+            for sent_message in sent_messages:
+                await self._messages.add(sent_message, direction="outbound")
+            return TelegramUpdateResult(
+                processed=True,
+                duplicated=False,
+                response_text=response_text,
+            )
+
         # Pass the raw text to the conversation. Normalized text removes line
         # breaks, and checkout data often arrives as several human-written lines.
         conversation_started_at = perf_counter()
-        response_text = await self._conversation_handler.handle(inbound.text, chat_id)
+        conversation_text = inbound.conversation_text or inbound.text
+        response_text = await self._conversation_handler.handle(conversation_text, chat_id)
         response_texts = split_outbound_messages(response_text)
         conversation_ms = round((perf_counter() - conversation_started_at) * 1000, 2)
         send_started_at = perf_counter()

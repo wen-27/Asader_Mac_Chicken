@@ -86,6 +86,14 @@ class WhatsAppMessageSchema(BaseModel):
                 return "ordenar"
             if button.id == "half_combo_menu":
                 return "ver menu"
+            if button.id == "soup_included_note":
+                return "sopa incluida"
+            if button.id == "soup_additional_add":
+                return "sopa adicional"
+            if button.id == "product_offer_order":
+                return "ordenar"
+            if button.id == "product_offer_menu":
+                return "ver menu"
             if button.id == "manzana_25_add":
                 return "Manzana 2.5"
             if button.id == "manzana_25_drinks":

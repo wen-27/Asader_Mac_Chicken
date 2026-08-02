@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from difflib import SequenceMatcher
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app.modules.ai.application.rule_based_order_parser import (
@@ -72,6 +72,8 @@ BROASTER_TEXT_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "broaste",
+    "broastes",
     "broste",
     "brosther",
     "brother",
@@ -128,6 +130,9 @@ async def load_or_create_session(
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    if _session_is_from_previous_business_day(session):
+        _reset_session_for_new_business_day(session)
+        session = await services.persist_session(session)
     state.current_step = session.current_step
     state.selected_product_code = (
         session.selected_product_code.value if session.selected_product_code else None
@@ -157,12 +162,31 @@ async def load_or_create_session(
     return state
 
 
+def _session_is_from_previous_business_day(session) -> bool:
+    last_seen_at = getattr(session, "last_seen_at", None)
+    if last_seen_at is None:
+        return False
+    if last_seen_at.tzinfo is None:
+        last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
+    return last_seen_at.astimezone(ZoneInfo("America/Bogota")).date() < _business_today()
+
+
+def _reset_session_for_new_business_day(session) -> None:
+    session.empty_cart()
+    session.clear_selected_product()
+    session.clear_pending_order()
+    session.clear_customer_data()
+    session.fulfillment_type = "DELIVERY"
+    session.move_to(ConversationState.MAIN_MENU)
+
+
 async def detect_intent(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
+    session = await services.load_or_create_session(ChatId(state.chat_id))
     if _looks_like_fragmented_greeting_followup(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "greeting_followup"
@@ -173,6 +197,27 @@ async def detect_intent(
         state.query_type = "delivery_urgency"
         state.query_value = text
         return state
+    if (session.pending_order_json or {}).get("kind") == "last_confirmed_order":
+        if _looks_like_confirmed_order_note_followup(text, session.pending_order_json):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "confirmed_order_note_added"
+            state.query_value = _extract_sauce_note(text) or _clean_checkout_note(state.raw_text)
+            return state
+        if _looks_like_confirmed_order_soup_followup(text, session.pending_order_json):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "confirmed_order_soup"
+            state.query_value = text
+            return state
+        if _looks_like_order_status_query(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "order_status"
+            state.query_value = text
+            return state
+        if _looks_like_order_waiting_followup(text) or _is_gratitude_only(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "gratitude"
+            state.query_value = text
+            return state
     if (
         state.current_step == ConversationState.MAIN_MENU
         and not state.cart
@@ -182,11 +227,9 @@ async def detect_intent(
         state.intent = ConversationIntent.MOSTRAR_MENU
         return state
     if state.current_step == ConversationState.SELECT_BEBIDA:
-        session = await services.load_or_create_session(ChatId(state.chat_id))
         if state.cart and _looks_like_no_drink_continue(text):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
-    session = await services.load_or_create_session(ChatId(state.chat_id))
     if (session.pending_order_json or {}).get("kind") == "coca_cola_options":
         selected_code = _extract_coca_cola_option(text)
         if selected_code:
@@ -216,10 +259,59 @@ async def detect_intent(
         if _has_checkout_data_signal(state.raw_text):
             session.clear_pending_order()
             await services.persist_session(session)
+    if (session.pending_order_json or {}).get("kind") == "product_availability_offer":
+        pending_product_code = str((session.pending_order_json or {}).get("product_code") or "")
+        if _is_pending_product_offer_acceptance(text):
+            if _looks_like_delivery_request(text):
+                session.fulfillment_type = "DELIVERY"
+                state.fulfillment_type = "DELIVERY"
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.selected_product_code = pending_product_code
+            state.selected_chicken_part = None
+            if _requires_product_variant(pending_product_code) or _requires_chicken_selection(pending_product_code):
+                state.quantity = None
+                state.intent = ConversationIntent.PEDIR_CANTIDAD
+            else:
+                state.quantity = 1
+                state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if _contains_command(text, ("menu", "menú", "ver menu", "ver menú")):
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.intent = ConversationIntent.MOSTRAR_MENU
+            return state
+        if _has_checkout_data_signal(state.raw_text):
+            session.clear_pending_order()
+            await services.persist_session(session)
+    if state.current_step == ConversationState.ASK_HALF_COMBO:
+        if _contains_command(text, ("pedir", "ordenar", "agregar", "si", "sí")):
+            state.intent = ConversationIntent.AGREGAR_MEDIO_COMBO
+            return state
+        if _contains_command(text, ("menu", "menú", "ver menu", "ver menú")):
+            state.intent = ConversationIntent.MOSTRAR_MENU
+            return state
+    if _looks_like_account_holder_question(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "account_holder_confirmation"
+        state.query_value = text
+        return state
+    if _looks_like_confirmed_order_note_followup(text, session.pending_order_json):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "confirmed_order_note_added"
+        state.query_value = _extract_sauce_note(text) or _clean_checkout_note(state.raw_text)
+        return state
     if _looks_like_confirmed_order_soup_followup(text, session.pending_order_json):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "confirmed_order_soup"
         state.query_value = text
+        return state
+    if (
+        not state.cart
+        and not parsed_rules.items
+        and _looks_like_pre_order_fragment(text)
+    ):
+        state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
         return state
     if state.current_step in {ConversationState.ASK_CHICKEN_STYLE, ConversationState.ASK_CHICKEN_PART}:
         if session.pending_order_json:
@@ -276,13 +368,27 @@ async def detect_intent(
     if (
         state.current_step in {ConversationState.SELECT_ASADO, ConversationState.SELECT_BROASTER}
         and not parsed_rules.items
-        and _contextual_chicken_product_code(text, _category_for_selection_step(state.current_step))
     ):
-        state.intent = None
-        return state
+        contextual_code = _contextual_chicken_product_code(text, _category_for_selection_step(state.current_step))
+        if contextual_code and _looks_like_pickup_request(text):
+            await _remember_pickup_details_from_message(state, services)
+            state.selected_product_code = contextual_code
+            state.quantity = _extract_product_quantity_ignoring_pickup_time(text) or 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if contextual_code and _has_pickup_customer_data_signal(state.raw_text):
+            await _remember_pickup_details_from_message(state, services)
+            state.selected_product_code = contextual_code
+            state.quantity = _extract_product_quantity_ignoring_pickup_time(text) or 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if contextual_code:
+            state.intent = None
+            return state
     if (
         state.current_step != ConversationState.ASK_CUSTOMER_DATA
         and _looks_like_payment_account_query(text)
+        and not _looks_like_customer_data_without_order(state.raw_text)
         and not parsed_rules.items
     ):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
@@ -347,6 +453,11 @@ async def detect_intent(
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and state.cart:
+        if _looks_like_payment_account_query(text) and not _looks_like_payment_method(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "payment_account"
+            state.query_value = text
+            return state
         menu_intent = _detect_natural_menu_intent(text)
         category_route = _category_route_from_text(text)
         if menu_intent is None and category_route is not None:
@@ -397,6 +508,7 @@ async def detect_intent(
             or _looks_like_address(text)
             or _looks_like_incomplete_delivery_address(text)
             or (_looks_like_checkout_note(text) and not _looks_like_question(text))
+            or _looks_like_sauce_note_request(text)
             or _looks_like_included_soup_note_request(text)
             or _looks_like_paid_receiver_note(text)
             or _looks_like_delivery_time_note(text)
@@ -428,6 +540,15 @@ async def detect_intent(
         and _has_checkout_data_signal(state.raw_text)
     ):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+        return state
+    if (
+        not state.cart
+        and state.current_step != ConversationState.ASK_CUSTOMER_DATA
+        and not parsed_rules.items
+        and _has_checkout_data_signal(state.raw_text)
+        and _looks_like_customer_data_without_order(state.raw_text)
+    ):
+        state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
         return state
     if _looks_like_pickup_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
@@ -491,6 +612,9 @@ async def detect_intent(
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "gratitude"
         state.query_value = text
+        return state
+    if parsed_rules.items and _has_checkout_data_signal(state.raw_text):
+        state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     query = _classify_business_query(text)
     if (
@@ -564,12 +688,24 @@ async def detect_intent(
         state.query_type = "soup_rejection"
         state.query_value = text
         return state
+    if text == "sopa incluida" and (state.cart or state.current_step == ConversationState.ASK_HALF_COMBO):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "soup_included_ack"
+        state.query_value = "Sopa incluida solicitada."
+        return state
     if not state.cart and not parsed_rules.items and _looks_like_external_price_reference(text):
         state.intent = ConversationIntent.MOSTRAR_MENU
         return state
     if _looks_like_asado_french_fries_option_question(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "asado_french_fries_option"
+        state.query_value = text
+        return state
+    if _looks_like_ambiguous_soup_followup(text) and (
+        _cart_has_chicken(state.cart) or state.current_step == ConversationState.ASK_HALF_COMBO
+    ):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "soup_included_or_additional"
         state.query_value = text
         return state
     followup_side_note = _extract_followup_included_chicken_side_note(text, state.cart)
@@ -677,6 +813,11 @@ async def detect_intent(
             state.intent = ConversationIntent.MOSTRAR_MENU
             return state
     if state.current_step == ConversationState.ASK_QUANTITY:
+        if _looks_like_pickup_request(text) or _has_pickup_customer_data_signal(state.raw_text):
+            await _remember_pickup_details_from_message(state, services)
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            state.quantity = _extract_product_quantity_ignoring_pickup_time(text) or 1
+            return state
         state.intent = ConversationIntent.AGREGAR_PRODUCTO
         state.quantity = _extract_positive_integer(text) or 0
         return state
@@ -707,6 +848,15 @@ async def detect_intent(
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = query[0]
         state.query_value = query[1]
+        return state
+    if (
+        not state.cart
+        and state.current_step != ConversationState.ASK_CUSTOMER_DATA
+        and not parsed_rules.items
+        and _has_checkout_data_signal(state.raw_text)
+        and _looks_like_customer_data_without_order(state.raw_text)
+    ):
+        state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
         return state
     if _looks_like_incremental_customer_data(state, parsed_rules):
         state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
@@ -1016,6 +1166,29 @@ async def add_to_cart(
     )
     state.cart.append(line)
     state.subtotal_cop = sum(cart_line.subtotal_cop for cart_line in state.cart)
+    if state.fulfillment_type == "PICKUP" or session.fulfillment_type == "PICKUP" or _looks_like_pickup_request(state.normalized_text):
+        state.fulfillment_type = "PICKUP"
+        _extract_inline_pickup_customer_data(state.customer, state.raw_text)
+        session.fulfillment_type = "PICKUP"
+        session.update_customer_data(
+            customer_name=state.customer.name,
+            phone=state.customer.phone,
+            address="Recoge en local",
+            neighborhood="No aplica",
+            payment_method=state.customer.payment_method or session.payment_method or "No aplica",
+            observations=state.customer.observations,
+            fulfillment_type="PICKUP",
+        )
+        session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+        await services.persist_session(session)
+        state.current_step = ConversationState.ASK_CUSTOMER_DATA
+        state.response_text = BotMessageFactory.natural_order_added(
+            [line],
+            state.subtotal_cop,
+            _missing_checkout_fields(state),
+            fulfillment_type="PICKUP",
+        )
+        return state
     state.current_step = ConversationState.POST_ADD
     state.response_text = BotMessageFactory.added_to_cart(line, state.subtotal_cop)
     return state
@@ -1157,8 +1330,9 @@ async def extract_customer_data(
     if _is_checkout_filler_message(state.raw_text):
         state.customer = customer
         return state
+    raw_text = _expand_inline_labeled_checkout_fields(state.raw_text)
     free_lines: list[str] = []
-    for line in state.raw_text.splitlines():
+    for line in raw_text.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -1170,12 +1344,16 @@ async def extract_customer_data(
         key, value = line.split(":", 1)
         key = normalize_text(key)
         value = value.strip()
-        if key in {"nombre", "nombre completo", "cliente"}:
+        if key in {"nombre", "nombre completo", "cliente", "nombres y apellidos", "nombres", "apellidos"}:
             customer.name = _clean_customer_name(value)
-        elif key in {"telefono", "celular"}:
+        elif key in {"telefono", "celular", "telefono de contacto", "teléfono de contacto"}:
             customer.phone = value
-        elif key in {"direccion", "dir"}:
+        elif key in {"direccion", "dir", "direccion y barrio", "dirección y barrio"}:
             address, neighborhood, note = _split_rich_address_line(value)
+            if not neighborhood:
+                fallback_address, fallback_neighborhood = _split_address_and_neighborhood(value)
+                address = fallback_address or address
+                neighborhood = fallback_neighborhood or neighborhood
             customer.address = _remove_inline_neighborhood_from_address(address, neighborhood)
             if neighborhood:
                 customer.neighborhood = neighborhood
@@ -1186,6 +1364,18 @@ async def extract_customer_data(
         elif key in {"metodo de pago", "pago", "medio de pago", "forma de pago"}:
             customer.payment_method = _normalize_payment_method(normalize_text(value), value)
         elif key in {
+            "numero de cedula",
+            "número de cédula",
+            "cedula",
+            "cédula",
+            "correo electronico",
+            "correo electrónico",
+            "correo",
+            "email",
+            "e-mail",
+        }:
+            continue
+        elif key in {
             "observaciones",
             "observacion",
             "notas",
@@ -1193,7 +1383,12 @@ async def extract_customer_data(
             "nota o especificacion",
             "especificacion",
         }:
-            customer.observations = value
+            if not parse_natural_order_rules(value).items:
+                customer.observations = value
+            else:
+                sauce_note = _extract_sauce_note(normalize_text(value))
+                if sauce_note:
+                    customer.observations = _append_observation(customer.observations, sauce_note)
         else:
             free_lines.append(line)
     if free_lines:
@@ -1265,6 +1460,27 @@ async def validate_customer_data(
     return state
 
 
+async def save_customer_data_without_order(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> ConversationGraphState:
+    state = await extract_customer_data(state, services)
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_state_to_session(state, session)
+    session.clear_selected_product()
+    session.move_to(ConversationState.NATURAL_ORDER)
+    await services.persist_session(session)
+    state.current_step = ConversationState.NATURAL_ORDER
+    missing = [
+        field
+        for field in _missing_checkout_fields(state)
+        if field != "productos"
+    ]
+    state.errors = []
+    state.response_text = BotMessageFactory.customer_data_saved_without_order(missing)
+    return state
+
+
 def _extract_customer_data_from_free_lines(
     customer: CustomerDataState,
     lines: list[str],
@@ -1307,7 +1523,10 @@ def _extract_customer_data_from_free_lines(
         if fulfillment_type == "PICKUP":
             if not customer.phone and _looks_like_phone(line):
                 customer.phone = line
-            elif not customer.payment_method and _looks_like_payment_method(normalized):
+            elif (
+                (not customer.payment_method or normalize_text(customer.payment_method) == "no aplica")
+                and _looks_like_payment_method(normalized)
+            ):
                 customer.payment_method = _normalize_payment_method(normalized, line)
             elif _looks_like_pickup_time_note(normalized) and not _has_pickup_time_observation(customer.observations):
                 customer.observations = _append_observation(
@@ -1319,6 +1538,10 @@ def _extract_customer_data_from_free_lines(
             continue
         if _looks_like_address(normalized):
             address, neighborhood, note = _split_rich_address_line(line)
+            if not neighborhood:
+                fallback_address, fallback_neighborhood = _split_address_and_neighborhood(line)
+                address = fallback_address or address
+                neighborhood = fallback_neighborhood or neighborhood
             customer.address = _remove_inline_neighborhood_from_address(address, neighborhood)
             if neighborhood:
                 customer.neighborhood = neighborhood
@@ -1333,6 +1556,13 @@ def _extract_customer_data_from_free_lines(
             customer.neighborhood = line
         elif _looks_like_phone(line):
             customer.phone = line
+        elif _pre_order_chicken_part_observation(normalized):
+            customer.observations = _append_observation(
+                customer.observations,
+                _pre_order_chicken_part_observation(normalized) or "",
+            )
+            if _looks_like_payment_method(normalized):
+                customer.payment_method = _normalize_payment_method(normalized, line)
         elif _looks_like_payment_method(normalized):
             customer.payment_method = _normalize_payment_method(normalized, line)
         elif _looks_like_included_soup_note_request(normalized):
@@ -1451,6 +1681,28 @@ def _extract_inline_pickup_customer_data(customer: CustomerDataState, text: str)
         customer.observations = customer.observations or "Recoge en local"
 
 
+async def _remember_pickup_details_from_message(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    customer = state.customer.model_copy(deep=True)
+    _extract_inline_pickup_customer_data(customer, state.raw_text)
+    state.customer = customer
+    state.fulfillment_type = "PICKUP"
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    session.fulfillment_type = "PICKUP"
+    session.update_customer_data(
+        customer_name=customer.name,
+        phone=customer.phone,
+        address="Recoge en local",
+        neighborhood="No aplica",
+        payment_method=customer.payment_method or session.payment_method or "No aplica",
+        observations=customer.observations,
+        fulfillment_type="PICKUP",
+    )
+    await services.persist_session(session)
+
+
 def _looks_like_pickup_time_note(text: str) -> bool:
     normalized = normalize_text(text)
     return bool(
@@ -1473,6 +1725,21 @@ def _format_pickup_time_note(text: str) -> str:
     if normalize_text(cleaned).startswith(("recoger ", "recoge ", "recojo ")):
         return cleaned
     return f"Recoge {cleaned}"
+
+
+def _extract_product_quantity_ignoring_pickup_time(text: str) -> int | None:
+    normalized = normalize_text(text)
+    normalized = re.sub(
+        r"\b(?:paso|pasa|recoge|recojo|recoger|recogerlo|pasamos)?\s*en\s+\d+\s*(?:min|minutos|hora|horas)\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b",
+        " ",
+        normalized,
+    )
+    return _extract_positive_integer(normalized)
 
 
 def _has_pickup_time_observation(observations: str | None) -> bool:
@@ -1659,6 +1926,7 @@ def _split_name_phone_payment_line(line: str) -> list[str] | None:
 
 def _clean_customer_name(value: str) -> str:
     value = re.sub(r"^\s*(?:a\s+)?nombre\s+de\s+", "", value.strip(), flags=re.IGNORECASE)
+    value = re.sub(r"\s+(?:por\s+favor|porfa|porfis|xfa|x\s*fa)\s*$", "", value, flags=re.IGNORECASE)
     tokens = value.strip(" ,.-").split()
     noisy_prefixes = {
         "perri",
@@ -1715,10 +1983,32 @@ def _strip_payment_residue(text: str) -> str:
     ).strip(" ,.-")
 
 
+_INLINE_CHECKOUT_LABEL_PATTERN = re.compile(
+    r"(?i)(nombre completo|nombres y apellidos|nombre|cliente|direccion y barrio|dirección y barrio|"
+    r"direccion|dirección|dir|telefono de contacto|teléfono de contacto|telefono|teléfono|celular|"
+    r"metodo de pago|método de pago|medio de pago|forma de pago|pago|nota o especificacion|"
+    r"nota o especificación|observaciones|observacion|observación|notas|nota|barrio|sector)\s*:"
+)
+
+
+def _expand_inline_labeled_checkout_fields(text: str) -> str:
+    """Split copied checkout templates that arrive in one WhatsApp line."""
+    matches = list(_INLINE_CHECKOUT_LABEL_PATTERN.finditer(text))
+    if len(matches) <= 1:
+        return text
+    chunks: list[str] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        chunk = text[match.start() : end].strip(" .\n\t")
+        if chunk:
+            chunks.append(chunk)
+    return "\n".join(chunks)
+
+
 def _extract_payment_from_text(normalized: str) -> str | None:
     if "nequi" in normalized:
         return "Nequi"
-    if "datafono" in normalized or "datáfono" in normalized:
+    if _contains_any(normalized, ("datafono", "datáfono", "tarjeta", "credito", "crédito", "debito", "débito")):
         return "Datafono"
     if (
         "transferencia" in normalized
@@ -1753,9 +2043,16 @@ def _has_checkout_data_signal(text: str) -> bool:
                 "nombre",
                 "nombre completo",
                 "cliente",
+                "nombres",
+                "apellidos",
+                "nombres y apellidos",
                 "telefono",
                 "celular",
+                "telefono de contacto",
+                "teléfono de contacto",
                 "direccion",
+                "direccion y barrio",
+                "dirección y barrio",
                 "dir",
                 "barrio",
                 "sector",
@@ -1774,11 +2071,37 @@ def _has_checkout_data_signal(text: str) -> bool:
                 and not _looks_like_phone(line)
                 and not _looks_like_payment_method(normalized)
                 and "#" not in normalized
-                and re.search(r"\b(cra|cr|carrera|carrea|calle|cll|cl)\s*\d", normalized) is None
+                and re.search(r"\b(cra|cr|carrera|carrea|calle|cll|cl|sector|bloque|apto|apartamento)\s*\w+", normalized) is None
             ):
                 continue
             return True
     return False
+
+
+def _has_customer_checkout_data(customer: CustomerDataState) -> bool:
+    return any(
+        (
+            customer.name,
+            customer.phone,
+            customer.address,
+            customer.neighborhood,
+            customer.payment_method,
+            customer.observations,
+        )
+    )
+
+
+def _looks_like_customer_data_without_order(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return False
+    has_phone = any(_looks_like_phone(line) for line in lines)
+    has_address = any(_looks_like_address(normalize_text(line)) for line in lines)
+    has_payment = any(_looks_like_payment_method(normalize_text(line)) for line in lines)
+    has_label = any(":" in line for line in lines)
+    return (has_phone and (has_address or has_payment or has_label)) or (
+        has_address and has_payment and (len(lines) >= 3 or has_label)
+    )
 
 
 def _has_pickup_customer_data_signal(text: str) -> bool:
@@ -1838,6 +2161,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
             "olympo",
             "el olimpo",
             "olimpo",
+            "bucarica",
         }:
             return before, after, None
     known_neighborhoods = (
@@ -2045,22 +2369,27 @@ def _looks_like_payment_method(normalized: str) -> bool:
         _looks_like_pay_on_delivery_phrase(normalized)
         or _looks_like_cash_bill_payment_phrase(normalized)
         or any(
-        word in normalized
-        for word in [
-            "efectivo",
-            "datafono",
-            "datáfono",
-            "nequi",
-            "transferencia",
-            "bancolombia",
-            "consignar",
-            "consigno",
-            "consignacion",
-            "consignación",
-            "transfiero",
-            "transferi",
-            "transferí",
-        ]
+            word in normalized
+            for word in [
+                "efectivo",
+                "datafono",
+                "datáfono",
+                "tarjeta",
+                "credito",
+                "crédito",
+                "debito",
+                "débito",
+                "nequi",
+                "transferencia",
+                "bancolombia",
+                "consignar",
+                "consigno",
+                "consignacion",
+                "consignación",
+                "transfiero",
+                "transferi",
+                "transferí",
+            ]
         )
     )
 
@@ -2137,6 +2466,9 @@ def _is_checkout_filler_line(normalized: str) -> bool:
     if re.fullmatch(r"b+u+e+n+o+", compact):
         return True
     return normalized in {
+        "en",
+        "pago en",
+        "pago con",
         "gracias",
         "muchas gracias",
         "por favor",
@@ -2261,7 +2593,7 @@ def _looks_like_order_total_request(normalized: str) -> bool:
 def _normalize_payment_method(normalized: str, original: str) -> str:
     if "nequi" in normalized:
         return "Nequi"
-    if "datafono" in normalized or "datáfono" in normalized:
+    if _contains_any(normalized, ("datafono", "datáfono", "tarjeta", "credito", "crédito", "debito", "débito")):
         return "Datafono"
     if (
         "transferencia" in normalized
@@ -2560,6 +2892,12 @@ async def fallback_natural_language(
         clarified = await _answer_existing_cart_item_clarification(state, services)
         if clarified:
             return state
+        had_saved_customer_without_order = (
+            state.current_step == ConversationState.NATURAL_ORDER
+            and not state.cart
+            and _has_customer_checkout_data(state.customer)
+        )
+        had_checkout_review = state.current_step == ConversationState.CHECKOUT_REVIEW and bool(state.cart)
         added_lines = await _add_natural_order_to_cart(state, services)
         if added_lines:
             unavailable_notice = (
@@ -2572,10 +2910,19 @@ async def fallback_natural_language(
                 state.current_step = ConversationState.POST_ADD
             state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
             await _capture_checkout_fragments_from_natural_order(state, services)
+            missing_checkout_fields = _missing_checkout_fields(state)
+            if had_checkout_review and not missing_checkout_fields:
+                state = await calculate_delivery(state, services)
+                if not state.errors:
+                    return await create_order(state, services)
+            if had_saved_customer_without_order and not missing_checkout_fields:
+                state = await calculate_delivery(state, services)
+                if not state.errors:
+                    return await create_order(state, services)
             state.response_text = BotMessageFactory.natural_order_added(
                 added_lines,
                 state.subtotal_cop,
-                _missing_checkout_fields(state),
+                missing_checkout_fields,
                 fulfillment_type=state.fulfillment_type,
             )
             contents_answer = await _contents_answer_for_added_order_question(state, services, added_lines)
@@ -2740,6 +3087,35 @@ async def answer_query(
         soup_available = await _soup_is_available(services)
         state.response_text = BotMessageFactory.confirmed_order_soup_answer(soup_available)
         return state
+    if state.query_type == "soup_included_or_additional":
+        state.response_text = BotMessageFactory.soup_included_or_additional_prompt()
+        return state
+    if state.query_type == "soup_included_ack":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        if state.cart:
+            session.observations = _append_observation(session.observations, state.query_value or "")
+            state.customer.observations = session.observations
+            await services.persist_session(session)
+        state.response_text = "Perfecto, la dejamos como sopa incluida según la presentación del pollo."
+        return state
+    if state.query_type == "account_holder_confirmation":
+        state.response_text = BotMessageFactory.account_holder_confirmation()
+        return state
+    if state.query_type == "confirmed_order_note_added":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        pending_order = dict(session.pending_order_json or {})
+        note = (state.query_value or "").strip()
+        if note:
+            pending_order["observations"] = _append_observation(
+                str(pending_order.get("observations") or "") or None,
+                note,
+            )
+            session.pending_order_json = pending_order
+            await services.persist_session(session)
+        state.response_text = BotMessageFactory.confirmed_order_note_added(
+            str(pending_order.get("observations") or note or "")
+        )
+        return state
     if state.query_type == "asado_french_fries_option":
         state.response_text = BotMessageFactory.asado_french_fries_option_answer()
         return state
@@ -2836,7 +3212,13 @@ async def answer_query(
             if not availability.is_available:
                 await _prepare_unavailable_response(state, services, availability)
                 return state
-            state.response_text = f"Si, {product.name.value} esta disponible en este momento."
+            session = await services.load_or_create_session(ChatId(state.chat_id))
+            session.pending_order_json = {
+                "kind": "product_availability_offer",
+                "product_code": product.code.value,
+            }
+            await services.persist_session(session)
+            state.response_text = BotMessageFactory.product_available_offer(product)
             return state
     if state.query_type == "chicken_availability":
         scope = state.query_value or "pollo"
@@ -3095,12 +3477,23 @@ async def _add_natural_order_to_cart(
         return []
 
     session = await services.load_or_create_session(ChatId(state.chat_id))
-    if not session.cart and not state.cart:
+    should_preserve_prefilled_customer = (
+        state.current_step == ConversationState.NATURAL_ORDER
+        and _has_customer_checkout_data(state.customer)
+    )
+    if not session.cart and not state.cart and not should_preserve_prefilled_customer:
         fulfillment_type = state.fulfillment_type or session.fulfillment_type or "DELIVERY"
         _clear_checkout_session(session)
         state.customer = CustomerDataState()
         session.fulfillment_type = fulfillment_type
         state.fulfillment_type = fulfillment_type
+    remembered_part = _remembered_pre_order_chicken_part(state.customer.observations or session.observations)
+    if remembered_part and any(
+        _requires_chicken_selection(item.code)
+        and not _extract_chicken_selection(item.code, state.normalized_text)
+        for item in parsed.items
+    ):
+        state.normalized_text = f"{state.normalized_text} {normalize_text(remembered_part)}".strip()
     pending_prompt = await _maybe_start_pending_quarter_order(state, services, session, parsed.items)
     if pending_prompt:
         return []
@@ -3434,6 +3827,46 @@ async def _continue_pending_natural_order(
             state.current_step = ConversationState.ASK_CHICKEN_STYLE
             state.response_text = BotMessageFactory.ask_chicken_style(_chicken_style_prompt_title(code))
             return []
+        if _should_apply_style_to_all_pending_items(state.normalized_text, items):
+            items = _apply_style_to_pending_items(items, style)
+            part_index = _first_pending_item_index_requiring_part(items)
+            pending["items"] = items
+            pending["awaiting_style"] = False
+            if part_index is not None:
+                index = part_index
+                current = items[index]
+                code = str(current.get("code"))
+                total_quantity = int(current.get("quantity") or 1)
+                original_text = normalize_text(str(pending.get("original_text") or ""))
+                allocations = _extract_chicken_part_allocations(original_text, total_quantity)
+                if not allocations:
+                    original_part = _extract_chicken_part(original_text)
+                    if original_part:
+                        allocations = [{"part": original_part, "quantity": total_quantity}]
+                allocated_quantity = sum(int(allocation.get("quantity") or 0) for allocation in allocations)
+                pending["current_index"] = index
+                pending["allocations"] = allocations
+                session.selected_product_code = ProductCode(code)
+                session.pending_order_json = pending
+                if allocated_quantity >= total_quantity:
+                    added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
+                    await _finish_pending_order_addition(session, services, state)
+                    return added_lines
+                session.selected_chicken_part = None
+                session.move_to(ConversationState.ASK_CHICKEN_PART)
+                await services.persist_session(session)
+                product = await services.find_product(code)
+                state.current_step = ConversationState.ASK_CHICKEN_PART
+                state.response_text = _ask_pending_quarter_part_message(
+                    product.name.value if product else _chicken_style_prompt_title(code),
+                    max(1, total_quantity - allocated_quantity),
+                )
+                return []
+            pending["current_index"] = index
+            session.pending_order_json = pending
+            added_lines = await _add_pending_order_items_to_cart(session, services, pending, state)
+            await _finish_pending_order_addition(session, services, state)
+            return added_lines
         code = _chicken_code_for_style(code, style)
         current["code"] = code
         items[index] = current
@@ -3598,6 +4031,49 @@ async def _continue_pending_natural_order(
     ]
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     return added_lines
+
+
+async def _finish_pending_order_addition(session, services: ConversationGraphServices, state: ConversationGraphState) -> None:
+    session.clear_pending_order()
+    session.clear_selected_product()
+    session.move_to(ConversationState.POST_ADD)
+    await services.persist_session(session)
+    state.current_step = ConversationState.POST_ADD
+    state.cart = [
+        CartLineState(
+            product_code=item.product_code.value,
+            product_name=item.product_name.value,
+            unit_price_cop=item.unit_price.amount,
+            quantity=item.quantity,
+            subtotal_cop=item.subtotal.amount,
+        )
+        for item in session.cart
+    ]
+    state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+
+
+def _should_apply_style_to_all_pending_items(text: str, items: list[dict[str, object]]) -> bool:
+    if len(items) <= 1:
+        return False
+    if not _contains_any(text, ("todo", "todos", "toda", "todas")):
+        return False
+    return any(str(item.get("code")) in {"ASADO_ENTERO", "ASADO_MEDIO", "ASADO_CUARTO", "ASADO_34"} for item in items)
+
+
+def _apply_style_to_pending_items(items: list[dict[str, object]], style: str) -> list[dict[str, object]]:
+    styled_items: list[dict[str, object]] = []
+    for item in items:
+        copied = dict(item)
+        copied["code"] = _chicken_code_for_style(str(copied.get("code")), style)
+        styled_items.append(copied)
+    return styled_items
+
+
+def _first_pending_item_index_requiring_part(items: list[dict[str, object]]) -> int | None:
+    for index, item in enumerate(items):
+        if _requires_chicken_part(str(item.get("code"))):
+            return index
+    return None
 
 
 def _ask_pending_quarter_part_message(product_name: str, remaining: int) -> str:
@@ -4249,6 +4725,28 @@ def _is_manzana_25_offer_acceptance(text: str) -> bool:
     return False
 
 
+def _is_pending_product_offer_acceptance(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    if cleaned in {"si", "sí", "ordenar", "ordenala", "ordénala", "agregar", "agregala", "agrégala", "una", "uno"}:
+        return True
+    return _contains_any(
+        cleaned,
+        (
+            "me regalas una",
+            "me regala una",
+            "me das una",
+            "me da una",
+            "quiero una",
+            "ordena una",
+            "ordenar una",
+            "agrega una",
+            "añade una",
+            "anade una",
+            "a domicilio",
+        ),
+    )
+
+
 def _looks_like_manzana_unavailable_size(text: str) -> bool:
     if not _contains_any(text, ("manzana", "manzna", "mansana")):
         return False
@@ -4337,13 +4835,15 @@ def _extract_sauce_note(text: str) -> str | None:
         "tartar": "tártara",
         "tomate": "tomate",
         "miel": "miel",
+        "pina": "piña",
+        "piña": "piña",
     }
     for key, label in sauce_labels.items():
         if key == "salsa" and _contains_any(text, ("sin salsa", "sin salsas")):
             continue
         if key == "tartar" and "tartara" in text:
             continue
-        if key == "salsa" and _contains_any(text, ("tartara", "tártara", "aji", "ají", "tomate", "miel")):
+        if key == "salsa" and _contains_any(text, ("tartara", "tártara", "aji", "ají", "tomate", "miel", "pina", "piña")):
             continue
         if key in text:
             mentioned.append(label)
@@ -4357,7 +4857,7 @@ def _extract_sauce_note(text: str) -> str | None:
 
 
 def _looks_like_paid_sauce_extra(text: str) -> bool:
-    if not _contains_any(text, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "tomate", "miel")):
+    if not _contains_any(text, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "tomate", "miel", "pina", "piña")):
         return False
     return _contains_any(
         text,
@@ -4845,6 +5345,34 @@ def _looks_like_chicken_part_followup(text: str) -> bool:
     }
 
 
+def _looks_like_pre_order_fragment(text: str) -> bool:
+    if text.strip() in {"0", "1", "2", "3", "4", "5", "6", "7"}:
+        return False
+    if parse_natural_order_rules(text).items:
+        return False
+    has_payment = _looks_like_payment_method(text)
+    has_part = _pre_order_chicken_part_observation(text) is not None
+    if _looks_like_question(text) and not (has_payment and has_part):
+        return False
+    return has_payment and has_part
+
+
+def _pre_order_chicken_part_observation(text: str) -> str | None:
+    part = _extract_chicken_part(text)
+    if part is None:
+        return None
+    return f"Presa solicitada: {part}."
+
+
+def _remembered_pre_order_chicken_part(observations: str | None) -> str | None:
+    if not observations:
+        return None
+    normalized = normalize_text(observations)
+    if "presa solicitada" not in normalized:
+        return None
+    return _extract_chicken_part(normalized)
+
+
 def _looks_like_no_drink_continue(text: str) -> bool:
     normalized = re.sub(r"[^\w\s]", " ", normalize_text(text))
     normalized = re.sub(r"\s+", " ", normalized).strip()
@@ -4961,7 +5489,7 @@ def _looks_like_sauce_note_request(text: str) -> bool:
     normalized = normalize_text(text)
     if _looks_like_paid_sauce_extra(normalized):
         return False
-    if not _contains_any(normalized, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "miel", "tomate")):
+    if not _contains_any(normalized, ("salsa", "salsas", "tartara", "tártara", "aji", "ají", "miel", "tomate", "pina", "piña")):
         return False
     if _looks_like_sauce_option_question(normalized) and not _contains_any(
         normalized,
@@ -6104,7 +6632,7 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
         return ("price", text)
     if any(
         word in text
-        for word in ["tienes", "tiene", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
+        for word in ["tienes", "tiene", "tienen", "hay", "venden", "manejan", "queda", "quedan", "quedo", "quedó"]
     ):
         if _looks_like_chicken_availability_question(text):
             if _contains_any(text, BROASTER_TEXT_TERMS):
@@ -6118,6 +6646,10 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
             return ("availability", "lasagna mixta")
         if "maduro" in text:
             return ("availability", "maduro con queso")
+        if parse_natural_order_rules(text).items:
+            return ("availability", text)
+        if _contains_any(text, ("papa", "papas", "yuca", "yucas", "salsa", "salsas")):
+            return ("availability", text)
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
             return ("category", "bebidas")
         if any(word in text for word in ["adicional", "adicionales", "papas", "sopa"]):
@@ -6448,6 +6980,7 @@ def _looks_like_confirmed_order_soup_followup(
 def _last_confirmed_order_payload(state: ConversationGraphState) -> dict[str, object]:
     return {
         "kind": "last_confirmed_order",
+        "observations": state.customer.observations,
         "items": [
             {
                 "code": line.product_code,
@@ -6474,12 +7007,90 @@ def _last_confirmed_order_has_chicken(pending_order_json: dict[str, object] | No
     return False
 
 
-def _looks_like_combination_question(text: str) -> bool:
-    if not _contains_any(text, ("puedo pedir", "se puede pedir", "puedo llevar", "me pueden vender")):
+def _cart_has_chicken(cart: list[CartLineState]) -> bool:
+    return any(line.product_code.startswith(("ASADO_", "BROASTER_")) for line in cart)
+
+
+def _looks_like_ambiguous_soup_followup(text: str) -> bool:
+    if not _contains_any(text, ("sopa", "sopas", "sopita", "sopitas")):
         return False
-    return _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS) and _contains_any(
+    if _looks_like_soup_rejection(text) or _contains_any(text, ("sin sopa", "sin sopita", "sin sopas", "sin sopitas")):
+        return False
+    if _looks_like_question(text) or _contains_any(text, ("viene con", "va con", "incluye", "trae", "no va con", "no viene con")):
+        return False
+    if _contains_any(text, ("pollo", "polo", "asado", "asada", "broster", "broaster", "brosted", "broasted")):
+        return False
+    if _contains_any(
         text,
-        (" y ", "con", "mitad", "medio"),
+        (
+            "adicional",
+            "adicionales",
+            "extra",
+            "extras",
+            "porcion",
+            "porción",
+            "aparte",
+            "otra",
+            "otras",
+            "icopor",
+            "no en bolsa",
+            "en vaso",
+            "en vasito",
+        ),
+    ):
+        return False
+    return _contains_any(
+        text,
+        (
+            "sopa",
+            "sopas",
+            "sopita",
+            "sopitas",
+            "con sopa",
+            "con sopas",
+            "incluida",
+            "incluidas",
+        ),
+    )
+
+
+def _looks_like_confirmed_order_note_followup(
+    text: str,
+    pending_order_json: dict[str, object] | None,
+) -> bool:
+    if (pending_order_json or {}).get("kind") != "last_confirmed_order":
+        return False
+    return _looks_like_sauce_note_request(text)
+
+
+def _looks_like_account_holder_question(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    if _contains_any(cleaned, ("esta a nombre", "está a nombre", "a nombre de")):
+        return False
+    return _contains_any(cleaned, ("fab", "fabio", "fab per", "fabio per", "fabio perez", "fabio pérez"))
+
+
+def _looks_like_combination_question(text: str) -> bool:
+    if not _contains_any(
+        text,
+        (
+            "puedo pedir",
+            "se puede pedir",
+            "puedo llevar",
+            "me pueden vender",
+            "tiene",
+            "tienen",
+            "hay",
+            "queda",
+            "quedan",
+            "disponible",
+            "disponibles",
+        ),
+    ):
+        return False
+    return _contains_any(text, ASADO_TEXT_TERMS) and _contains_any(text, BROASTER_TEXT_TERMS) and _contains_any(
+        text,
+        (" y ", "con", "mitad", "medio", "1/2"),
     )
 
 
@@ -6503,6 +7114,10 @@ def _looks_like_order_status_query(text: str) -> bool:
         "demora",
         "se demora",
         "demora mucho",
+        "que demora",
+        "qué demora",
+        "que se demora",
+        "qué se demora",
         "ya van 40 minuticos",
         "ya van 40 minutos",
         "ya van cuarenta minutos",
@@ -6583,6 +7198,10 @@ def _looks_like_order_status_query(text: str) -> bool:
         (
             "cuanto se demora",
             "cuánto se demora",
+            "que demora",
+            "qué demora",
+            "que se demora",
+            "qué se demora",
             "se demora",
             "demora mucho",
             "cuanto demora",
@@ -6748,7 +7367,7 @@ def _looks_like_payment_account_query(text: str) -> bool:
     )
     if cleaned in {"nequi", "o nequi", "pago por nequi", "por nequi", "transferencia", "pago transferencia", "el numero", "el número"}:
         return True
-    if _contains_any(cleaned, ("numero de cuenta", "número de cuenta", "numero para transferir", "número para transferir", "a que numero", "a qué numero", "a que número", "a qué número", "me envias numero", "me envías numero", "m envias numero", "comparte el numero", "comparte el número")):
+    if _contains_any(cleaned, ("numero de cuenta", "número de cuenta", "numero para transferir", "número para transferir", "a que numero", "a qué numero", "a que número", "a qué número", "me envias numero", "me envías numero", "m envias numero", "me regalas el numero", "me regalas el número", "me regala el numero", "me regala el número", "comparte el numero", "comparte el número")):
         return True
     if not _contains_any(cleaned, payment_terms):
         return False
@@ -7130,6 +7749,16 @@ async def _find_product_for_query(
         "que incluye",
         "qué incluye",
         "vale",
+        "tienes",
+        "tiene",
+        "tienen",
+        "hay",
+        "venden",
+        "manejan",
+        "queda",
+        "quedan",
+        "quedo",
+        "quedó",
     ]:
         normalized = normalized.replace(removable, " ")
     normalized = _normalize_common_product_alias(normalized.strip())

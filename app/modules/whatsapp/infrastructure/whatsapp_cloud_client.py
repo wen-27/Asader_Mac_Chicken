@@ -47,6 +47,10 @@ class WhatsAppCloudClient:
         if payload is None:
             payload = _half_combo_buttons_payload(chat_id, text)
         if payload is None:
+            payload = _soup_included_or_additional_buttons_payload(chat_id, text)
+        if payload is None:
+            payload = _product_availability_offer_buttons_payload(chat_id, text)
+        if payload is None:
             payload = _manzana_25_buttons_payload(chat_id, text)
         if payload is None:
             payload = {
@@ -272,6 +276,58 @@ def _half_combo_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object]
                     {
                         "type": "reply",
                         "reply": {"id": "half_combo_menu", "title": "Menú"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _soup_included_or_additional_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "¿La deseas como la sopa incluida o quieres añadir una sopa adicional aparte?" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "soup_included_note", "title": "Incluida"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "soup_additional_add", "title": "Adicional"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _product_availability_offer_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    if "¿Deseas ordenarla ahora o prefieres ver el menu?" not in text:
+        return None
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": "product_offer_order", "title": "Ordenar"},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "product_offer_menu", "title": "Menú"},
                     },
                 ]
             },

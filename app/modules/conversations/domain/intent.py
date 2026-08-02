@@ -23,6 +23,7 @@ class ConversationIntent(str, Enum):
     RESUMEN_CHECKOUT = "resumen_checkout"
     PEDIR_DATOS_CLIENTE = "pedir_datos_cliente"
     PROCESAR_DATOS_CLIENTE = "procesar_datos_cliente"
+    GUARDAR_DATOS_SIN_PRODUCTO = "guardar_datos_sin_producto"
     CONFIRMAR_PEDIDO = "confirmar_pedido"
     CANCELAR = "cancelar"
     PRODUCTO_RESTRINGIDO = "producto_restringido"

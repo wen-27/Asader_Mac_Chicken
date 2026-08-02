@@ -10,6 +10,7 @@ from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import (
     _half_combo_buttons_payload,
     _main_menu_buttons_payload,
     _manzana_25_buttons_payload,
+    _product_availability_offer_buttons_payload,
     _soup_unavailable_buttons_payload,
 )
 from app.shared.domain.value_object import ChatId
@@ -91,6 +92,21 @@ def test_manzana_25_notice_uses_add_or_drinks_buttons() -> None:
     assert buttons[0]["reply"]["title"] == "Añadir 2.5 L"
     assert buttons[1]["reply"]["id"] == "manzana_25_drinks"
     assert buttons[1]["reply"]["title"] == "Ver bebidas"
+
+
+def test_product_availability_offer_uses_order_menu_buttons() -> None:
+    payload = _product_availability_offer_buttons_payload(
+        ChatId(573153327502),
+        "Sí señora, Lasagna Mixta está disponible en este momento.\n\n"
+        "¿Deseas ordenarla ahora o prefieres ver el menu?",
+    )
+
+    assert payload is not None
+    buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
+    assert buttons[0]["reply"]["id"] == "product_offer_order"
+    assert buttons[0]["reply"]["title"] == "Ordenar"
+    assert buttons[1]["reply"]["id"] == "product_offer_menu"
+    assert buttons[1]["reply"]["title"] == "Menú"
 
 
 def test_main_menu_prompt_uses_customer_friendly_buttons() -> None:

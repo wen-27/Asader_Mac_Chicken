@@ -104,6 +104,7 @@ _NODE_REGISTRY: dict[str, NodeFn] = {
     "prepare_checkout_summary": nodes.prepare_checkout_summary,
     "ask_customer_data": nodes.ask_customer_data,
     "extract_customer_data": nodes.extract_customer_data,
+    "save_customer_data_without_order": nodes.save_customer_data_without_order,
     "calculate_delivery": nodes.calculate_delivery,
     "create_order": nodes.create_order,
     "confirm_order": nodes.confirm_order,

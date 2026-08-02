@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from app.modules.cart.domain.cart_item import CartItem
 from app.modules.conversations.domain.conversation_state import ConversationState
@@ -25,6 +26,7 @@ class TelegramSession:
     observations: str | None = None
     fulfillment_type: str = "DELIVERY"
     pending_order_json: dict[str, object] | None = None
+    last_seen_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def phone(self) -> str | None:

@@ -70,6 +70,8 @@ BROASTER_TERMS = (
     "brosterr",
     "brostter",
     "brostee",
+    "broaste",
+    "broastes",
     "broste",
     "brosther",
     "brother",
@@ -439,6 +441,11 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         )
         matched_codes.update({"ASADO_ENTERO", "ASADO_MEDIO"})
 
+    for implicit_item in _implicit_unstyled_whole_and_quarter_items(normalized):
+        if implicit_item.code not in matched_codes:
+            items.append(implicit_item)
+            matched_codes.add(implicit_item.code)
+
     for implicit_item in _implicit_quarter_piece_items(normalized):
         if implicit_item.code not in matched_codes:
             items.append(implicit_item)
@@ -466,6 +473,7 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         ):
             if rule.code == "SOPA_ADICIONAL" and (
                 _looks_like_soup_or_contents_question(normalized) or _looks_like_included_soup_side(normalized)
+                or _looks_like_included_soup_icopor_container_request(normalized)
             ):
                 continue
             items.append(
@@ -670,6 +678,27 @@ def _looks_like_soup_icopor_container_request(text: str) -> bool:
     )
 
 
+def _looks_like_included_soup_icopor_container_request(text: str) -> bool:
+    if not _looks_like_soup_icopor_container_request(text):
+        return False
+    if not _contains_any_terms(text, CHICKEN_TERMS + ASADO_STYLE_TERMS + BROASTER_TERMS):
+        return False
+    return not _contains_any_terms(
+        text,
+        (
+            "sopa adicional",
+            "sopita adicional",
+            "sopa extra",
+            "sopita extra",
+            "una sopa",
+            "un sopa",
+            "dos sopas",
+            "otra sopa",
+            "sopa aparte",
+        ),
+    )
+
+
 def _looks_like_included_soup_side(text: str) -> bool:
     if not _contains_any_terms(text, ("sopa", "sopita")):
         return False
@@ -717,6 +746,51 @@ def _implicit_quarter_piece_items(text: str) -> list[ParsedOrderItem]:
         if quantity:
             quantities_by_code[code] = quantities_by_code.get(code, 0) + quantity
     return [ParsedOrderItem(code=code, quantity=quantity) for code, quantity in quantities_by_code.items()]
+
+
+def _implicit_unstyled_whole_and_quarter_items(text: str) -> list[ParsedOrderItem]:
+    if _contains_any_terms(text, COOKING_STYLE_TERMS):
+        return []
+    if not _contains_any_terms(text, ("pollo", "pollos", "polo", "polos", "poyo", "poyos")):
+        return []
+    quantities: dict[str, int] = {}
+    quarter_pattern = re.compile(
+        r"\b(?P<qty>[1-9]\d*|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+"
+        r"(?:cuartos?|quartos?|1/4)\s+(?:de\s+)?(?:pollos?|polos?|poyos?)\b"
+    )
+    consumed_spans: list[tuple[int, int]] = []
+    for match in quarter_pattern.finditer(text):
+        quantity = _integer_token_value(match.group("qty"))
+        quantities["ASADO_CUARTO"] = quantities.get("ASADO_CUARTO", 0) + quantity
+        consumed_spans.append(match.span())
+
+    whole_pattern = re.compile(
+        r"\b(?P<qty>[1-9]\d*|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+"
+        r"(?:pollos?|polos?|poyos?)\b"
+    )
+    for match in whole_pattern.finditer(text):
+        if any(start <= match.start() < end or start < match.end() <= end for start, end in consumed_spans):
+            continue
+        before = text[max(0, match.start() - 18):match.start()]
+        after = text[match.end():min(len(text), match.end() + 8)]
+        if _contains_any_terms(before, ("medio", "media", "mitad", "cuarto", "cuartos", "1/2", "1/4", "3/4")):
+            continue
+        if _contains_any_terms(after, ("entero", "completo")):
+            pass
+        elif re.search(r"^\s*(?:medio|media|mitad|cuarto|cuartos|1/2|1/4|3/4)\b", after):
+            continue
+        quantity = _integer_token_value(match.group("qty"))
+        quantities["ASADO_ENTERO"] = quantities.get("ASADO_ENTERO", 0) + quantity
+
+    if len(quantities) < 2:
+        return []
+    return [ParsedOrderItem(code=code, quantity=quantity) for code, quantity in quantities.items()]
+
+
+def _integer_token_value(token: str) -> int:
+    if token.isdigit():
+        return max(1, int(token))
+    return NUMBER_WORDS.get(token, 1)
 
 
 def _looks_like_implicit_broaster_piece_with_fries(text: str) -> bool:

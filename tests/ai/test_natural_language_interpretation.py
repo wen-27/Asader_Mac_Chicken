@@ -204,6 +204,15 @@ def test_rule_based_parser_charges_soup_icopor_only_for_soup_context() -> None:
     assert glass_bottle.items == []
 
 
+def test_rule_based_parser_charges_only_icopor_for_included_chicken_soup_container() -> None:
+    parsed = parse_natural_order_rules("medio asado con sopa en icopor porfa")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_MEDIO", 1),
+        ("ICOPOR_SOPA", 1),
+    ]
+
+
 def test_rule_based_parser_charges_soup_icopor_with_irregular_text() -> None:
     examples = [
         "quiero sopa en icopol",
@@ -240,6 +249,15 @@ def test_rule_based_parser_does_not_assume_plain_chicken_is_asado() -> None:
 
     assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
     assert parsed.intent == "order_items"
+
+
+def test_rule_based_parser_keeps_unstyled_whole_and_quarters_before_style_question() -> None:
+    parsed = parse_natural_order_rules("Me da porfavor 1 pollo y 2 cuartos de pollo pierna pernil")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_CUARTO", 2),
+        ("ASADO_ENTERO", 1),
+    ]
 
 
 def test_rule_based_parser_tolerates_joined_unpollo_typo() -> None:

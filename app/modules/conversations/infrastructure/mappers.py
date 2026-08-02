@@ -86,6 +86,7 @@ def session_from_orm(row: TelegramSessionORM) -> TelegramSession:
         payment_method=row.payment_method,
         observations=row.observations,
         fulfillment_type=row.fulfillment_type or "DELIVERY",
+        last_seen_at=row.updated_at,
     )
 
 
