@@ -2860,6 +2860,26 @@ async def test_three_quarter_full_flow_with_composition_phrase_waits_for_quantit
 
 
 @pytest.mark.asyncio
+async def test_three_quarter_numbered_composition_then_one_quantity_adds_one_unit() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    first = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero 3/4 de pollo asado"))
+    assert first["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert "2 piernas y 1 pechuga" in first["response_text"]
+
+    second = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+    assert second["current_step"] == ConversationState.ASK_QUANTITY
+    assert "3/4 Asado - 2 piernas y 1 pechuga" in second["response_text"]
+
+    third = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+    assert third["current_step"] == ConversationState.POST_ADD
+    assert "1 x 3/4 Asado - 2 piernas y 1 pechuga" in third["response_text"]
+    assert "2 x 3/4 Asado" not in third["response_text"]
+    assert services.session.cart[0].quantity == 1
+
+
+@pytest.mark.asyncio
 async def test_natural_three_quarter_order_with_composition_adds_variant_to_cart() -> None:
     services = FakeConversationServices()
     state = ConversationGraphState(

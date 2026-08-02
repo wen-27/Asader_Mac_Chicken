@@ -82,6 +82,11 @@ class ShortDistanceClient:
         return 0.8
 
 
+class LongDistanceClient:
+    async def driving_distance_km(self, origin: str, destination: str) -> float:
+        return 33.75
+
+
 class FailingDistanceClient:
     async def driving_distance_km(self, origin: str, destination: str) -> float:
         raise RuntimeError("maps unavailable")
@@ -227,6 +232,27 @@ async def test_map_delivery_uses_distance_for_unknown_neighborhood() -> None:
     assert result.found is True
     assert result.distance_km == 2.4
     assert result.delivery_price_cop == 4000
+    assert result.pricing_source == "openrouteservice"
+
+
+@pytest.mark.asyncio
+async def test_map_delivery_caps_bad_long_distance_estimates() -> None:
+    use_case = CalculateMapBasedDelivery(
+        FakeDeliveryZones(),
+        LongDistanceClient(),
+        DeliveryPricingConfig(
+            origin_address="Lagos 2",
+            base_price_cop=2000,
+            price_per_km_cop=2000,
+            round_to_cop=500,
+        ),
+    )
+
+    result = await use_case.execute("Calle 70 # 30-88 a 31-30", "Antonia Santos Sur")
+
+    assert result.found is True
+    assert result.distance_km == 33.75
+    assert result.delivery_price_cop == 12000
     assert result.pricing_source == "openrouteservice"
 
 
