@@ -849,6 +849,57 @@ async def test_half_chicken_text_inside_asado_menu_uses_asado_context() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("message", "product_code", "product_name"),
+    [
+        ("quiero medio pollo asado", "ASADO_MEDIO", "1/2 Asado"),
+        ("quiero medio pollo broaster", "BROASTER_MEDIO", "1/2 Broasted"),
+    ],
+)
+async def test_half_chicken_order_adds_directly_without_part_prompt(
+    message: str,
+    product_code: str,
+    product_name: str,
+) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=message))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert f"1 x {product_name}" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == [product_code]
+
+
+@pytest.mark.asyncio
+async def test_real_asado_menu_number_three_adds_half_without_part_prompt() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    services.products = {
+        "ASADO_ENTERO": services.products["ASADO_ENTERO"],
+        "ASADO_34": services.products["ASADO_34"],
+        "ASADO_MEDIO": services.products["ASADO_MEDIO"],
+        "ASADO_CUARTO": services.products["ASADO_CUARTO"],
+        **{code: product for code, product in services.products.items() if not code.startswith("ASADO_")},
+    }
+    services.session.move_to(ConversationState.SELECT_ASADO)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3"))
+
+    assert result["current_step"] == ConversationState.ASK_QUANTITY
+    assert result["selected_product_code"] == "ASADO_MEDIO"
+    assert "1/2 Asado" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_order_with_contents_question_inside_asado_menu_does_not_ask_quantity() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -2099,9 +2150,46 @@ async def test_unexpected_half_chicken_part_prompt_does_not_route_to_contents(pr
     state = await nodes.load_or_create_session(state, services)
     state = await nodes.detect_intent(state, services)
 
-    assert state.intent == ConversationIntent.PEDIR_CANTIDAD
+    assert state.intent == ConversationIntent.AGREGAR_PRODUCTO
+    assert state.quantity == 1
     assert state.query_type is None
     assert "Claro. Dime de que producto quieres saber" not in state.response_text
+
+
+@pytest.mark.asyncio
+async def test_stale_half_chicken_part_step_adds_quantity_reply_without_part_prompt() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.selected_product_code = product.code
+    services.session.selected_product_name = product.name
+    services.session.selected_unit_price_cop = product.price.amount
+    services.session.move_to(ConversationState.ASK_CHICKEN_PART)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/2 Asado" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+
+
+@pytest.mark.asyncio
+async def test_stale_half_chicken_part_step_allows_new_natural_order() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.selected_product_code = product.code
+    services.session.selected_product_name = product.name
+    services.session.selected_unit_price_cop = product.price.amount
+    services.session.move_to(ConversationState.ASK_CHICKEN_PART)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="quiero medio pollo asado"))
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "1 x 1/2 Asado: $22300" in result["response_text"]
+    assert "pierna o pechuga" not in result["response_text"]
+    assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
 
 
 @pytest.mark.asyncio

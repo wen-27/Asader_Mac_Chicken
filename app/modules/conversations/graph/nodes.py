@@ -434,6 +434,20 @@ async def detect_intent(
         state.intent = ConversationIntent.LENGUAJE_NATURAL
         return state
     if state.current_step == ConversationState.ASK_CHICKEN_PART:
+        if state.selected_product_code and not _requires_chicken_selection(state.selected_product_code):
+            state.selected_chicken_part = None
+            if parsed_rules.items:
+                session.clear_selected_product()
+                await services.persist_session(session)
+                state.intent = ConversationIntent.LENGUAJE_NATURAL
+                return state
+            quantity = _extract_positive_integer(text)
+            if quantity is not None or _extract_chicken_part(text) or _looks_like_normal_chicken_reply(text):
+                state.intent = ConversationIntent.AGREGAR_PRODUCTO
+                state.quantity = quantity or 1
+                return state
+            state.intent = ConversationIntent.PEDIR_CANTIDAD
+            return state
         state.selected_chicken_part = _extract_chicken_selection(state.selected_product_code, text)
         quantity = _extract_positive_integer(text)
         if (
