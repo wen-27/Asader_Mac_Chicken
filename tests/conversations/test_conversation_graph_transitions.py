@@ -18,6 +18,7 @@ from app.modules.conversations.domain.telegram_session import TelegramSession
 from app.modules.conversations.application.graph_services import AdminOrderPayload, cart_item_from_product
 from app.modules.conversations.graph.graph import build_conversation_graph
 from app.modules.conversations.graph import nodes
+from app.modules.conversations.graph.message_factory import BotMessageFactory
 from app.modules.conversations.graph.router import route_after_customer_validation, route_after_intent
 from app.modules.conversations.graph.state import CartLineState, ConversationGraphState
 from app.modules.delivery.application.use_cases.calculate_delivery import CalculateDeliveryResult
@@ -884,6 +885,14 @@ async def test_half_chicken_after_welcome_adds_directly_without_part_prompt() ->
     assert "1 x 1/2 Asado" in result["response_text"]
     assert "pierna o pechuga" not in result["response_text"]
     assert [item.product_code.value for item in services.session.cart] == ["ASADO_MEDIO"]
+
+
+def test_half_chicken_part_prompt_is_never_rendered() -> None:
+    for product_name in ("1/2 Asado", "1/2 Broasted", "Medio pollo"):
+        message = BotMessageFactory.ask_chicken_part(product_name)
+
+        assert "pierna o pechuga" not in message
+        assert "Cuantas unidades" in message
 
 
 @pytest.mark.asyncio

@@ -128,6 +128,17 @@ class BotMessageFactory:
 
     @classmethod
     def ask_chicken_part(cls, product_name: str) -> str:
+        normalized = product_name.lower()
+        if "1/2" in normalized or "medio" in normalized:
+            return "\n".join(
+                [
+                    f"🛒 {product_name}",
+                    "",
+                    "¿Cuantas unidades deseas añadir?",
+                    "",
+                    "0. ⬅️ Volver a categorias",
+                ]
+            )
         return "\n".join(
             [
                 f"🍗 {product_name}",
