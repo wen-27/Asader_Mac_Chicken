@@ -187,6 +187,16 @@ async def detect_intent(
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    direct_half_code = _direct_half_chicken_code(text)
+    if direct_half_code:
+        session.clear_pending_order()
+        session.clear_selected_product()
+        await services.persist_session(session)
+        state.selected_product_code = direct_half_code
+        state.selected_chicken_part = None
+        state.quantity = _extract_product_quantity_ignoring_pickup_time(text) or 1
+        state.intent = ConversationIntent.AGREGAR_PRODUCTO
+        return state
     if _looks_like_fragmented_greeting_followup(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "greeting_followup"
@@ -6018,6 +6028,18 @@ def _half_chicken_code_from_name(product_name: str | None) -> str | None:
     if _contains_any(normalized, BROASTER_TEXT_TERMS):
         return "BROASTER_MEDIO"
     if _contains_any(normalized, ASADO_TEXT_TERMS):
+        return "ASADO_MEDIO"
+    return None
+
+
+def _direct_half_chicken_code(text: str) -> str | None:
+    if not _contains_any(text, ("medio", "media", "mitad", "1/2", "1 2")):
+        return None
+    if not _contains_any(text, ("pollo", "pollos", "polo", "polos", "poyo", "poyos") + ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS):
+        return None
+    if _contains_any(text, BROASTER_TEXT_TERMS):
+        return "BROASTER_MEDIO"
+    if _contains_any(text, ASADO_TEXT_TERMS):
         return "ASADO_MEDIO"
     return None
 
