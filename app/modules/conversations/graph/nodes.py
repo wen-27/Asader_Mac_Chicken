@@ -2199,11 +2199,14 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         "provenza",
         "diamante",
         "cacique",
-        "cabecera",
-        "asovilagos",
-        "san antonio del carrizal",
-        "san antonio carrizal",
-    )
+            "cabecera",
+            "asovilagos",
+            "villa piedra del sol",
+            "villa piedra",
+            "villapiedra",
+            "san antonio del carrizal",
+            "san antonio carrizal",
+        )
     address_note_markers = (
         "diagonal",
         "frente",
@@ -2638,6 +2641,7 @@ def _copy_checkout_state_to_session(
     state: ConversationGraphState,
     session,
 ) -> None:
+    state.customer.observations = _sanitize_observations_for_cart(state.customer.observations, state.cart)
     session.customer_name = state.customer.name
     session.customer_phone = state.customer.phone
     session.customer_address = state.customer.address
@@ -2658,8 +2662,25 @@ def _copy_checkout_session_to_state(
     customer.neighborhood = customer.neighborhood or session.customer_neighborhood
     customer.payment_method = customer.payment_method or session.payment_method
     customer.observations = customer.observations or session.observations
+    customer.observations = _sanitize_observations_for_cart(customer.observations, state.cart)
     state.customer = customer
     state.fulfillment_type = session.fulfillment_type or state.fulfillment_type or "DELIVERY"
+
+
+def _sanitize_observations_for_cart(
+    observations: str | None,
+    cart: list[CartLineState],
+) -> str | None:
+    if not observations:
+        return observations
+    if any(_requires_chicken_part(line.product_code) for line in cart):
+        return observations
+    cleaned_parts = [
+        part.strip()
+        for part in re.split(r"\s*(?:\n|;)\s*", observations)
+        if part.strip() and not normalize_text(part).startswith("presa solicitada")
+    ]
+    return ". ".join(cleaned_parts) or None
 
 
 def _clear_checkout_session(session) -> None:
@@ -4615,6 +4636,9 @@ def _looks_like_known_neighborhood(normalized: str) -> bool:
         "bellavista",
         "manantial",
         "el manantial",
+        "villa piedra del sol",
+        "villa piedra",
+        "villapiedra",
     }
 
 
@@ -5641,6 +5665,9 @@ def _looks_like_neighborhood_only(normalized: str) -> bool:
         "bellavista",
         "provenza",
         "asovilagos",
+        "villa piedra del sol",
+        "villa piedra",
+        "villapiedra",
     }
 
 

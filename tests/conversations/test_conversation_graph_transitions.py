@@ -4700,6 +4700,32 @@ async def test_checkout_keeps_lagos_dos_barrio_and_ignores_payment_filler_note()
 
 
 @pytest.mark.asyncio
+async def test_lasagna_checkout_accepts_villa_piedra_and_drops_stale_piece_note() -> None:
+    services = FakeConversationServices()
+    services.session.observations = "Presa solicitada: Pierna."
+    graph = build_conversation_graph(services)
+
+    added = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Dame 2 lasañas"))
+    review = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Italo Valero\n3124648429\nCra28a 193-26\nVilla Piedra Del Sol\nefectivo",
+        )
+    )
+
+    assert "- 2 x Lasagna Mixta: $40000" in added["response_text"]
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Italo Valero" in review["response_text"]
+    assert "📞 Telefono: 3124648429" in review["response_text"]
+    assert "📍 Direccion: Cra28a 193-26" in review["response_text"]
+    assert "🏘️ Barrio: Villa Piedra Del Sol" in review["response_text"]
+    assert "📝 Nota: Sin nota" in review["response_text"]
+    assert "Presa solicitada" not in review["response_text"]
+    assert services.session.customer_neighborhood == "Villa Piedra Del Sol"
+    assert services.session.observations is None
+
+
+@pytest.mark.asyncio
 async def test_manzana_litro_alone_warns_only_25_liter_available() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
