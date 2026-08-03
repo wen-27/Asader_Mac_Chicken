@@ -8040,6 +8040,39 @@ async def test_inline_labeled_customer_data_can_include_order_inside_note_field(
 
 
 @pytest.mark.asyncio
+async def test_pickup_order_keeps_maduro_split_note_and_clean_inline_name() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Buenos diasss"))
+    order = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Necesito hacer pedido de dos Lasañas y un maduro partido por mitad.. "
+                "A nombre de Haider Otero...  Ya paso a recoger, apenas este listo el pedido me avisa!"
+            ),
+        )
+    )
+    review = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="3106254349\nEn 20  minutos")
+    )
+
+    assert "Telefono" in order["response_text"]
+    assert "En cuanto tiempo pasa a recoger" in order["response_text"]
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Haider Otero" in review["response_text"]
+    assert "Haider Otero... Ya paso" not in review["response_text"]
+    assert "📞 Telefono: 3106254349" in review["response_text"]
+    assert "📝 Nota: Maduro con Queso: partido por mitad. Recoge En 20 minutos" in review["response_text"]
+    assert "📍 Entrega: Recoge en local" in review["response_text"]
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == [
+        ("LASAGNA_MIXTA", 2),
+        ("MADURO_QUESO", 1),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_disordered_pre_order_part_payment_is_applied_to_later_quarter_order() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

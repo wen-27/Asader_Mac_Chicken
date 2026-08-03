@@ -1810,7 +1810,7 @@ def _clear_generic_pickup_observation(observations: str | None) -> str | None:
 
 def _extract_inline_customer_name(text: str) -> str | None:
     name_match = re.search(
-        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
+        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+ya\s+paso|\s+ya\s+pasó|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
@@ -3591,6 +3591,10 @@ async def _add_natural_order_to_cart(
     if included_side_note:
         session.observations = _append_observation(session.observations, included_side_note)
         state.customer.observations = session.observations
+    special_product_note = _extract_special_product_note(state.normalized_text)
+    if special_product_note:
+        session.observations = _append_observation(session.observations, special_product_note)
+        state.customer.observations = session.observations
     for item in parsed.items:
         if included_side_note and item.code in {"PAPA_FRANCESA", "PAPA_SALADA", "YUCA_FRITA"}:
             continue
@@ -4998,6 +5002,28 @@ def _looks_like_sauce_replacement_note(text: str) -> bool:
             "sin tártara",
         ),
     )
+
+
+def _extract_special_product_note(text: str) -> str | None:
+    if not _contains_any(text, ("maduro", "platano", "plátano")):
+        return None
+    if _contains_any(
+        text,
+        (
+            "partido por mitad",
+            "partido a la mitad",
+            "partir por mitad",
+            "partir a la mitad",
+            "partamelo por mitad",
+            "pártamelo por mitad",
+            "partamelo a la mitad",
+            "pártamelo a la mitad",
+            "por mitad",
+            "a la mitad",
+        ),
+    ):
+        return "Maduro con Queso: partido por mitad"
+    return None
 
 
 def _extract_included_chicken_side_note(text: str) -> str | None:
