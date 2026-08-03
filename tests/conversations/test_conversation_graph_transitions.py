@@ -4826,6 +4826,42 @@ async def test_checkout_accepts_landline_and_loose_phone_payment_labels() -> Non
 
 
 @pytest.mark.asyncio
+async def test_saved_customer_data_is_reused_after_pending_quarter_selection() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Buenas"))
+    saved = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Nombre: Jhon Rodríguez \n"
+                "Dirección: calle 24 N 5-77 lagos 3 \n"
+                "Teléfono: 3214977480\n"
+                "Método de pago: transferencia"
+            ),
+        )
+    )
+    barrio = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Barrio: Lagos 3"))
+    question = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="1 pollo broaster \n1/4 de pollo asado")
+    )
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+
+    assert "Todavia me falta" not in saved["response_text"]
+    assert "Todavia me falta" not in barrio["response_text"]
+    assert "¿Lo quieres en pierna o pechuga?" in question["response_text"]
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Jhon Rodríguez" in review["response_text"]
+    assert "📞 Telefono: 3214977480" in review["response_text"]
+    assert "📍 Direccion: calle 24 N 5-77" in review["response_text"]
+    assert "🏘️ Barrio: Lagos 3" in review["response_text"]
+    assert "💳 Pago: Transferencia Bancolombia" in review["response_text"]
+    assert "Me falta esta informacion" not in review["response_text"]
+    assert "Para confirmar tu orden" not in review["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_lasagna_checkout_accepts_villa_piedra_and_drops_stale_piece_note() -> None:
     services = FakeConversationServices()
     services.session.observations = "Presa solicitada: Pierna."

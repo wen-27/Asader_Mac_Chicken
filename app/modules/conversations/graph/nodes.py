@@ -677,6 +677,13 @@ async def detect_intent(
         state.query_value = text
         return state
     if (
+        not state.cart
+        and not parsed_rules.items
+        and _has_checkout_data_signal(state.raw_text)
+    ):
+        state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
+        return state
+    if (
         _looks_like_cart_total_query(text)
         and not _looks_like_delivery_cost_question(text)
         and not parsed_rules.items
@@ -1230,7 +1237,13 @@ async def add_to_cart(
         )
         return state
     state.current_step = ConversationState.POST_ADD
-    state.response_text = BotMessageFactory.added_to_cart(line, state.subtotal_cop)
+    _copy_checkout_session_to_state(session, state)
+    state.response_text = BotMessageFactory.natural_order_added(
+        [line],
+        state.subtotal_cop,
+        _missing_checkout_fields(state),
+        fulfillment_type=state.fulfillment_type,
+    )
     return state
 
 
@@ -2262,6 +2275,8 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
         "bucarica",
         "lagos 2",
         "lagos ii",
+        "lagos 3",
+        "lagos iii",
         "provenza",
         "diamante",
         "cacique",
@@ -3000,9 +3015,17 @@ async def fallback_natural_language(
         )
         state.current_step = ConversationState.POST_ADD
         state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        _copy_checkout_session_to_state(session, state)
+        missing_checkout_fields = _missing_checkout_fields(state)
+        if not missing_checkout_fields:
+            state = await calculate_delivery(state, services)
+            if not state.errors:
+                return await create_order(state, services)
         state.response_text = BotMessageFactory.natural_order_added(
             pending_lines,
             state.subtotal_cop,
+            missing_checkout_fields,
             fulfillment_type=state.fulfillment_type,
         )
         if unavailable_notice:
