@@ -1917,6 +1917,7 @@ def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
             _split_delimited_checkout_line(line)
             or _split_loose_labeled_phone_payment_line(line)
             or _split_composite_checkout_line(line)
+            or _split_name_phone_address_line(line)
             or _split_name_phone_payment_line(line)
             or _split_name_address_line(line)
         )
@@ -2068,6 +2069,23 @@ def _split_name_phone_payment_line(line: str) -> list[str] | None:
             return [_clean_customer_name(before_phone), phone_match.group(0), after_without_payment, payment]
         return None
     return [_clean_customer_name(before_phone), phone_match.group(0), payment]
+
+
+def _split_name_phone_address_line(line: str) -> list[str] | None:
+    phone_match = re.search(r"(?<!\d)(3(?:[\s.-]?\d){9})(?!\d)", line)
+    if phone_match is None:
+        return None
+    name = _clean_customer_name(line[: phone_match.start()].strip(" ,.-"))
+    address = line[phone_match.end() :].strip(" ,.-")
+    if (
+        not name
+        or not _looks_like_probable_customer_name(name)
+        or not address
+        or not _looks_like_address(normalize_text(address))
+    ):
+        return None
+    phone = re.sub(r"\D", "", phone_match.group(1))
+    return [name, phone, address]
 
 
 def _split_loose_labeled_phone_payment_line(line: str) -> list[str] | None:

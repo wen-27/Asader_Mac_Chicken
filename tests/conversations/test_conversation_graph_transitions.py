@@ -4166,6 +4166,35 @@ async def test_graph_extracts_single_line_customer_data_with_address_and_payment
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "wendy 3022873946 cra28a#195-33",
+        "wendy 302 287 3946 cra28a#195-33",
+    ],
+)
+async def test_single_line_name_phone_address_keeps_partial_checkout_data(raw_text: str) -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_MEDIO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert services.session.customer_name == "wendy"
+    assert services.session.customer_phone == "3022873946"
+    assert services.session.customer_address == "cra28a#195-33"
+    assert services.session.customer_neighborhood is None
+    assert services.session.payment_method is None
+    assert "Me falta esta informacion: barrio, metodo de pago" in result["response_text"]
+    assert "nombre completo" not in result["response_text"]
+    assert "telefono" not in result["response_text"]
+    assert "direccion" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_graph_adds_natural_order_items_to_cart() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
