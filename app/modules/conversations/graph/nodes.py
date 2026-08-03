@@ -4055,6 +4055,10 @@ async def _continue_pending_natural_order(
     pending = session.pending_order_json
     if not pending:
         return []
+    if _has_checkout_data_signal(state.raw_text):
+        await extract_customer_data(state, services)
+        _copy_checkout_state_to_session(state, session)
+        await services.persist_session(session)
     if _should_cancel_pending_order(state.normalized_text):
         session.clear_pending_order()
         session.clear_selected_product()

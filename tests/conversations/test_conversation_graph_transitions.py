@@ -2473,6 +2473,38 @@ async def test_pending_quarter_respects_unavailable_selected_part_before_adding_
 
 
 @pytest.mark.asyncio
+async def test_address_given_while_waiting_for_quarter_part_is_kept_for_checkout() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola buenas tardes"))
+    part_prompt = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Me envías un cuarto broster")
+    )
+    assert part_prompt["current_step"] == ConversationState.ASK_CHICKEN_PART
+
+    repeated_prompt = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Calle 44 #3_79")
+    )
+    assert repeated_prompt["current_step"] == ConversationState.ASK_CHICKEN_PART
+    assert services.session.customer_address == "Calle 44 #3_79"
+
+    added = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="2"))
+    assert "1 x 1/4 Broasted - Pechuga" in added["response_text"]
+    assert "direccion" not in added["response_text"].lower()
+    assert "barrio" in added["response_text"].lower()
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Juan David Quintero"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3213904451"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Largos 2"))
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Efectivo"))
+
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "📍 Direccion: Calle 44 #3_79" in review["response_text"]
+    assert "🏘️ Barrio: Largos 2" in review["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_single_pending_quarter_greeting_clears_stuck_pending_order() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
