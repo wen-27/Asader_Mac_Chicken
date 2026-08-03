@@ -3601,6 +3601,35 @@ async def test_confirmed_order_followups_do_not_restart_menu_or_product_selectio
 
 
 @pytest.mark.asyncio
+async def test_gratitude_during_incomplete_checkout_keeps_requesting_missing_data() -> None:
+    services = FakeConversationServices()
+    services.products["ASADO_ENTERO"] = Product(
+        code=ProductCode("ASADO_ENTERO"),
+        name=ProductName("1 Asado Entero"),
+        category=ProductCategory.POLLO_ASADO,
+        price=MoneyCOP(44500),
+    )
+    graph = build_conversation_graph(services)
+
+    order = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="1 Pollo asado para el sector 20 Bucarica Bloque 21-17 Apartamento 213",
+        )
+    )
+    saved_address = services.session.address
+    saved_neighborhood = services.session.neighborhood
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Muchas gracias"))
+
+    assert order["current_step"] == ConversationState.POST_ADD
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion: nombre completo, telefono, metodo de pago" in result["response_text"]
+    assert "gracias a ti por elegirnos" not in result["response_text"].lower()
+    assert services.session.address == saved_address
+    assert services.session.neighborhood == saved_neighborhood
+
+
+@pytest.mark.asyncio
 async def test_customer_data_accepts_optional_note_before_payment_method() -> None:
     services = FakeConversationServices()
     services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)

@@ -535,6 +535,9 @@ async def detect_intent(
             state.query_type = "delivery_urgency"
             state.query_value = text
             return state
+        if _is_gratitude_only(text) and _contains_any(text, ("gracias", "agradezco")):
+            state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+            return state
         if _looks_like_order_waiting_followup(text) or _is_gratitude_only(text):
             state.intent = ConversationIntent.RESPONDER_CONSULTA
             state.query_type = "gratitude"
@@ -651,6 +654,14 @@ async def detect_intent(
         return state
     if not state.cart and _looks_like_confirmation_only_request(text, state.raw_text):
         state.intent = ConversationIntent.MOSTRAR_CARRITO
+        return state
+    if (
+        state.cart
+        and _missing_checkout_fields(state)
+        and _is_gratitude_only(text)
+        and _contains_any(text, ("gracias", "agradezco"))
+    ):
+        state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
         return state
     if _is_gratitude_only(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
