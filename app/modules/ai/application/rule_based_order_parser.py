@@ -513,6 +513,8 @@ def _normalize_for_matching(message: str) -> str:
     normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
     normalized = _collapse_repeated_vowels(normalized)
     normalized = re.sub(r"\bunpollo\b", "un pollo", normalized)
+    normalized = re.sub(r"\b3\s+cuatros?\b", "3/4", normalized)
+    normalized = re.sub(r"\btres\s+cuatros?\b", "3/4", normalized)
     normalized = re.sub(r"\b3\s+cuartos?\b", "3/4", normalized)
     normalized = re.sub(r"\b3\s+quartos?\b", "3/4", normalized)
     normalized = re.sub(r"\btres\s+quartos?\b", "3/4", normalized)

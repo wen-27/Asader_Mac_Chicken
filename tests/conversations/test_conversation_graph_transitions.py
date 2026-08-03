@@ -195,6 +195,16 @@ class FakeConversationServices:
                     variant_code = "BROASTER_CUARTO_PIERNA"
                 elif "pechuga" in normalized_variant:
                     variant_code = "BROASTER_CUARTO_PECHUGA"
+            elif product.code.value == "ASADO_34":
+                if normalized_variant == "2 piernas y 1 pechuga":
+                    variant_code = "ASADO_34_2PIERNAS_1PECHUGA"
+                elif normalized_variant == "2 pechugas y 1 pierna":
+                    variant_code = "ASADO_34_2PECHUGAS_1PIERNA"
+            elif product.code.value == "BROASTER_34":
+                if normalized_variant == "2 piernas y 1 pechuga":
+                    variant_code = "BROASTER_34_2PIERNAS_1PECHUGA"
+                elif normalized_variant == "2 pechugas y 1 pierna":
+                    variant_code = "BROASTER_34_2PECHUGAS_1PIERNA"
         is_calendar_restricted = (
             product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY
             and business_date.weekday() not in (5, 6)
@@ -412,6 +422,7 @@ async def test_repeated_punctuated_greeting_from_natural_order_returns_menu() ->
         "Buenas eci",
         "Saludos",
         "Hola, muy buenas tardes",
+        "Hola buenas tarde S",
     ],
 )
 async def test_punctuated_accented_greetings_return_menu(raw_text: str) -> None:
@@ -2893,6 +2904,54 @@ async def test_natural_three_quarter_order_with_composition_adds_variant_to_cart
 
     assert state.current_step == ConversationState.POST_ADD
     assert state.cart[0].product_name == "3/4 Broasted - 2 piernas y 1 pechuga"
+
+
+@pytest.mark.asyncio
+async def test_misspelled_three_quarters_with_perniles_adds_one_three_quarter_asado() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Me regala 3 cuatros de pollo asado\n"
+                "2 perniles y una pechuga\n\n"
+                "Calle 43 número 5-48 Lagos dos"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].product_code == ProductCode("ASADO_34")
+    assert services.session.cart[0].quantity == 1
+    assert services.session.cart[0].product_name.value == "3/4 Asado - 2 piernas y 1 pechuga"
+    assert "1 x 3/4 Asado - 2 piernas y 1 pechuga" in result["response_text"]
+    assert "3 x 1 Asado Entero" not in result["response_text"]
+    assert result["customer"]["address"] == "Calle 43 número 5-48"
+    assert result["customer"]["neighborhood"] == "Lagos dos"
+    assert "nombre completo" in result["response_text"]
+    assert "telefono" in result["response_text"]
+    assert "metodo de pago" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_misspelled_three_quarters_preserves_unavailable_composition_message() -> None:
+    services = FakeConversationServices()
+    services.unavailable_variant_codes.add("ASADO_34_2PIERNAS_1PECHUGA")
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Me regala 3 cuatros de pollo asado, 2 perniles y una pechuga",
+        )
+    )
+
+    assert services.session.cart == []
+    assert "3/4 Asado - 2 piernas y 1 pechuga no esta disponible" in result["response_text"]
+    assert "Puedes elegir otra opcion disponible del menu" in result["response_text"]
 
 
 @pytest.mark.asyncio

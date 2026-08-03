@@ -6039,6 +6039,7 @@ def _is_greeting_only(text: str) -> bool:
     normalized = re.sub(r"\bbuenas+\b", "buenas", normalized)
     normalized = re.sub(r"\bbuena\b", "buenas", normalized)
     normalized = re.sub(r"\bwenas+\b", "buenas", normalized)
+    normalized = re.sub(r"\btarde\s+s\b", "tardes", normalized)
     normalized = re.sub(r"\s+(hagame favor|me hace favor)$", "", normalized)
     normalized = re.sub(r"\s+(veci|vcei|eci|vecino|vecina|amigo|amiga|parce|mano|senor|señor|senora|señora)$", "", normalized)
     greetings = {
@@ -6665,14 +6666,22 @@ def _mentions_count(text: str, word: str, count: int) -> bool:
     tokens = text.split()
     for index, token in enumerate(tokens):
         compact_match = re.fullmatch(r"([1-9]\d*)([a-záéíóúñ]+)", token)
-        if compact_match and int(compact_match.group(1)) == count and _is_close_word(compact_match.group(2), word):
+        if compact_match and int(compact_match.group(1)) == count and _is_chicken_composition_word(
+            compact_match.group(2), word
+        ):
             return True
-        if not _is_close_word(token, word):
+        if not _is_chicken_composition_word(token, word):
             continue
         nearby = tokens[max(0, index - 2) : index]
         if any(value in count_words[count] for value in nearby):
             return True
     return False
+
+
+def _is_chicken_composition_word(token: str, word: str) -> bool:
+    if word == "pierna" and token in {"pernil", "perniles", "pierna", "piernas"}:
+        return True
+    return _is_close_word(token, word)
 
 
 def _quantity_before_token(tokens: list[str], index: int) -> int | None:
