@@ -4785,6 +4785,47 @@ async def test_checkout_keeps_lagos_dos_barrio_and_ignores_payment_filler_note()
 
 
 @pytest.mark.asyncio
+async def test_checkout_accepts_landline_and_loose_phone_payment_labels() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Buenas por favor me puede enviar medio pollo asado",
+        )
+    )
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Avda bellavista 152 47 torre 10 apto 204 conjunto residencial  panorama  maria judith ferreira",
+        )
+    )
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Tel 6050888"))
+    review = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Maria judith       Avda bellavista 152 47 trr 10 apto 204 conjunto residencial panorama\n"
+                "Telefono 607 6050888       Metodo pago nequi"
+            ),
+        )
+    )
+    confirmed = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Si"))
+
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Maria judith" in review["response_text"]
+    assert "📞 Telefono: 6076050888" in review["response_text"]
+    assert "📍 Direccion: Avda bellavista 152 47 trr 10 apto 204 conjunto residencial" in review["response_text"]
+    assert "🏘️ Barrio: panorama" in review["response_text"]
+    assert "📝 Nota: Sin nota" in review["response_text"]
+    assert "Telefono 607 6050888" not in review["response_text"]
+    assert "Metodo" not in review["response_text"]
+    assert "Me falta esta informacion" not in confirmed["response_text"]
+    assert "✅ Orden confirmada" in confirmed["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_lasagna_checkout_accepts_villa_piedra_and_drops_stale_piece_note() -> None:
     services = FakeConversationServices()
     services.session.observations = "Presa solicitada: Pierna."

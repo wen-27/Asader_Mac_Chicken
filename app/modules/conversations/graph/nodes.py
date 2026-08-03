@@ -1839,8 +1839,10 @@ def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
     for line in lines:
         split_line = (
             _split_delimited_checkout_line(line)
+            or _split_loose_labeled_phone_payment_line(line)
             or _split_composite_checkout_line(line)
             or _split_name_phone_payment_line(line)
+            or _split_name_address_line(line)
         )
         for expanded_line in split_line or [line]:
             expanded.extend(_split_payment_suffix(expanded_line))
@@ -1972,6 +1974,38 @@ def _split_name_phone_payment_line(line: str) -> list[str] | None:
             return [_clean_customer_name(before_phone), phone_match.group(0), after_without_payment, payment]
         return None
     return [_clean_customer_name(before_phone), phone_match.group(0), payment]
+
+
+def _split_loose_labeled_phone_payment_line(line: str) -> list[str] | None:
+    normalized = normalize_text(line)
+    if not re.search(r"\b(?:tel|telefono|teléfono)\b", normalized):
+        return None
+    payment = _extract_payment_from_text(normalized)
+    phone = _extract_phone_number(line)
+    if not phone:
+        return None
+    result = [phone]
+    if payment:
+        result.append(payment)
+    return result
+
+
+def _split_name_address_line(line: str) -> list[str] | None:
+    normalized = normalize_text(line)
+    if not _looks_like_address(normalized):
+        return None
+    match = re.search(
+        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|avda|av|transversal|tv|diagonal|dg|manzana|mz|sector|bloque)\b|#",
+        line,
+        flags=re.IGNORECASE,
+    )
+    if match is None or match.start() <= 0:
+        return None
+    name = _clean_customer_name(line[: match.start()])
+    address = line[match.start() :].strip(" ,.-")
+    if not name or not address or not _looks_like_probable_customer_name(name):
+        return None
+    return [name, address]
 
 
 def _clean_customer_name(value: str) -> str:
@@ -2236,6 +2270,7 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
             "villa piedra del sol",
             "villa piedra",
             "villapiedra",
+            "panorama",
             "san antonio del carrizal",
             "san antonio carrizal",
         )
@@ -2256,6 +2291,8 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
     best_match: tuple[int, int, str] | None = None
     for neighborhood in known_neighborhoods:
         match = re.search(rf"\b{re.escape(neighborhood)}\b", normalized)
+        if match and _looks_like_street_name_neighborhood_match(normalized, neighborhood, match):
+            continue
         if match and (best_match is None or match.start() < best_match[0]):
             best_match = (match.start(), match.end(), raw[match.start() : match.end()])
     if best_match is None:
@@ -2288,13 +2325,25 @@ def _trim_address_leading_context(text: str) -> str:
     ):
         return text.strip(" ,.-")
     match = re.search(
-        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|av|transversal|tv|diagonal|dg|manzana|mz|sector|bloque)\s*[\w#-]*|#",
+        r"\b(?:cra|cr|carrera|carrea|calle|cll|cl|avenida|avda|av|transversal|tv|diagonal|dg|manzana|mz|sector|bloque)\s*[\w#-]*|#",
         text,
         flags=re.IGNORECASE,
     )
     if match is None:
         return text
     return text[match.start() :].strip(" ,.-")
+
+
+def _looks_like_street_name_neighborhood_match(
+    normalized: str,
+    neighborhood: str,
+    match: re.Match[str],
+) -> bool:
+    if neighborhood not in {"bellavista"}:
+        return False
+    before = normalized[: match.start()].strip()
+    after = normalized[match.end() :].strip()
+    return before.endswith(("avda", "avenida", "av")) and bool(re.match(r"^\d", after))
 
 
 def _looks_like_complete_checkout_payload(lines: list[str], fulfillment_type: str = "DELIVERY") -> bool:
@@ -2382,6 +2431,7 @@ def _looks_like_address(normalized: str) -> bool:
         "cll",
         "cl",
         "avenida",
+        "avda",
         "av",
         "transversal",
         "tv",
@@ -4685,6 +4735,7 @@ def _looks_like_known_neighborhood(normalized: str) -> bool:
         "villa piedra del sol",
         "villa piedra",
         "villapiedra",
+        "panorama",
     }
 
 
