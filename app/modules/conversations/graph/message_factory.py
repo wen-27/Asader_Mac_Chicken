@@ -930,6 +930,21 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def pre_order_delivery_eta_answer(cls) -> str:
+        return "Para pedidos a domicilio, el tiempo aproximado de entrega es de 30 minutos."
+
+    @classmethod
+    def fulfillment_choice_answer(cls, delivery_price_cop: int | None) -> str:
+        sections = [
+            "Gracias, ya guarde tus datos. No enviaremos la orden hasta que nos confirmes como deseas recibirla.",
+            cls.pre_order_delivery_eta_answer(),
+        ]
+        if delivery_price_cop is not None:
+            sections.append(f"El domicilio para tu direccion tiene un valor de ${delivery_price_cop}.")
+        sections.append("¿Deseas recibirla a domicilio o prefieres recogerla en el local?")
+        return "\n\n".join(sections)
+
+    @classmethod
     def delivery_urgency_answer(cls) -> str:
         return "Sí señora, estamos haciendo lo posible por agilizar el proceso."
 

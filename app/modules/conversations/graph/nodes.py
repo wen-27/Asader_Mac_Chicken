@@ -477,6 +477,11 @@ async def detect_intent(
             return state
         state.intent = ConversationIntent.PEDIR_CANTIDAD
         return state
+    if state.cart and _looks_like_fulfillment_choice_question(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "fulfillment_choice"
+        state.query_value = text
+        return state
     if (
         state.current_step == ConversationState.CHECKOUT_REVIEW
         and state.cart
@@ -488,7 +493,11 @@ async def detect_intent(
         return state
     if state.cart and _looks_like_order_status_query(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
-        state.query_type = "order_status"
+        state.query_type = (
+            "pre_order_delivery_eta"
+            if _looks_like_pre_order_delivery_eta_question(text)
+            else "order_status"
+        )
         state.query_value = text
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and (
@@ -527,7 +536,11 @@ async def detect_intent(
             return state
         if _looks_like_order_status_query(text):
             state.intent = ConversationIntent.RESPONDER_CONSULTA
-            state.query_type = "order_status"
+            state.query_type = (
+                "pre_order_delivery_eta"
+                if _looks_like_pre_order_delivery_eta_question(text)
+                else "order_status"
+            )
             state.query_value = text
             return state
         if _looks_like_delivery_urgency_followup(text):
@@ -603,7 +616,11 @@ async def detect_intent(
         state.fulfillment_type = "PICKUP"
         await services.persist_session(session)
         if state.cart or session.cart:
-            if _has_pickup_customer_data_signal(state.raw_text):
+            if (
+                _has_pickup_customer_data_signal(state.raw_text)
+                or state.customer.name
+                or state.customer.phone
+            ):
                 state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
                 return state
             state.intent = ConversationIntent.PEDIR_DATOS_CLIENTE
@@ -646,7 +663,11 @@ async def detect_intent(
         return state
     if _looks_like_order_status_query(text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
-        state.query_type = "order_status"
+        state.query_type = (
+            "pre_order_delivery_eta"
+            if _looks_like_pre_order_delivery_eta_question(text)
+            else "order_status"
+        )
         state.query_value = text
         return state
     if state.cart and _looks_like_cart_confirmation_or_review_request(text, state.raw_text):
@@ -1336,10 +1357,41 @@ async def _prepare_open_checkout_status_answer(
     state.response_text = join_outbound_messages(
         [
             BotMessageFactory.order_created(state),
-            BotMessageFactory.order_status_answer(),
+            BotMessageFactory.pre_order_delivery_eta_answer(),
         ]
     )
     await _persist_step(state, services)
+
+
+async def _prepare_fulfillment_choice_answer(
+    state: ConversationGraphState,
+    services: ConversationGraphServices,
+) -> None:
+    original_text = state.raw_text
+    checkout_lines = [
+        line
+        for line in original_text.splitlines()
+        if line.strip() and not _looks_like_fulfillment_choice_question(normalize_text(line))
+    ]
+    state.raw_text = "\n".join(checkout_lines)
+    await extract_customer_data(state, services)
+    state.raw_text = original_text
+
+    delivery_price_cop: int | None = None
+    if state.customer.address and state.customer.neighborhood:
+        delivery = await services.calculate_delivery(
+            address=state.customer.address,
+            neighborhood=state.customer.neighborhood,
+        )
+        delivery_price_cop = delivery.delivery_price_cop
+        state.delivery_price_cop = delivery_price_cop
+
+    state.current_step = ConversationState.ASK_CUSTOMER_DATA
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_state_to_session(state, session)
+    session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    await services.persist_session(session)
+    state.response_text = BotMessageFactory.fulfillment_choice_answer(delivery_price_cop)
 
 
 async def ask_customer_data(
@@ -2638,6 +2690,12 @@ def _is_checkout_filler_line(normalized: str) -> bool:
         "bueno no importa",
         "no importa",
         "no hay problema",
+        "domicilio",
+        "con domicilio",
+        "prefiero recoger",
+        "prefiero recogerlo",
+        "voy a recoger",
+        "lo recojo",
         "tranquilo",
         "tranquila",
         "ya",
@@ -3255,6 +3313,12 @@ async def answer_query(
         return state
     if state.query_type == "checkout_status":
         await _prepare_open_checkout_status_answer(state, services)
+        return state
+    if state.query_type == "fulfillment_choice":
+        await _prepare_fulfillment_choice_answer(state, services)
+        return state
+    if state.query_type == "pre_order_delivery_eta":
+        state.response_text = BotMessageFactory.pre_order_delivery_eta_answer()
         return state
     if state.query_type == "order_status":
         state.response_text = BotMessageFactory.order_status_answer()
@@ -5589,6 +5653,62 @@ def _looks_like_delivery_cost_question(text: str) -> bool:
     return _contains_any(text, ("domicilio", "domi", "envio", "envío", "llevar", "lleva"))
 
 
+def _looks_like_fulfillment_choice_question(text: str) -> bool:
+    pickup_terms = (
+        "voy por",
+        "ir por",
+        "paso por",
+        "pasar por",
+        "recoger",
+        "recojo",
+        "buscar el pedido",
+    )
+    delivery_terms = (
+        "domicilio",
+        "domi",
+        "lo envian",
+        "lo envían",
+        "me lo envian",
+        "me lo envían",
+        "enviar a domicilio",
+    )
+    return (
+        _contains_any(text, pickup_terms)
+        and _contains_any(text, delivery_terms)
+        and (_looks_like_order_status_query(text) or _looks_like_delivery_cost_question(text))
+    )
+
+
+def _looks_like_pre_order_delivery_eta_question(text: str) -> bool:
+    if not _looks_like_order_status_query(text) or _looks_like_order_waiting_followup(text):
+        return False
+    confirmed_order_terms = (
+        "mi pedido",
+        "mi orden",
+        "ya salio",
+        "ya salió",
+        "viene en camino",
+        "lo pedi",
+        "lo pedí",
+        "no llega",
+        "no lo han enviado",
+        "llevaron",
+        "enviaron",
+        "mandaron",
+        "si le salio",
+        "sí le salió",
+        "llevo esperando",
+        "esperando que salga",
+    )
+    if _contains_any(text, confirmed_order_terms):
+        return False
+    pickup_terms = ("pasar", "paso ", "recoger", "recojo", "voy por", "ir por")
+    delivery_terms = ("domicilio", "domi", "traen", "envian", "envían", "llega")
+    if _contains_any(text, pickup_terms) and not _contains_any(text, delivery_terms):
+        return False
+    return True
+
+
 def _looks_like_chicken_part_followup(text: str) -> bool:
     normalized = text.strip(" ¿?.,!¡")
     if _contains_any(normalized, ("cuarto", "cuartos")) and _contains_any(normalized, ("pechuga", "pierna")):
@@ -6665,6 +6785,8 @@ def _looks_like_pickup_request(text: str) -> bool:
             "recoger en el local",
             "para recoger",
             "voy a recoger",
+            "prefiero recoger",
+            "prefiero recogerlo",
             "yo paso",
         ),
     )

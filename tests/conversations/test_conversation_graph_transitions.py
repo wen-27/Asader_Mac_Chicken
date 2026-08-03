@@ -1363,8 +1363,8 @@ async def test_natural_language_fallback_explains_how_to_open_menu() -> None:
         ("Recibes nequi?", "La cuenta de Nequi"),
         ("Tienen llave para transferir?", "La cuenta de Nequi"),
         ("Me ayudas con el número para transferir", "La cuenta de Nequi"),
-        ("En cuanto lo traen", "40 minutos"),
-        ("Se demora?, debo salir a la 1", "40 minutos"),
+        ("En cuanto lo traen", "30 minutos"),
+        ("Se demora?, debo salir a la 1", "30 minutos"),
         ("Ustedes me dice si ya está paso en 15 minutos", "40 minutos"),
         ("Buenas tardes que precio tiene el pollo azado", "Pollo asado"),
         ("Veci tiene pollo", "Pollo asado"),
@@ -1738,7 +1738,7 @@ async def test_real_send_time_question_after_cart_answers_timing() -> None:
     result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="A q horas lo.envia"))
 
     assert result["current_step"] == ConversationState.POST_ADD
-    assert "40 minutos" in result["response_text"]
+    assert "30 minutos" in result["response_text"]
     assert "Me falta esta informacion" not in result["response_text"]
 
 
@@ -3559,8 +3559,18 @@ async def test_real_broaster_quarter_with_delivery_time_keeps_name_and_soup_note
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw_text", ["Veci ya salió ?", "Así si le salió?", "Que demora?"])
-async def test_real_short_order_status_followups_answer_timing_with_cart(raw_text: str) -> None:
+@pytest.mark.parametrize(
+    ("raw_text", "expected_minutes"),
+    [
+        ("Veci ya salió ?", "40 minutos"),
+        ("Así si le salió?", "40 minutos"),
+        ("Que demora?", "30 minutos"),
+    ],
+)
+async def test_real_short_order_status_followups_answer_timing_with_cart(
+    raw_text: str,
+    expected_minutes: str,
+) -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
     services.session.move_to(ConversationState.POST_ADD)
@@ -3569,7 +3579,7 @@ async def test_real_short_order_status_followups_answer_timing_with_cart(raw_tex
     result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text=raw_text))
 
     assert result["current_step"] == ConversationState.POST_ADD
-    assert "40 minutos" in result["response_text"]
+    assert expected_minutes in result["response_text"]
     assert "Puedes escribirme tu orden" not in result["response_text"]
 
 
@@ -5065,24 +5075,27 @@ async def test_lasagna_availability_question_shows_unavailable_alternative(monke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "raw_text",
+    ("raw_text", "expected_minutes"),
     [
-        "En cuanto tiempo me despachan?",
-        "En cuanto tiempo se demora",
-        "En cuanto llegaría?",
-        "Me confirmas en cuánto tiempo estaría",
-        "cuanto se demora mi pedido",
-        "Tiempo de espera",
+        ("En cuanto tiempo me despachan?", "30 minutos"),
+        ("En cuanto tiempo se demora", "30 minutos"),
+        ("En cuanto llegaría?", "30 minutos"),
+        ("Me confirmas en cuánto tiempo estaría", "30 minutos"),
+        ("cuanto se demora mi pedido", "40 minutos o menos"),
+        ("Tiempo de espera", "30 minutos"),
     ],
 )
-async def test_order_timing_questions_answer_without_fallback(raw_text: str) -> None:
+async def test_order_timing_questions_answer_without_fallback(
+    raw_text: str,
+    expected_minutes: str,
+) -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
     state = ConversationGraphState(chat_id=123, raw_text=raw_text)
 
     result = await graph.ainvoke(state)
 
-    assert "40 minutos o menos" in result["response_text"]
+    assert expected_minutes in result["response_text"]
     assert "Puedes escribirme tu pedido" not in result["response_text"]
 
 
@@ -5849,31 +5862,129 @@ async def test_question_about_order_delay_gets_friendly_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_checkout_saves_data_and_answers_delivery_or_pickup_choice() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["LASAGNA_MIXTA"], 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Mervin Galván\n"
+                "3205096576\n"
+                "Carrera 6 #42-07\n"
+                "Lagos 2\n\n"
+                "Cuánto tiempo demora para ver si voy por el pedido o lo envían y lo otro. "
+                "El pedido tiene coste por domicilio? Así que no lo vayan a enviar a domicilio "
+                "hasta responder a esto. Por si me queda mejor ir por el pedido\n\n"
+                "Método de pago datáfono"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "30 minutos" in result["response_text"]
+    assert "valor de $2000" in result["response_text"]
+    assert "domicilio o prefieres recogerla" in result["response_text"]
+    assert "40 minutos" not in result["response_text"]
+    assert services.session.customer_name == "Mervin Galván"
+    assert services.session.customer_phone == "3205096576"
+    assert services.session.customer_address == "Carrera 6 #42-07"
+    assert services.session.customer_neighborhood == "Lagos 2"
+    assert services.session.payment_method == "Datafono"
+    assert services.session.observations is None
+
+
+@pytest.mark.asyncio
+async def test_delivery_choice_uses_saved_data_without_becoming_a_note() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["LASAGNA_MIXTA"], 1))
+    services.session.customer_name = "Mervin Galván"
+    services.session.customer_phone = "3205096576"
+    services.session.customer_address = "Carrera 6 #42-07"
+    services.session.customer_neighborhood = "Lagos 2"
+    services.session.payment_method = "Datafono"
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="domicilio"))
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Domicilio: $2000" in result["response_text"]
+    assert "📝 Nota: Sin nota" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_pickup_choice_uses_saved_customer_and_requests_only_pickup_time() -> None:
+    services = FakeConversationServices()
+    services.session.add_cart_item(cart_item_from_product(services.products["LASAGNA_MIXTA"], 1))
+    services.session.customer_name = "Mervin Galván"
+    services.session.customer_phone = "3205096576"
+    services.session.customer_address = "Carrera 6 #42-07"
+    services.session.customer_neighborhood = "Lagos 2"
+    services.session.payment_method = "Datafono"
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="prefiero recoger")
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "en cuanto tiempo pasa a recoger" in result["response_text"].lower()
+    assert "nombre completo" not in result["response_text"].lower()
+    assert "telefono" not in result["response_text"].lower()
+    assert services.session.fulfillment_type == "PICKUP"
+    assert services.session.customer_name == "Mervin Galván"
+    assert services.session.customer_phone == "3205096576"
+    assert "prefiero recoger" not in (services.session.observations or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_delivery_eta_before_order_is_thirty_minutes() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Cuánto se demora un domicilio?")
+    )
+
+    assert result["response_text"] == (
+        "Para pedidos a domicilio, el tiempo aproximado de entrega es de 30 minutos."
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "raw_text",
+    ("raw_text", "expected_minutes"),
     [
-        "¿¿ demora ??",
-        "Se demora??",
-        "cuánto   demora???",
-        "En cuánto tiempo, me despachan?",
-        "Ya salió?",
-        "viene en camino?",
-        "cuando llega",
-        "Mi pedido llegó ?",
-        "Si llevaron el domicilio ?",
-        "Lo pedí hace una hora exactamente",
-        "Una hora y 3 minutos y no lo han enviado o ya se envió ?",
-        "Es que estamos a 4 cuadras y llevo una hora esperando que salga",
+        ("¿¿ demora ??", "30 minutos"),
+        ("Se demora??", "30 minutos"),
+        ("cuánto   demora???", "30 minutos"),
+        ("En cuánto tiempo, me despachan?", "30 minutos"),
+        ("Ya salió?", "40 minutos"),
+        ("viene en camino?", "40 minutos"),
+        ("cuando llega", "30 minutos"),
+        ("Mi pedido llegó ?", "40 minutos"),
+        ("Si llevaron el domicilio ?", "40 minutos"),
+        ("Lo pedí hace una hora exactamente", "40 minutos"),
+        ("Una hora y 3 minutos y no lo han enviado o ya se envió ?", "40 minutos"),
+        ("Es que estamos a 4 cuadras y llevo una hora esperando que salga", "40 minutos"),
     ],
 )
-async def test_punctuation_accents_and_spacing_do_not_break_delay_questions(raw_text: str) -> None:
+async def test_punctuation_accents_and_spacing_do_not_break_delay_questions(
+    raw_text: str,
+    expected_minutes: str,
+) -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
     state = ConversationGraphState(chat_id=123, raw_text=raw_text)
 
     result = await graph.ainvoke(state)
 
-    assert "40 minutos" in result["response_text"]
+    assert expected_minutes in result["response_text"]
     assert "Puedes escribirme tu orden" not in result["response_text"]
 
 
@@ -5944,7 +6055,7 @@ async def test_short_delay_question_gets_friendly_answer_without_fallback_loop()
 
     result = await graph.ainvoke(state)
 
-    assert "40 minutos" in result["response_text"]
+    assert "30 minutos" in result["response_text"]
     assert "Puedes escribirme tu orden" not in result["response_text"]
     assert len(services.session.cart) == 0
 
@@ -7899,7 +8010,7 @@ async def test_real_checkout_review_keeps_clean_phone_and_answers_time_total_bef
     assert status["current_step"] == ConversationState.CHECKOUT_REVIEW
     assert "📞 Telefono: 3022873946" in status["response_text"]
     assert "Total: $49800" in status["response_text"]
-    assert "40 minutos o menos" in status["response_text"]
+    assert "30 minutos" in status["response_text"]
 
     confirmed = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Sí"))
 
