@@ -4917,6 +4917,42 @@ async def test_lasagna_checkout_accepts_villa_piedra_and_drops_stale_piece_note(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cash_text", ["Contado", "Contando"])
+async def test_fragmented_lasagna_checkout_rebuilds_fields_and_accepts_cash_alias(
+    cash_text: str,
+) -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="2\nLasagna"))
+    review = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Italo\n"
+                "Valero\n"
+                "3124648429\n"
+                "Cra28a\n"
+                "193-26\n"
+                "Villa\n"
+                "Piedra\n"
+                "Del\n"
+                "Sol\n"
+                f"{cash_text}"
+            ),
+        )
+    )
+
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Italo Valero" in review["response_text"]
+    assert "📞 Telefono: 3124648429" in review["response_text"]
+    assert "📍 Direccion: Cra28a 193-26" in review["response_text"]
+    assert "🏘️ Barrio: Villa Piedra Del Sol" in review["response_text"]
+    assert "💳 Pago: Efectivo" in review["response_text"]
+    assert "Me falta esta informacion" not in review["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_manzana_litro_alone_warns_only_25_liter_available() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

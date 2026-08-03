@@ -1914,14 +1914,32 @@ def _split_structured_checkout_lines(lines: list[str]) -> list[str] | None:
     ]
     if not trailing and not embedded_neighborhood:
         return None
-    neighborhood = embedded_neighborhood or trailing[0]
-    trailing_note_lines = trailing if embedded_neighborhood else trailing[1:]
+    neighborhood = embedded_neighborhood
+    trailing_note_lines = trailing
+    if not neighborhood:
+        fragmented_neighborhood = _find_fragmented_neighborhood(trailing)
+        if fragmented_neighborhood is not None:
+            neighborhood_start, neighborhood_end, neighborhood = fragmented_neighborhood
+            address = " ".join([address, *trailing[:neighborhood_start]]).strip()
+            trailing_note_lines = trailing[neighborhood_end:]
+        else:
+            neighborhood = trailing[0]
+            trailing_note_lines = trailing[1:]
     note_lines = ([embedded_note] if embedded_note else []) + trailing_note_lines + after_payment
     result = [name, before_payment[phone_index], address, neighborhood]
     if note_lines:
         result.append(" ".join(note_lines))
     result.append(payment or useful_lines[payment_index])
     return result
+
+
+def _find_fragmented_neighborhood(lines: list[str]) -> tuple[int, int, str] | None:
+    for start in range(len(lines)):
+        for end in range(len(lines), start, -1):
+            candidate = " ".join(lines[start:end]).strip()
+            if _looks_like_neighborhood_only(normalize_text(candidate)):
+                return start, end, candidate
+    return None
 
 
 def _split_delimited_checkout_line(line: str) -> list[str] | None:
@@ -2134,7 +2152,7 @@ def _extract_payment_from_text(normalized: str) -> str | None:
         return "Efectivo"
     if _looks_like_cash_bill_payment_phrase(normalized):
         return "Efectivo"
-    if "efectivo" in normalized:
+    if "efectivo" in normalized or _looks_like_cash_payment_alias(normalized):
         return "Efectivo"
     return None
 
@@ -2505,6 +2523,7 @@ def _looks_like_payment_method(normalized: str) -> bool:
     return (
         _looks_like_pay_on_delivery_phrase(normalized)
         or _looks_like_cash_bill_payment_phrase(normalized)
+        or _looks_like_cash_payment_alias(normalized)
         or any(
             word in normalized
             for word in [
@@ -2748,9 +2767,20 @@ def _normalize_payment_method(normalized: str, original: str) -> str:
         return "Efectivo"
     if _looks_like_cash_bill_payment_phrase(normalized):
         return "Efectivo"
-    if "efectivo" in normalized:
+    if "efectivo" in normalized or _looks_like_cash_payment_alias(normalized):
         return "Efectivo"
     return original
+
+
+def _looks_like_cash_payment_alias(text: str) -> bool:
+    cleaned = normalize_text(text).strip(" ¿?.,!¡")
+    cleaned = re.sub(
+        r"^(?:metodo|medio|forma)\s+de\s+pago\s*[:\-]?\s*",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(r"^(?:pago|pagar|cancelar|cancelo)\s*(?:por|en|con)?\s*", "", cleaned)
+    return cleaned in {"contado", "contando", "de contado", "al contado", "en contado"}
 
 
 def _copy_checkout_state_to_session(
