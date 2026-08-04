@@ -3060,6 +3060,11 @@ async def test_unavailable_three_quarter_alternative_keeps_pickup_and_fragmented
     assert services.session.customer_name is None
     assert len(services.session.cart) == 1
 
+    pointer = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="??"))
+    assert pointer["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "nombre completo" in pointer["response_text"].lower()
+    assert services.session.customer_name is None
+
     name = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="David Prada"))
     assert "telefono" in name["response_text"].lower()
     pickup_time = await graph.ainvoke(

@@ -581,6 +581,12 @@ async def detect_intent(
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and state.cart:
+        if _looks_like_confirmation_only_request(text, state.raw_text):
+            state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+            state.response_text = BotMessageFactory.missing_customer_data(
+                _missing_checkout_fields(state)
+            )
+            return state
         if _looks_like_included_soup_note_request(text):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
