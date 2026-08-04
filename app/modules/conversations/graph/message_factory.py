@@ -851,6 +851,21 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def checkout_review_soup_answer(
+        cls,
+        product_code: str | None,
+        soup_available: bool = True,
+    ) -> str:
+        if not soup_available:
+            return (
+                "Qué pena contigo, esta presentación normalmente incluye sopa, "
+                "pero en este momento ya se nos agotó."
+            )
+        if product_code:
+            return f"Sí señora. {cls._included_soup_text(product_code, soup_available)}"
+        return cls.generic_soup_inclusion_answer()
+
+    @classmethod
     def continue_without_soup_menu(cls) -> str:
         return "\n\n".join(
             [

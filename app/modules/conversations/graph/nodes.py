@@ -1357,12 +1357,27 @@ async def _prepare_open_checkout_status_answer(
         state.delivery_price_cop = state.delivery_price_cop or 0
     state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
     state.total_cop = state.subtotal_cop + state.delivery_price_cop
-    state.response_text = join_outbound_messages(
-        [
-            BotMessageFactory.order_created(state),
-            BotMessageFactory.pre_order_delivery_eta_answer(),
-        ]
-    )
+    messages = [
+        BotMessageFactory.order_created(state),
+        BotMessageFactory.pre_order_delivery_eta_answer(),
+    ]
+    if _is_soup_contents_question(state.normalized_text):
+        soup_available = await _soup_is_available(services)
+        chicken_line = next(
+            (
+                line
+                for line in state.cart
+                if line.product_code.startswith(("ASADO_", "BROASTER_"))
+            ),
+            None,
+        )
+        messages.append(
+            BotMessageFactory.checkout_review_soup_answer(
+                chicken_line.product_code if chicken_line else None,
+                soup_available,
+            )
+        )
+    state.response_text = join_outbound_messages(messages)
     await _persist_step(state, services)
 
 
@@ -1934,16 +1949,18 @@ def _expand_checkout_free_lines(lines: list[str]) -> list[str]:
         return expanded_structured
     expanded: list[str] = []
     for line in lines:
-        split_line = (
-            _split_delimited_checkout_line(line)
-            or _split_loose_labeled_phone_payment_line(line)
-            or _split_composite_checkout_line(line)
-            or _split_name_phone_address_line(line)
-            or _split_name_phone_payment_line(line)
-            or _split_name_address_line(line)
-        )
-        for expanded_line in split_line or [line]:
-            expanded.extend(_split_payment_suffix(expanded_line))
+        delimited_parts = _split_delimited_checkout_line(line) or [line]
+        for part in delimited_parts:
+            split_part = (
+                _split_loose_labeled_phone_payment_line(part)
+                or _split_composite_checkout_line(part)
+                or _split_name_phone_address_line(part)
+                or _split_name_phone_payment_line(part)
+                or _split_name_phone_line(part)
+                or _split_name_address_line(part)
+            )
+            for expanded_line in split_part or [part]:
+                expanded.extend(_split_payment_suffix(expanded_line))
     return expanded
 
 
@@ -2107,6 +2124,18 @@ def _split_name_phone_address_line(line: str) -> list[str] | None:
         return None
     phone = re.sub(r"\D", "", phone_match.group(1))
     return [name, phone, address]
+
+
+def _split_name_phone_line(line: str) -> list[str] | None:
+    phone_match = re.search(r"(?<!\d)(3(?:[\s.-]?\d){9})(?!\d)", line)
+    if phone_match is None:
+        return None
+    name = _clean_customer_name(line[: phone_match.start()].strip(" ,.-"))
+    trailing = line[phone_match.end() :].strip(" ,.-")
+    if trailing or not name or not _looks_like_probable_customer_name(name):
+        return None
+    phone = re.sub(r"\D", "", phone_match.group(1))
+    return [name, phone]
 
 
 def _split_loose_labeled_phone_payment_line(line: str) -> list[str] | None:

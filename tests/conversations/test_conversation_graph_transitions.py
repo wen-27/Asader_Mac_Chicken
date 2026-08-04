@@ -4199,6 +4199,29 @@ async def test_single_line_name_phone_address_keeps_partial_checkout_data(raw_te
 
 
 @pytest.mark.asyncio
+async def test_comma_separated_checkout_keeps_name_phone_address_and_payment() -> None:
+    services = FakeConversationServices()
+    product = services.products["ASADO_CUARTO"]
+    services.session.add_cart_item(cart_item_from_product(product, 1))
+    services.session.move_to(ConversationState.ASK_CUSTOMER_DATA)
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Rosalba Mendoza  3185531074, calle 45 No 6-78 lagos dos efectivo",
+        )
+    )
+
+    assert result["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Cliente: Rosalba Mendoza" in result["response_text"]
+    assert "Telefono: 3185531074" in result["response_text"]
+    assert "Direccion: calle 45 No 6-78" in result["response_text"]
+    assert "Barrio: lagos dos" in result["response_text"]
+    assert "Pago: Efectivo" in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_graph_adds_natural_order_items_to_cart() -> None:
     services = FakeConversationServices()
     services.products["ASADO_ENTERO"] = Product(
@@ -7476,10 +7499,11 @@ async def test_real_pre_order_part_and_sauce_replacement_checkout_flow() -> None
     assert "1 x 1/4 Broasted - Pierna" in order["response_text"]
     assert [item.product_name.value for item in services.session.cart] == ["1/4 Broasted - Pierna"]
 
-    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="wendy 3022873946"))
-    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="wensy"))
+    review = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="wendy 3022873946")
+    )
     assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
-    assert "Cliente: wensy" in review["response_text"]
+    assert "Cliente: wendy" in review["response_text"]
     assert "Telefono: 3022873946" in review["response_text"]
     assert services.session.customer_phone == "3022873946"
 
@@ -8172,6 +8196,41 @@ async def test_real_checkout_review_keeps_clean_phone_and_answers_time_total_bef
     assert "📞 Telefono: 3022873946" in status["response_text"]
     assert "Total: $49800" in status["response_text"]
     assert "30 minutos" in status["response_text"]
+
+    confirmed = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Sí"))
+
+    assert confirmed["current_step"] == ConversationState.MAIN_MENU
+    assert "Orden confirmada" in confirmed["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_checkout_review_answers_eta_soup_and_delivery_total_together() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Buenas tardes para pedir una pierna asada")
+    )
+    review = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Rosalba Mendoza  3185531074, calle 45 No 6-78 lagos dos efectivo",
+        )
+    )
+
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    response = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Cuanto demora, viene con sopa, y cuánto es con el domicilio?",
+        )
+    )
+
+    assert response["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Cliente: Rosalba Mendoza" in response["response_text"]
+    assert "Total: $13800" in response["response_text"]
+    assert "30 minutos" in response["response_text"]
+    assert "incluye 1 sopa sin costo" in response["response_text"]
 
     confirmed = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Sí"))
 
