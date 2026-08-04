@@ -4304,6 +4304,42 @@ async def test_pickup_receiver_name_asks_phone_and_pickup_time_not_address() -> 
 
 
 @pytest.mark.asyncio
+async def test_fragmented_frequent_customer_pickup_order_keeps_pickup_flow() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Hola"))
+    order = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="1/4 asado pierna con sopa")
+    )
+    pickup = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Para recoger a nombre de Luis Malagon")
+    )
+    soup = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Te recomiendo la sopa porfa")
+    )
+    pickup_time = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="1:30 paso")
+    )
+
+    assert "1 x 1/4 Asado - Pierna" in order["response_text"]
+    assert pickup["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert pickup["fulfillment_type"] == "PICKUP"
+    assert services.session.customer_name == "Luis Malagon"
+    assert soup["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Adicionales" not in soup["response_text"]
+    assert "telefono, en cuanto tiempo pasa a recoger" in soup["response_text"].lower()
+    assert pickup_time["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "Me falta esta informacion: telefono" in pickup_time["response_text"]
+    assert "direccion" not in pickup_time["response_text"].lower()
+    assert "barrio" not in pickup_time["response_text"].lower()
+    assert services.session.observations is not None
+    assert "Con sopita incluida" in services.session.observations
+    assert "Recoger a la 1:30" in services.session.observations
+    assert "1:30 paso" not in services.session.observations
+
+
+@pytest.mark.asyncio
 async def test_pickup_mixed_asado_and_broaster_with_inline_name_and_time() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)

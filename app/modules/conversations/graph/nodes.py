@@ -506,6 +506,9 @@ async def detect_intent(
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and state.cart:
+        if _looks_like_included_soup_note_request(text):
+            state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
+            return state
         if _looks_like_payment_account_query(text) and not _looks_like_payment_method(text):
             state.intent = ConversationIntent.RESPONDER_CONSULTA
             state.query_type = "payment_account"
@@ -1642,7 +1645,7 @@ def _extract_customer_data_from_free_lines(
             continue
         if _looks_like_chicken_part_allocation_line(normalized):
             continue
-        if _looks_like_order_line_without_checkout_data(line):
+        if _looks_like_order_line_without_checkout_data(line) and not _looks_like_checkout_note(normalized):
             continue
         if _looks_like_invalid_phone_only(line):
             continue
@@ -1654,11 +1657,19 @@ def _extract_customer_data_from_free_lines(
                 and _looks_like_payment_method(normalized)
             ):
                 customer.payment_method = _normalize_payment_method(normalized, line)
-            elif _looks_like_pickup_time_note(normalized) and not _has_pickup_time_observation(customer.observations):
+            elif _looks_like_pickup_time_note(normalized):
+                if not _has_pickup_time_observation(customer.observations):
+                    customer.observations = _append_observation(
+                        _clear_generic_pickup_observation(customer.observations),
+                        _format_pickup_time_note(line),
+                    )
+            elif _looks_like_included_soup_note_request(normalized):
                 customer.observations = _append_observation(
-                    _clear_generic_pickup_observation(customer.observations),
-                    _format_pickup_time_note(line),
+                    customer.observations,
+                    "Con sopita incluida.",
                 )
+            elif _looks_like_pickup_request(normalized):
+                continue
             else:
                 remaining.append(line)
             continue
@@ -1836,6 +1847,7 @@ def _looks_like_pickup_time_note(text: str) -> bool:
         or re.search(r"\ben\s+\d+\s*(?:min|minutos|hora|horas)\b", normalized)
         or re.search(r"\b(?:paso|pasa|recoge|recojo|recoger|recogerlo|pasamos)\s+en\s+(?:media hora|un rato|ratico|un momentico)\b", normalized)
         or re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
+        or re.search(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s+(?:paso|pasa|recoge|recojo|recoger|pasamos)\b", normalized)
     )
 
 
@@ -1848,6 +1860,14 @@ def _format_pickup_time_note(text: str) -> str:
     )
     if time_match:
         return f"Recoger a la {time_match.group(1).strip()}"
+    time_first_match = re.search(
+        r"\b([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm|a\.?\s*m\.?|p\.?\s*m\.)?)\s+"
+        r"(?:paso|pasa|recoge|recojo|recoger|pasamos)\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if time_first_match:
+        return f"Recoger a la {time_first_match.group(1).strip()}"
     if normalize_text(cleaned).startswith(("recoger ", "recoge ", "recojo ")):
         return cleaned
     return f"Recoge {cleaned}"
@@ -1870,7 +1890,8 @@ def _extract_product_quantity_ignoring_pickup_time(text: str) -> int | None:
 
 def _has_pickup_time_observation(observations: str | None) -> bool:
     normalized = normalize_text(observations)
-    if not normalized or normalized == "recoge en local":
+    normalized = re.sub(r"\brecoge en local\b[.\s]*", " ", normalized).strip(" .")
+    if not normalized:
         return False
     return _looks_like_pickup_time_note(normalized) or _contains_any(
         normalized,
