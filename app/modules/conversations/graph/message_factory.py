@@ -291,6 +291,30 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def stock_alternative_followup(
+        cls,
+        recommended_product_name: str | None,
+        *,
+        pickup_request: bool = False,
+        repeated_unavailable_choice: bool = False,
+    ) -> str:
+        option = recommended_product_name or "la opción recomendada"
+        sections: list[str] = []
+        if pickup_request:
+            sections.append("Perfecto, dejamos tu orden para recoger en el local.")
+        if repeated_unavailable_choice:
+            sections.append(
+                "Qué pena contigo, la combinación que seleccionaste inicialmente sigue sin estar disponible."
+            )
+        sections.extend(
+            [
+                f"En este momento sí tenemos disponible: {option}.",
+                "¿Deseas seguir con esta opción? Puedes escribir Sí, Eso o Esa.",
+            ]
+        )
+        return "\n\n".join(sections)
+
+    @classmethod
     def product_not_found(cls) -> str:
         return "No encontre ese producto en este momento. Selecciona menu para ver las opciones disponibles."
 

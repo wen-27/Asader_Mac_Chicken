@@ -294,6 +294,81 @@ async def detect_intent(
         if _has_checkout_data_signal(state.raw_text):
             session.clear_pending_order()
             await services.persist_session(session)
+    if (session.pending_order_json or {}).get("kind") == "included_soup_context":
+        if _looks_like_two_included_soups_request(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "included_soup_for_cart"
+            state.query_value = text
+            return state
+        if text in {"por favor", "porfa", "porfis"}:
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "fragmented_request_courtesy"
+            state.query_value = text
+            return state
+        if not _is_gratitude_only(text) and not _has_checkout_data_signal(state.raw_text):
+            session.clear_pending_order()
+            await services.persist_session(session)
+    if (session.pending_order_json or {}).get("kind") == "accepted_stock_alternative":
+        if _is_redundant_stock_alternative_reply(text):
+            state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+            state.response_text = "\n\n".join(
+                [
+                    "Sí señor, esa opción ya quedó añadida a tu orden.",
+                    BotMessageFactory.missing_customer_data(_missing_checkout_fields(state)),
+                ]
+            )
+            return state
+        session.clear_pending_order()
+        await services.persist_session(session)
+    if (session.pending_order_json or {}).get("kind") == "fragmented_soup_request":
+        if _contains_any(text, ("sopa", "sopas", "sopita", "sopitas")) and _cart_has_chicken(state.cart):
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "included_soup_for_cart"
+            state.query_value = text
+            return state
+        if text not in {"por favor", "porfa", "porfis"}:
+            session.clear_pending_order()
+            await services.persist_session(session)
+    if state.cart and _cart_has_chicken(state.cart) and _looks_like_fragmented_request_lead(text):
+        session.pending_order_json = {"kind": "fragmented_soup_request"}
+        await services.persist_session(session)
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "fragmented_request_prompt"
+        state.query_value = text
+        return state
+    if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE:
+        pickup_request = _looks_like_pickup_request(text)
+        if pickup_request:
+            await _remember_pickup_details_from_message(state, services)
+        if _is_stock_alternative_acceptance(text, state.selected_chicken_part):
+            session.pending_order_json = {"kind": "accepted_stock_alternative"}
+            await services.persist_session(session)
+            state.quantity = 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
+        if text in {"0", "no"} or _contains_command(
+            text,
+            ("menu", "menú", "ver menu", "ver menú", "otra opcion", "otra opción"),
+        ):
+            state.intent = ConversationIntent.MOSTRAR_MENU
+            return state
+        recommended_product_name = state.selected_product_name
+        if not recommended_product_name and state.selected_product_code:
+            recommended_product = await services.find_product(state.selected_product_code)
+            if recommended_product is not None:
+                recommended_product_name = recommended_product.name.value
+        state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
+        state.response_text = BotMessageFactory.stock_alternative_followup(
+            _display_product_name(recommended_product_name, state.selected_chicken_part),
+            pickup_request=pickup_request,
+            repeated_unavailable_choice=_mentions_opposite_stock_composition(
+                text,
+                state.selected_chicken_part,
+            ),
+        )
+        return state
     if state.current_step == ConversationState.ASK_HALF_COMBO:
         if _contains_command(text, ("pedir", "ordenar", "agregar", "si", "sí")):
             state.intent = ConversationIntent.AGREGAR_MEDIO_COMBO
@@ -857,18 +932,6 @@ async def detect_intent(
         state.selected_product_code = product_code
         state.selected_chicken_part = None
         state.intent = ConversationIntent.PEDIR_CANTIDAD
-        return state
-    if state.current_step == ConversationState.ASK_STOCK_ALTERNATIVE:
-        if _is_yes_reply(text):
-            state.intent = ConversationIntent.PEDIR_CANTIDAD
-            return state
-        if text in {"0", "no"} or _contains_command(text, ("ver menu", "ver menú", "menu", "menú", "otra opcion", "otra opción")):
-            state.intent = ConversationIntent.MOSTRAR_MENU
-            return state
-        state.intent = ConversationIntent.PRODUCTO_RESTRINGIDO
-        state.response_text = BotMessageFactory.stock_alternative_invalid(
-            _display_product_name(state.selected_product_name, state.selected_chicken_part)
-        )
         return state
     if state.current_step == ConversationState.ASK_SOUP_UNAVAILABLE:
         if _contains_command(text, ("seguir", "continuar", "pedir", "menu", "menú", "ver menu", "ver menú")):
@@ -3425,6 +3488,38 @@ async def answer_query(
             await services.persist_session(session)
         state.response_text = "Perfecto, la dejamos como sopa incluida según la presentación del pollo."
         return state
+    if state.query_type == "included_soup_for_cart":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.observations = _append_observation(
+            session.observations,
+            "Sopa incluida solicitada.",
+        )
+        session.pending_order_json = {"kind": "included_soup_context"}
+        await services.persist_session(session)
+        state.customer.observations = session.observations
+        chicken_line = next(
+            (line for line in state.cart if line.product_code.startswith(("ASADO_", "BROASTER_"))),
+            None,
+        )
+        state.response_text = BotMessageFactory.checkout_review_soup_answer(
+            chicken_line.product_code if chicken_line else None,
+            await _soup_is_available(services),
+        )
+        if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
+            missing = _missing_checkout_fields(state)
+            if missing:
+                state.response_text += "\n\n" + BotMessageFactory.missing_customer_data(missing)
+        return state
+    if state.query_type == "fragmented_request_prompt":
+        state.response_text = "Claro, ¿qué deseas que te enviemos?"
+        return state
+    if state.query_type == "fragmented_request_courtesy":
+        state.response_text = "Sí señor, claro."
+        if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
+            missing = _missing_checkout_fields(state)
+            if missing:
+                state.response_text += "\n\n" + BotMessageFactory.missing_customer_data(missing)
+        return state
     if state.query_type == "account_holder_confirmation":
         state.response_text = BotMessageFactory.account_holder_confirmation()
         return state
@@ -5086,6 +5181,85 @@ def _is_pending_product_offer_acceptance(text: str) -> bool:
             "anade una",
             "a domicilio",
         ),
+    )
+
+
+def _is_stock_alternative_acceptance(text: str, selected_part: str | None) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    if _is_yes_reply(cleaned) or cleaned in {
+        "eso",
+        "esa",
+        "ese",
+        "eso entonces",
+        "esa entonces",
+        "ese entonces",
+        "esa opcion",
+        "esa opción",
+        "esa sirve",
+        "esa esta bien",
+        "esa está bien",
+    }:
+        return True
+    return bool(selected_part and _mentions_chicken_composition(cleaned, selected_part))
+
+
+def _is_redundant_stock_alternative_reply(text: str) -> bool:
+    return text.strip(" ¿?.,!¡") in {
+        "eso",
+        "esa",
+        "ese",
+        "eso entonces",
+        "esa entonces",
+        "ese entonces",
+        "si",
+        "sí",
+    }
+
+
+def _mentions_chicken_composition(text: str, composition: str) -> bool:
+    normalized = normalize_text(text)
+    normalized_composition = normalize_text(composition)
+    if "2 pechugas" in normalized_composition and "1 pierna" in normalized_composition:
+        return _contains_any(normalized, ("2 pechugas", "dos pechugas")) and _contains_any(
+            normalized,
+            ("1 pierna", "una pierna"),
+        )
+    if "2 piernas" in normalized_composition and "1 pechuga" in normalized_composition:
+        return _contains_any(normalized, ("2 piernas", "dos piernas", "2 perniles", "dos perniles")) and _contains_any(
+            normalized,
+            ("1 pechuga", "una pechuga"),
+        )
+    return normalized_composition in normalized
+
+
+def _mentions_opposite_stock_composition(text: str, selected_part: str | None) -> bool:
+    if not selected_part:
+        return False
+    normalized_part = normalize_text(selected_part)
+    opposite = (
+        "2 piernas y 1 pechuga"
+        if "2 pechugas" in normalized_part
+        else "2 pechugas y 1 pierna"
+    )
+    return _mentions_chicken_composition(text, opposite)
+
+
+def _looks_like_fragmented_request_lead(text: str) -> bool:
+    return text.strip(" ¿?.,!¡") in {
+        "me envia",
+        "me envía",
+        "me manda",
+        "me mandas",
+        "me regala",
+        "me regalas",
+    }
+
+
+def _looks_like_two_included_soups_request(text: str) -> bool:
+    cleaned = text.strip(" ¿?.,!¡")
+    return _contains_any(cleaned, ("que sean 2", "que sean dos", "mandeme 2", "mándeme 2")) and _contains_any(
+        cleaned,
+        ("cuarto", "medio", "ambos", "los dos"),
     )
 
 

@@ -38,6 +38,7 @@ class FakeConversationServices:
         self.ai_parsed: NaturalLanguageOrderParse | None = None
         self.ai_calls: list[str] = []
         self.unavailable_variant_codes: set[str] = set()
+        self.recommended_variant_alternatives: dict[str, tuple[str, str, str]] = {}
         self.products = {
             "JUGO_HIT_PERSONAL": Product(
                 code=ProductCode("JUGO_HIT_PERSONAL"),
@@ -216,6 +217,20 @@ class FakeConversationServices:
             reason = "out_of_stock"
         elif is_calendar_restricted:
             reason = "restricted"
+        recommended_data = self.recommended_variant_alternatives.get(variant_code or "")
+        recommended_alternative = (
+            type(
+                "StockAlternative",
+                (),
+                {
+                    "product_code": recommended_data[0],
+                    "variant_label": recommended_data[1],
+                    "label": recommended_data[2],
+                },
+            )()
+            if recommended_data
+            else None
+        )
         return type(
             "AvailabilityResult",
             (),
@@ -223,7 +238,7 @@ class FakeConversationServices:
                 "is_available": is_available,
                 "product_name": product.name.value if not variant_label else f"{product.name.value} - {variant_label}",
                 "alternatives": (),
-                "recommended_alternative": None,
+                "recommended_alternative": recommended_alternative,
                 "reason": reason,
             },
         )()
@@ -2984,6 +2999,99 @@ async def test_misspelled_three_quarters_preserves_unavailable_composition_messa
     assert services.session.cart == []
     assert "3/4 Asado - 2 piernas y 1 pechuga no esta disponible" in result["response_text"]
     assert "Puedes elegir otra opcion disponible del menu" in result["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_unavailable_three_quarter_alternative_keeps_pickup_and_fragmented_soup_context() -> None:
+    services = FakeConversationServices()
+    unavailable_code = "BROASTER_34_2PIERNAS_1PECHUGA"
+    services.unavailable_variant_codes.add(unavailable_code)
+    services.recommended_variant_alternatives[unavailable_code] = (
+        "BROASTER_34",
+        "2 pechugas y 1 pierna",
+        "3/4 Broaster - 2 pechugas y 1 pierna",
+    )
+    graph = build_conversation_graph(services)
+
+    selection = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Me regales 3 cuartos broster")
+    )
+    assert selection["current_step"] == ConversationState.ASK_CHICKEN_PART
+
+    alternative = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="1"))
+    assert alternative["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert "2 pechugas y 1 pierna" in alternative["response_text"]
+
+    pickup = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Yo paso a recoger")
+    )
+    assert pickup["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert services.session.fulfillment_type == "PICKUP"
+    assert "recoger en el local" in pickup["response_text"]
+    assert "2 pechugas y 1 pierna" in pickup["response_text"]
+    assert "None" not in pickup["response_text"]
+
+    repeated = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="2 piernas y una pechuga yo paso a recoger",
+        )
+    )
+    assert repeated["current_step"] == ConversationState.ASK_STOCK_ALTERNATIVE
+    assert services.session.cart == []
+    assert "sigue sin estar disponible" in repeated["response_text"]
+    assert "2 pechugas y 1 pierna" in repeated["response_text"]
+
+    accepted = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Eso entonces")
+    )
+    assert accepted["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert len(services.session.cart) == 1
+    assert services.session.cart[0].product_code == ProductCode("BROASTER_34")
+    assert services.session.cart[0].product_name.value == "3/4 Broasted - 2 pechugas y 1 pierna"
+    assert "nombre completo" in accepted["response_text"].lower()
+    assert "telefono" in accepted["response_text"].lower()
+    assert "en cuanto tiempo pasa a recoger" in accepted["response_text"].lower()
+
+    repeated_acceptance = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Esa")
+    )
+    assert "ya quedó añadida" in repeated_acceptance["response_text"]
+    assert services.session.customer_name is None
+    assert len(services.session.cart) == 1
+
+    name = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="David Prada"))
+    assert "telefono" in name["response_text"].lower()
+    pickup_time = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="En 10 minutos paso")
+    )
+    assert "telefono" in pickup_time["response_text"].lower()
+
+    lead = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Me envía"))
+    assert "qué deseas" in lead["response_text"].lower()
+    soup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Sopa"))
+    assert soup["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert "incluye 2 sopas sin costo" in soup["response_text"].lower()
+    assert "telefono" in soup["response_text"].lower()
+    courtesy = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Por favor"))
+    assert "Sí señor, claro." in courtesy["response_text"]
+    assert "telefono" in courtesy["response_text"].lower()
+
+    review = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="3001234567")
+    )
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "Cliente: David Prada" in review["response_text"]
+    assert "En 10 minutos" in review["response_text"]
+
+    two_soups = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Que sean 2 por fa el del cuarto y el del medio",
+        )
+    )
+    assert "incluye 2 sopas sin costo" in two_soups["response_text"].lower()
+    assert len(services.session.cart) == 1
 
 
 @pytest.mark.asyncio
