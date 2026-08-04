@@ -7581,6 +7581,7 @@ def _looks_like_order_status_query(text: str) -> bool:
         "ya van 40 minutos",
         "ya van cuarenta minutos",
         "cuanto demora",
+        "cuanto de mora",
         "cuanto se demora",
         "cuanto tarda",
         "cuando llega",
@@ -7647,7 +7648,14 @@ def _looks_like_order_status_query(text: str) -> bool:
         "como va",
         "cómo va",
     )
-    if cleaned in status_terms or cleaned in {"cuanto demora", "cuánto demora", "cuanto se demora", "cuánto se demora"}:
+    if cleaned in status_terms or cleaned in {
+        "cuanto demora",
+        "cuánto demora",
+        "cuanto de mora",
+        "cuánto de mora",
+        "cuanto se demora",
+        "cuánto se demora",
+    }:
         return True
     if _looks_like_order_waiting_followup(text):
         return True
@@ -7665,6 +7673,8 @@ def _looks_like_order_status_query(text: str) -> bool:
             "demora mucho",
             "cuanto demora",
             "cuánto demora",
+            "cuanto de mora",
+            "cuánto de mora",
             "en cuanto tiempo",
             "en cuánto tiempo",
             "cuanto tiempo",

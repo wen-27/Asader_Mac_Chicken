@@ -3689,12 +3689,16 @@ async def test_confirmed_order_followups_do_not_restart_menu_or_product_selectio
 
     thanks = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Muchas gracias"))
     delay = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Que demora?"))
+    misspelled_delay = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Cuanto de mora")
+    )
     soup = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Viene con sopa?"))
     waiting = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Quedó atenta"))
 
     assert thanks["response_text"] == "Con mucho gusto, gracias a ti por elegirnos."
     assert "Bienvenid@ a Mac Chicken" not in thanks["response_text"]
     assert "40 minutos" in delay["response_text"]
+    assert "40 minutos" in misspelled_delay["response_text"]
     assert "pierna o pechuga" not in delay["response_text"].lower()
     assert "sopa va incluida" in soup["response_text"]
     assert "Adicionales" not in soup["response_text"]
@@ -6083,6 +6087,7 @@ async def test_delivery_eta_before_order_is_thirty_minutes() -> None:
         ("¿¿ demora ??", "30 minutos"),
         ("Se demora??", "30 minutos"),
         ("cuánto   demora???", "30 minutos"),
+        ("Cuanto de mora", "30 minutos"),
         ("En cuánto tiempo, me despachan?", "30 minutos"),
         ("Ya salió?", "40 minutos"),
         ("viene en camino?", "40 minutos"),
