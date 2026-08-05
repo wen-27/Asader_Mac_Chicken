@@ -135,6 +135,20 @@ def test_local_whatsapp_interpreter_resolves_numbered_context() -> None:
     assert result.conversation_text == "Coca-Cola personal 400 ml"
 
 
+def test_local_whatsapp_interpreter_rewrites_fragmented_fabio_handoff() -> None:
+    result = interpret_whatsapp_message_locally(
+        current_message="Fabio",
+        recent_messages=[
+            WhatsAppContextMessage(direction="inbound", text="Puedo"),
+            WhatsAppContextMessage(direction="inbound", text="Hablar"),
+            WhatsAppContextMessage(direction="inbound", text="Con"),
+        ],
+    )
+
+    assert result.conversation_text == "puedo hablar con Fabio"
+    assert "local_fragmented_advisor_handoff" in result.notes
+
+
 def test_local_whatsapp_interpreter_clarifies_ambiguous_red_soda() -> None:
     result = interpret_whatsapp_message_locally(
         current_message="una gasiosa roja",

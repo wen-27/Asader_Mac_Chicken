@@ -375,6 +375,9 @@ def test_rule_based_parser_understands_implicit_quarter_piece_with_style() -> No
     mixed = parse_natural_order_rules("Buenas tardes para pedir medio a la broster y una pierna asada")
     fries_piece = parse_natural_order_rules("me podría enviar entonces una pierna pernil con papa francesa")
     styled_fries_piece = parse_natural_order_rules("pechuga broaster con papa francesa")
+    split_pieces = parse_natural_order_rules(
+        "me puede vender por favor dos pechugas, una asada y una broaster"
+    )
 
     assert [(item.code, item.quantity) for item in asado.items] == [("ASADO_CUARTO", 1)]
     assert [(item.code, item.quantity) for item in broaster.items] == [("BROASTER_CUARTO", 1)]
@@ -384,6 +387,10 @@ def test_rule_based_parser_understands_implicit_quarter_piece_with_style() -> No
     ]
     assert [(item.code, item.quantity) for item in fries_piece.items] == [("BROASTER_CUARTO", 1)]
     assert [(item.code, item.quantity) for item in styled_fries_piece.items] == [("BROASTER_CUARTO", 1)]
+    assert [(item.code, item.quantity) for item in split_pieces.items] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_CUARTO", 1),
+    ]
 
 
 def test_rule_based_parser_understands_plural_coca_litro_medio() -> None:

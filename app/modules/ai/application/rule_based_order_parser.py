@@ -451,6 +451,11 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
             items.append(implicit_item)
             matched_codes.add(implicit_item.code)
 
+    for implicit_item in _implicit_split_piece_style_items(normalized):
+        if implicit_item.code not in matched_codes:
+            items.append(implicit_item)
+            matched_codes.add(implicit_item.code)
+
     for rule in PRODUCT_RULES:
         # Only one line per product code is emitted, even if the user repeats
         # several synonyms in the same message.
@@ -461,6 +466,8 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
         if rule.code.startswith("ASADO_") and _looks_like_roasted_chicken_and_half_price_question(normalized):
             continue
         if unsupported_cooked_food and rule.code.startswith(("ASADO_", "BROASTER_")):
+            continue
+        if rule.code == "BROASTER_ENTERO" and _looks_like_split_piece_style_request(normalized):
             continue
         if rule.code == "PAPA_FRANCESA" and (
             _looks_like_included_or_replaced_papa(normalized) or _looks_like_implicit_broaster_piece_with_fries(normalized)
@@ -748,6 +755,29 @@ def _implicit_quarter_piece_items(text: str) -> list[ParsedOrderItem]:
         if quantity:
             quantities_by_code[code] = quantities_by_code.get(code, 0) + quantity
     return [ParsedOrderItem(code=code, quantity=quantity) for code, quantity in quantities_by_code.items()]
+
+
+def _implicit_split_piece_style_items(text: str) -> list[ParsedOrderItem]:
+    if not _looks_like_split_piece_style_request(text):
+        return []
+    return [
+        ParsedOrderItem(code="ASADO_CUARTO", quantity=1),
+        ParsedOrderItem(code="BROASTER_CUARTO", quantity=1),
+    ]
+
+
+def _looks_like_split_piece_style_request(text: str) -> bool:
+    piece = r"(?:pechugas?|piernas?(?:\s+pernil)?|perniles)"
+    quantity = r"(?:2|dos)"
+    asado_terms = "|".join(ASADO_STYLE_TERMS)
+    broaster_terms = "|".join(BROASTER_TERMS)
+    return any(
+        re.search(pattern, text)
+        for pattern in (
+        rf"\b{quantity}\s+{piece}\b.*\buna\s+(?:{asado_terms})\b.*\buna\s+(?:{broaster_terms})\b",
+        rf"\b{quantity}\s+{piece}\b.*\buna\s+(?:{broaster_terms})\b.*\buna\s+(?:{asado_terms})\b",
+        )
+    )
 
 
 def _implicit_unstyled_whole_and_quarter_items(text: str) -> list[ParsedOrderItem]:

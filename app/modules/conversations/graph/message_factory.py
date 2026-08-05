@@ -863,6 +863,19 @@ class BotMessageFactory:
         )
 
     @classmethod
+    def included_soup_availability_answer(cls, soup_available: bool = True) -> str:
+        if not soup_available:
+            return (
+                "Qué pena contigo, en este momento no tenemos sopa disponible. "
+                "Esa presentación normalmente las incluye, pero ya se agotaron."
+            )
+        return (
+            "Sí señora, en este momento sí tenemos sopa disponible. "
+            "El pollo incluye sopa según la presentación; si pides una presentación que incluye 2 sopas, "
+            "te las enviamos incluidas sin costo."
+        )
+
+    @classmethod
     def confirmed_order_soup_answer(cls, soup_available: bool = True) -> str:
         if not soup_available:
             return (
@@ -930,6 +943,10 @@ class BotMessageFactory:
         return f"Sí señora, a nombre de {cls.NEQUI_ACCOUNT_HOLDER}."
 
     @classmethod
+    def advisor_handoff_answer(cls) -> str:
+        return "Te voy a remitir con un asesor para que te ayude."
+
+    @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:
         return f"El domicilio para {neighborhood} cuesta ${price_cop}."
 
@@ -949,6 +966,13 @@ class BotMessageFactory:
                 "Muy buenas tardes, si claro, contamos con servicio a domicilio y estamos atendiendo.",
                 "Dime como te puedo ayudar. Puedes escribirme tu orden completa o seleccionar menu para ver la imagen.",
             ]
+        )
+
+    @classmethod
+    def dispatch_effort_answer(cls) -> str:
+        return (
+            "Estamos haciendo lo posible por despachar tu pedido lo más pronto posible "
+            "y que tengas la mejor experiencia."
         )
 
     @classmethod

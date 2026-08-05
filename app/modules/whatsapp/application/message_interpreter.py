@@ -79,6 +79,14 @@ def interpret_whatsapp_message_locally(
     current_message: str,
     recent_messages: list[WhatsAppContextMessage],
 ) -> WhatsAppMessageInterpretation:
+    advisor_handoff = _rewrite_fragmented_advisor_handoff(current_message, recent_messages)
+    if advisor_handoff:
+        return WhatsAppMessageInterpretation(
+            conversation_text=advisor_handoff,
+            confidence=0.9,
+            notes=("local_fragmented_advisor_handoff",),
+        )
+
     numbered_option = _rewrite_numbered_option(current_message, recent_messages)
     if numbered_option:
         return WhatsAppMessageInterpretation(
@@ -135,6 +143,28 @@ def _rewrite_numbered_option(
         if selected in options:
             return options[selected]
     return None
+
+
+def _rewrite_fragmented_advisor_handoff(
+    current_message: str,
+    recent_messages: list[WhatsAppContextMessage],
+) -> str | None:
+    current = _compact_lower(current_message)
+    if current not in {"fabio", "fabio perez", "fabio pérez", "con fabio", "con fabio perez", "con fabio pérez"}:
+        return None
+    recent_inbound = [
+        _compact_lower(message.text)
+        for message in recent_messages[-5:]
+        if message.direction == "inbound" and message.text.strip()
+    ]
+    phrase = " ".join(recent_inbound + [current])
+    if "hablar" in phrase and "fabio" in phrase:
+        return "puedo hablar con Fabio"
+    return None
+
+
+def _compact_lower(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower()).strip(" ¿?.,!¡")
 
 
 def _numbered_options(text: str) -> dict[int, str]:
@@ -271,6 +301,7 @@ def _build_whatsapp_interpreter_prompt(
             "- Si el numero es respuesta a una lista, reescribelo como la opcion textual completa.",
             "- Si hay ambiguedad de bebida, parte, estilo asado/broaster o presentacion, usa clarify.",
             "- Si el cliente solo dice si/no/cancelar/menu/bebidas/adicionales/horario y no depende de una lista numerada, usa use_original.",
+            "- Si el cliente escribe en mensajes partidos que quiere hablar con Fabio, reescribe a 'puedo hablar con Fabio'.",
             "- Si hay duda, confidence menor a 0.70 y action clarify.",
             "",
             "Ejemplos de rewrite:",
