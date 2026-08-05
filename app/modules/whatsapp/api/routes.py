@@ -350,7 +350,7 @@ async def whatsapp_webhook(
                 logger.exception("failed to store whatsapp admin preparing reply")
                 await session.rollback()
             continue
-        if _is_order_timing_query(inbound.text):
+        if _should_answer_order_timing_query_in_webhook(inbound.text):
             try:
                 if await _answer_order_timing_query(session, settings, idempotency, message_client, inbound):
                     processed += 1
@@ -1139,15 +1139,13 @@ async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
     status_value = (order.status or "").upper()
     if status_value in {"PENDING", "CONFIRMED"}:
         return (
-            "👋 Claro, tu pedido ya fue recibido. "
-            "En este estado el tiempo estimado es de aproximadamente 40 minutos. "
-            "Estamos atentos para prepararlo lo mas pronto posible. Gracias por tu paciencia 🙌"
+            "🍗 Estamos haciendo lo posible para despachar tu pedido lo mas pronto posible "
+            "y que tengas la mejor experiencia. El tiempo aproximado es de 30 minutos."
         )
     if status_value in {"ACCEPTED", "PRINTED", "PREPARING"}:
         return (
-            "🍗 Tu pedido ya esta en preparacion. "
-            "En este estado normalmente demora entre 20 y 30 minutos, o incluso menos si sale rapidito. "
-            "Lo estamos preparando con mucho gusto; apenas este listo seguimos contigo 🙌"
+            "🍗 Tu pedido ya esta en preparacion. Estamos haciendo lo posible para despacharlo "
+            "lo mas pronto posible y que tengas la mejor experiencia. El tiempo aproximado es de 30 minutos."
         )
     if status_value in {"DELIVERED", "DISPATCHED", "DESPACHADO", "OUT_FOR_DELIVERY", "EN_RUTA"}:
         return (
@@ -1163,6 +1161,12 @@ async def _order_timing_answer(session: AsyncSession, chat_id: int) -> str:
         "Estamos revisando el estado de tu pedido. "
         "Te confirmamos lo antes posible, gracias por tu paciencia 🙌"
     )
+
+
+def _should_answer_order_timing_query_in_webhook(text: str) -> bool:
+    if not _is_order_timing_query(text):
+        return False
+    return not _is_direct_eta_question(text)
 
 
 def _is_order_timing_query(text: str) -> bool:
@@ -1281,6 +1285,56 @@ def _is_order_timing_query(text: str) -> bool:
     )
     return direct_time_question or (
         any(term in normalized for term in timing_terms) and any(term in normalized for term in order_terms)
+    )
+
+
+def _is_direct_eta_question(text: str) -> bool:
+    normalized = normalize_text(text)
+    compact_question = normalized.strip(" ¿?.,!¡")
+    if compact_question in {
+        "demora",
+        "se demora",
+        "demora mucho",
+        "cuanto demora",
+        "cuanto se demora",
+        "cuanto tarda",
+        "cuánto demora",
+        "cuánto se demora",
+        "cuánto tarda",
+        "cuando llega",
+        "cuándo llega",
+        "en cuanto llega",
+        "en cuánto llega",
+        "en cuanto tiempo",
+        "en cuánto tiempo",
+        "cuanto tiempo",
+        "cuánto tiempo",
+        "tiempo de espera",
+        "tiempo estimado",
+        "tiempo aproximado",
+    }:
+        return True
+    return any(
+        phrase in normalized
+        for phrase in (
+            "cuanto se demora",
+            "cuánto se demora",
+            "cuanto demora",
+            "cuánto demora",
+            "cuanto tarda",
+            "cuánto tarda",
+            "en cuanto llega",
+            "en cuánto llega",
+            "en cuanto tiempo",
+            "en cuánto tiempo",
+            "cuanto tiempo",
+            "cuánto tiempo",
+            "cuando llega",
+            "cuándo llega",
+            "tiempo de espera",
+            "tiempo estimado",
+            "tiempo aproximado",
+        )
     )
 
 

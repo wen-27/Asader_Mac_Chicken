@@ -1925,6 +1925,12 @@ def _remove_inline_neighborhood_from_address(address: str | None, neighborhood: 
         address.strip(),
         flags=re.IGNORECASE,
     )
+    cleaned = re.sub(
+        rf"^\s*{re.escape(neighborhood)}\s+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"\s*,?\s*barrio\s*$", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip(" ,") or address
 
@@ -2190,6 +2196,15 @@ def _split_payment_suffix(line: str) -> list[str]:
     payment = _extract_payment_from_text(normalized)
     if payment is None:
         return [line]
+    payment_phrase_match = re.search(
+        r"\b(?:y\s+)?(?:veci\s+)?(?:pago|pagar|cancelar|cancelo|cancelas)\s*(?:por|en|con)?\s*"
+        r"(?:efectivo|datafono|datáfono|nequi|transferencia(?:\s+bancolombia)?|bancolombia)\b.*$",
+        line,
+        flags=re.IGNORECASE,
+    )
+    if payment_phrase_match:
+        before_payment = line[: payment_phrase_match.start()].strip(" ,.-")
+        return [before_payment, payment] if before_payment else [payment]
     without_payment = re.sub(
         r"\b(efectivo|datafono|datáfono|nequi|transferencia(?:\s+bancolombia)?|bancolombia)\b",
         "",
@@ -2624,6 +2639,13 @@ def _trim_address_leading_context(text: str) -> str:
     )
     if match is None:
         return text
+    neighborhood_before_match = re.search(
+        r"\b(?:bucarica|bellavista|lagos\s+2|lagos\s+ii|el\s+manantial|manantial)\b\s*$",
+        text[: match.start()],
+        flags=re.IGNORECASE,
+    )
+    if neighborhood_before_match:
+        return text[neighborhood_before_match.start() :].strip(" ,.-")
     return text[match.start() :].strip(" ,.-")
 
 
@@ -2987,6 +3009,7 @@ def _is_ignorable_checkout_line(normalized: str) -> bool:
         _is_checkout_filler_line(normalized)
         or _looks_like_order_intent_only_line(cleaned)
         or _looks_like_payment_residue_line(cleaned)
+        or _looks_like_delivery_price_complaint_only(cleaned)
         or cleaned in {"pago en", "pagar en"}
         or _looks_like_total_or_price_question(cleaned)
         or _looks_like_order_header_line(cleaned)
@@ -3034,6 +3057,16 @@ def _looks_like_payment_residue_line(normalized: str) -> bool:
         "pagar por",
         "pago por",
     }
+
+
+def _looks_like_delivery_price_complaint_only(normalized: str) -> bool:
+    if _looks_like_address(normalized) or _looks_like_payment_method(normalized) or _looks_like_phone(normalized):
+        return False
+    return _contains_any(normalized, ("domicilio", "domi")) and (
+        _looks_like_question(normalized)
+        or bool(re.search(r"\b\d+\s*k\b", normalized))
+        or bool(re.search(r"\b\d{3,}\b", normalized))
+    )
 
 
 def _looks_like_chicken_part_allocation_line(normalized: str) -> bool:
@@ -4074,6 +4107,10 @@ async def _add_natural_order_to_cart(
         for item in parsed.items
     ):
         state.normalized_text = f"{state.normalized_text} {normalize_text(remembered_part)}".strip()
+    if _has_checkout_data_signal(state.raw_text):
+        await extract_customer_data(state, services)
+        _copy_checkout_state_to_session(state, session)
+        await services.persist_session(session)
     pending_prompt = await _maybe_start_pending_quarter_order(state, services, session, parsed.items)
     if pending_prompt:
         return []
