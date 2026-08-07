@@ -10,6 +10,7 @@ from app.modules.whatsapp.infrastructure.whatsapp_cloud_client import (
     _half_combo_buttons_payload,
     _main_menu_buttons_payload,
     _manzana_25_buttons_payload,
+    _drink_unavailable_offer_buttons_payload,
     _product_availability_offer_buttons_payload,
     _soup_unavailable_buttons_payload,
 )
@@ -107,6 +108,24 @@ def test_product_availability_offer_uses_order_menu_buttons() -> None:
     assert buttons[0]["reply"]["title"] == "Ordenar"
     assert buttons[1]["reply"]["id"] == "product_offer_menu"
     assert buttons[1]["reply"]["title"] == "Menú"
+
+
+def test_drink_unavailable_offer_uses_add_and_drinks_buttons() -> None:
+    payload = _drink_unavailable_offer_buttons_payload(
+        ChatId(573153327502),
+        (
+            "Qué pena, por ahora no contamos con mr tea litro.\n\n"
+            "Sin embargo, tenemos Jugo Hit Litro, que es la opción más similar disponible.\n\n"
+            "Puedes tocar Agregar Jugo Hit Litro para añadirla a tu orden, o tocar Bebidas para ver todas las bebidas disponibles."
+        ),
+    )
+
+    assert payload is not None
+    buttons = payload["interactive"]["action"]["buttons"]  # type: ignore[index]
+    assert buttons[0]["reply"]["id"] == "drink_offer_add:Jugo Hit Litro"
+    assert buttons[0]["reply"]["title"] == "Jugo Hit Litro"
+    assert buttons[1]["reply"]["id"] == "drink_offer_drinks"
+    assert buttons[1]["reply"]["title"] == "Bebidas"
 
 
 def test_main_menu_prompt_uses_customer_friendly_buttons() -> None:

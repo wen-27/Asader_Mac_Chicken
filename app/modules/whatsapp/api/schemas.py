@@ -94,6 +94,10 @@ class WhatsAppMessageSchema(BaseModel):
                 return "ordenar"
             if button.id == "product_offer_menu":
                 return "ver menu"
+            if button.id and button.id.startswith("drink_offer_add:"):
+                return button.id.split(":", 1)[1]
+            if button.id == "drink_offer_drinks":
+                return "bebidas"
             if button.id == "manzana_25_add":
                 return "Manzana 2.5"
             if button.id == "manzana_25_drinks":

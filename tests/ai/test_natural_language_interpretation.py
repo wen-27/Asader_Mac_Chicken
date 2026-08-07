@@ -275,6 +275,15 @@ def test_rule_based_parser_understands_fractions_and_word_quantities() -> None:
     ]
 
 
+def test_rule_based_parser_tolerates_fraction_joined_to_style_word() -> None:
+    parsed = parse_natural_order_rules("1/4de asado ( pierna)\n1/2broster")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_CUARTO", 1),
+        ("BROASTER_MEDIO", 1),
+    ]
+
+
 def test_rule_based_parser_understands_real_chat_roasted_chicken_and_half_order() -> None:
     parsed = parse_natural_order_rules("Me regala pollo y medio entonces")
 
@@ -513,6 +522,21 @@ def test_rule_based_parser_does_not_charge_soup_when_customer_asks_if_included()
     parsed = parse_natural_order_rules("Me regalas un pollo asado, con que viene? Trae sopa?")
 
     assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
+
+
+def test_rule_based_parser_does_not_charge_respective_included_chicken_soup() -> None:
+    parsed = parse_natural_order_rules("1 pollo asado con su respectiva sopa")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [("ASADO_ENTERO", 1)]
+
+
+def test_rule_based_parser_charges_explicit_additional_soup_with_chicken() -> None:
+    parsed = parse_natural_order_rules("1 pollo asado y una sopa adicional")
+
+    assert [(item.code, item.quantity) for item in parsed.items] == [
+        ("ASADO_ENTERO", 1),
+        ("SOPA_ADICIONAL", 1),
+    ]
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import re
 from typing import Optional
 
 import httpx
@@ -50,6 +51,8 @@ class WhatsAppCloudClient:
             payload = _soup_included_or_additional_buttons_payload(chat_id, text)
         if payload is None:
             payload = _product_availability_offer_buttons_payload(chat_id, text)
+        if payload is None:
+            payload = _drink_unavailable_offer_buttons_payload(chat_id, text)
         if payload is None:
             payload = _manzana_25_buttons_payload(chat_id, text)
         if payload is None:
@@ -328,6 +331,37 @@ def _product_availability_offer_buttons_payload(chat_id: ChatId, text: str) -> d
                     {
                         "type": "reply",
                         "reply": {"id": "product_offer_menu", "title": "Menú"},
+                    },
+                ]
+            },
+        },
+    }
+
+
+def _drink_unavailable_offer_buttons_payload(chat_id: ChatId, text: str) -> dict[str, object] | None:
+    match = re.search(r"Puedes tocar Agregar (.+?) para añadirla a tu orden", text)
+    if match is None:
+        return None
+    drink_name = match.group(1).strip()
+    title = f"Agregar {drink_name}"
+    if len(title) > 20:
+        title = drink_name if len(drink_name) <= 20 else "Agregar bebida"
+    return {
+        "messaging_product": "whatsapp",
+        "to": str(chat_id.value),
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {"id": f"drink_offer_add:{drink_name}", "title": title},
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {"id": "drink_offer_drinks", "title": "Bebidas"},
                     },
                 ]
             },

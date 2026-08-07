@@ -933,7 +933,7 @@ class BotMessageFactory:
         note = observations or "la nota solicitada"
         return "\n\n".join(
             [
-                "Sí señora, con mucho gusto. Ya dejé esa nota en tu orden.",
+                "Sí señora, tu orden ya está confirmada y en proceso. Ya dejé esa nota en tu orden.",
                 f"📝 Nota actualizada: {note}",
             ]
         )
@@ -956,6 +956,24 @@ class BotMessageFactory:
             [
                 f"Sí señora, {product.name.value} está disponible en este momento.",
                 "¿Deseas ordenarla ahora o prefieres ver el menu?",
+            ]
+        )
+
+    @classmethod
+    def unavailable_drink_offer(cls, requested_name: str, alternative: Product | None = None) -> str:
+        requested = requested_name.strip() or "esa bebida"
+        if alternative is None:
+            return "\n\n".join(
+                [
+                    f"Qué pena, por ahora no contamos con {requested}.",
+                    "Puedes tocar el botón Bebidas para ver las bebidas disponibles y escoger otra opción.",
+                ]
+            )
+        return "\n\n".join(
+            [
+                f"Qué pena, por ahora no contamos con {requested}.",
+                f"Sin embargo, tenemos {alternative.name.value}, que es la opción más similar disponible.",
+                f"Puedes tocar Agregar {alternative.name.value} para añadirla a tu orden, o tocar Bebidas para ver todas las bebidas disponibles.",
             ]
         )
 

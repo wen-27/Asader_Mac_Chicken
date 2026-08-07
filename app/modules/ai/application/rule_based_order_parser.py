@@ -479,8 +479,10 @@ def parse_natural_order_rules(message: str) -> NaturalLanguageOrderParse:
             rule.code == "ICOPOR_SOPA" and _looks_like_soup_icopor_container_request(normalized)
         ):
             if rule.code == "SOPA_ADICIONAL" and (
-                _looks_like_soup_or_contents_question(normalized) or _looks_like_included_soup_side(normalized)
+                _looks_like_soup_or_contents_question(normalized)
+                or _looks_like_included_soup_side(normalized)
                 or _looks_like_included_soup_icopor_container_request(normalized)
+                or _looks_like_chicken_included_soup_reference(normalized)
             ):
                 continue
             items.append(
@@ -515,6 +517,7 @@ def _normalize_for_matching(message: str) -> str:
     normalized = normalized.replace("½", " 1/2 ").replace("¼", " 1/4 ").replace("¾", " 3/4 ")
     normalized = re.sub(r"(?<=\d),(?=\d)", ".", normalized)
     normalized = re.sub(r"(?<=\d)\s*/\s*(?=\d)", "/", normalized)
+    normalized = re.sub(r"\b([13]/[24])(?=[a-z])", r"\1 ", normalized)
     normalized = re.sub(r"(?<=\d)\.(?=\d)", ".", normalized)
     normalized = normalized.replace("-", " ")
     normalized = re.sub(r"[¿?¡!.,;:()]", " ", normalized)
@@ -723,6 +726,54 @@ def _looks_like_included_soup_side(text: str) -> bool:
             "con sopa que",
             "con sopita porfa",
             "con sopita por favor",
+        ),
+    )
+
+
+def _looks_like_chicken_included_soup_reference(text: str) -> bool:
+    if not _contains_any_terms(text, ("sopa", "sopita", "sopas", "sopitas")):
+        return False
+    if not _contains_any_terms(text, CHICKEN_TERMS + ASADO_STYLE_TERMS + BROASTER_TERMS):
+        return False
+    if _contains_any_terms(
+        text,
+        (
+            "sopa adicional",
+            "sopita adicional",
+            "adicional de sopa",
+            "adicional de sopita",
+            "sopa extra",
+            "sopita extra",
+            "extra de sopa",
+            "extra de sopita",
+            "otra sopa",
+            "otra sopita",
+            "sopa aparte",
+            "sopita aparte",
+            "sopa adicional aparte",
+        ),
+    ):
+        return False
+    return _contains_any_terms(
+        text,
+        (
+            "respectiva sopa",
+            "respectiva sopita",
+            "su sopa",
+            "su sopita",
+            "con su sopa",
+            "con su sopita",
+            "con la sopa",
+            "con la sopita",
+            "sopa incluida",
+            "sopas incluidas",
+            "con sopa incluida",
+            "con sopita incluida",
+            "me dan sopa",
+            "me dan sopita",
+            "me guarda la sopa",
+            "me guardan la sopa",
+            "me guardas la sopa",
         ),
     )
 
