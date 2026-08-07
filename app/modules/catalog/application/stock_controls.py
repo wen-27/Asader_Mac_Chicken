@@ -9,7 +9,7 @@ from typing import Protocol
 from app.config.settings import Settings
 from app.modules.catalog.domain.product import Product
 from app.modules.catalog.domain.specifications import ProductAvailabilitySpecification
-from app.shared.utils.colombia_holidays import is_colombian_monday_holiday
+from app.shared.utils.colombia_holidays import is_colombian_public_holiday
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class OperationalAvailabilityService:
         controls: dict[str, StockControl],
         variant_label: str | None = None,
     ) -> AvailabilityResult:
-        base = ProductAvailabilitySpecification(is_holiday=self._is_monday_holiday)
+        base = ProductAvailabilitySpecification(is_holiday=self._is_special_product_holiday)
         if not base.is_satisfied_by(product, business_date):
             return AvailabilityResult(
                 is_available=False,
@@ -192,21 +192,19 @@ class OperationalAvailabilityService:
     async def _controls_by_code(self) -> dict[str, StockControl]:
         return {control.code: control for control in await self._repository.list_controls()}
 
-    def _is_monday_holiday(self, value: date) -> bool:
-        if value.weekday() != 0:
-            return False
+    def _is_special_product_holiday(self, value: date) -> bool:
         configured_dates = {
             item.strip()
             for item in self._settings.special_product_monday_holidays.split(",")
             if item.strip()
         }
-        return is_colombian_monday_holiday(value) or value.isoformat() in configured_dates
+        return is_colombian_public_holiday(value) or value.isoformat() in configured_dates
 
     def _is_allowed_by_calendar(self, code: str, business_date: date | None) -> bool:
         if code not in {"LASAGNA_MIXTA", "MADURO_QUESO"}:
             return True
         value = business_date or date.today()
-        return value.weekday() in (5, 6) or self._is_monday_holiday(value)
+        return value.weekday() in (5, 6) or self._is_special_product_holiday(value)
 
 
 def stock_code_for_variant(product_code: str, variant_label: str | None) -> str | None:

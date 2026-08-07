@@ -11,7 +11,7 @@ from app.modules.catalog.application.stock_controls import (
     OperationalAvailabilityService,
     StockControl,
 )
-from app.modules.catalog.domain.enums import ProductCategory
+from app.modules.catalog.domain.enums import ProductCategory, ProductRestriction
 from app.modules.catalog.domain.product import Product
 from app.shared.domain.money import MoneyCOP
 from app.shared.domain.value_object import ProductCode, ProductName
@@ -57,3 +57,19 @@ async def test_three_quarter_variant_disabled_by_stock_control_is_unavailable() 
     assert not result.is_available
     assert result.reason == "out_of_stock"
     assert result.product_name == "3/4 Asado - 2 pechugas y 1 pierna"
+
+
+@pytest.mark.asyncio
+async def test_weekend_special_is_available_on_colombian_friday_holiday() -> None:
+    product = Product(
+        code=ProductCode("LASAGNA_MIXTA"),
+        name=ProductName("Lasagna Mixta"),
+        category=ProductCategory.ESPECIALES,
+        price=MoneyCOP(20000),
+        restricted_to=ProductRestriction.WEEKEND_OR_HOLIDAY,
+    )
+    service = OperationalAvailabilityService(FakeStockControlRepository([]), Settings())
+
+    result = await service.evaluate(product, date(2026, 8, 7))
+
+    assert result.is_available

@@ -38,6 +38,7 @@ from app.modules.conversations.graph.state import (
 )
 from app.modules.orders.application.payment_proofs import payment_requires_proof
 from app.shared.domain.value_object import ChatId, ProductCode, ProductName
+from app.shared.utils.colombia_holidays import is_colombian_public_holiday
 from app.shared.utils.text_normalizer import normalize_text
 
 logger = logging.getLogger(__name__)
@@ -7552,7 +7553,7 @@ async def _evaluate_product_availability(
             _business_today(),
             variant_label,
         )
-    availability = ProductAvailabilitySpecification(is_holiday=lambda _: False)
+    availability = ProductAvailabilitySpecification(is_holiday=is_colombian_public_holiday)
     is_available = availability.is_satisfied_by(product, _business_today())
     return type(
         "AvailabilityResult",

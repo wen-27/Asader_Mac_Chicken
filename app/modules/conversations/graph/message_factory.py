@@ -240,11 +240,11 @@ class BotMessageFactory:
         label = product_name or "Ese producto"
         normalized_label = label.strip().lower()
         if reason == "restricted" and normalized_label in {"lasagna mixta", "maduro con queso"}:
-            lines = [f"⚠️ Por ahora {label} solo esta disponible fines de semana o lunes festivos."]
+            lines = [f"⚠️ Por ahora {label} solo esta disponible fines de semana o festivos."]
         elif normalized_label in {"lasagna mixta", "maduro con queso"}:
             lines = [f"⚠️ En este momento no tenemos {label} disponible. Disculpa la molestia."]
         elif reason == "restricted":
-            lines = [f"⚠️ {label} solo esta disponible fines de semana o lunes festivos."]
+            lines = [f"⚠️ {label} solo esta disponible fines de semana o festivos."]
         else:
             lines = [f"⚠️ {label} no esta disponible en este momento."]
         if alternatives:
@@ -265,11 +265,11 @@ class BotMessageFactory:
     ) -> str:
         normalized_name = unavailable_product_name.strip().lower()
         if reason == "restricted" and normalized_name in {"lasagna mixta", "maduro con queso"}:
-            first_line = f"⚠️ Por ahora {unavailable_product_name} solo esta disponible fines de semana o lunes festivos."
+            first_line = f"⚠️ Por ahora {unavailable_product_name} solo esta disponible fines de semana o festivos."
         elif normalized_name in {"lasagna mixta", "maduro con queso"}:
             first_line = f"⚠️ En este momento no tenemos {unavailable_product_name} disponible. Disculpa la molestia."
         elif reason == "restricted":
-            first_line = f"⚠️ {unavailable_product_name} solo esta disponible fines de semana o lunes festivos."
+            first_line = f"⚠️ {unavailable_product_name} solo esta disponible fines de semana o festivos."
         else:
             first_line = f"⚠️ {unavailable_product_name} no esta disponible en este momento."
         return "\n\n".join(

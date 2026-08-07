@@ -1,6 +1,5 @@
 """Colombian public-holiday helpers.
 
-The restaurant only uses this to allow weekend specials on Monday holidays.
 Rules are calculated locally so the bot does not depend on a third-party API at
 ordering time.
 """
@@ -13,6 +12,10 @@ from functools import lru_cache
 
 def is_colombian_monday_holiday(value: date) -> bool:
     return value.weekday() == 0 and value in colombian_public_holidays(value.year)
+
+
+def is_colombian_public_holiday(value: date) -> bool:
+    return value in colombian_public_holidays(value.year)
 
 
 @lru_cache(maxsize=64)
