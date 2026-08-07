@@ -786,6 +786,9 @@ async def detect_intent(
                 await _remember_pickup_details_from_message(state, services)
             state.intent = ConversationIntent.LENGUAJE_NATURAL
             return state
+        if parsed_rules.items:
+            state.intent = ConversationIntent.LENGUAJE_NATURAL
+            return state
         if _has_pickup_customer_data_signal(state.raw_text):
             state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
             return state
@@ -2134,7 +2137,7 @@ def _clear_generic_pickup_observation(observations: str | None) -> str | None:
 
 def _extract_inline_customer_name(text: str) -> str | None:
     name_match = re.search(
-        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+ya\s+paso|\s+ya\s+pasó|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
+        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+yo\s+paso|\s+ya\s+paso|\s+ya\s+pasó|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
@@ -2392,6 +2395,12 @@ def _split_name_address_line(line: str) -> list[str] | None:
 
 def _clean_customer_name(value: str) -> str:
     value = re.sub(r"^\s*(?:a\s+)?nombre\s+de\s+", "", value.strip(), flags=re.IGNORECASE)
+    value = re.split(
+        r"\b(?:yo\s+paso|ya\s+paso|ya\s+pasó|paso\s+por|para\s+recoger|a\s+recoger)\b",
+        value,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
     value = re.sub(r"\s+(?:por\s+favor|porfa|porfis|xfa|x\s*fa)\s*$", "", value, flags=re.IGNORECASE)
     tokens = value.strip(" ,.-").split()
     noisy_prefixes = {

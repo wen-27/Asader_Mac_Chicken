@@ -1697,6 +1697,36 @@ async def test_real_inline_order_name_is_saved_without_blocking_product() -> Non
 
 
 @pytest.mark.asyncio
+async def test_real_pickup_order_with_inline_name_adds_product_before_requesting_missing_data() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Hola buenas tardes, para pedir medio pollo a la broaster "
+                "a nombre de cesar mantilla, yo paso a recogerlo gracias"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert result["fulfillment_type"] == "PICKUP"
+    assert [(item.product_code.value, item.quantity) for item in services.session.cart] == [
+        ("BROASTER_MEDIO", 1)
+    ]
+    assert services.session.customer_name == "cesar mantilla"
+    assert services.session.customer_address == "Recoge en local"
+    assert services.session.customer_neighborhood == "No aplica"
+    assert services.session.payment_method == "No aplica"
+    assert "- 1 x 1/2 Broasted: $25500" in result["response_text"]
+    assert "telefono" in result["response_text"].lower()
+    assert "en cuanto tiempo pasa a recoger" in result["response_text"].lower()
+    assert "¿Que deseas ordenar?" not in result["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_real_pickup_inline_name_stops_before_order_text() -> None:
     services = FakeConversationServices()
     graph = build_conversation_graph(services)
