@@ -193,6 +193,11 @@ def _apply_last_confirmed_order_followup_intent(
         state.query_type = "dispatch_effort"
         state.query_value = text
         return True
+    if _looks_like_confirmed_order_delivery_price_question(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "delivery"
+        state.query_value = _extract_confirmed_order_delivery_price_neighborhood(text)
+        return True
     if _looks_like_confirmed_order_note_followup(text, session.pending_order_json):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "confirmed_order_note_added"
@@ -2475,6 +2480,7 @@ def _strip_payment_residue(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     ).strip(" ,.-")
+    cleaned = re.sub(r"^(?:con|en|por)\s*$", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^(?:y\s+)?complet[oa]\b", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\b(?:y\s+)?complet[oa]$", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip(" ,.-")
@@ -2664,6 +2670,12 @@ def _split_address_and_neighborhood(text: str) -> tuple[str | None, str | None]:
 
 def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
     raw = _trim_address_leading_context(text.strip())
+    raw = re.sub(
+        r"(?<=\d)(?=(?:lagos|bucarica|bellavista|provenza)\b)",
+        " ",
+        raw,
+        flags=re.IGNORECASE,
+    )
     normalized = normalize_text(raw)
     labeled_neighborhood = re.search(r"\b(?:barrio|sector)\b", raw, flags=re.IGNORECASE)
     if labeled_neighborhood:
@@ -8093,6 +8105,22 @@ def _looks_like_delivery_dispatch_followup(text: str) -> bool:
             "no ha llegado la orden",
         ),
     )
+
+
+def _looks_like_confirmed_order_delivery_price_question(text: str) -> bool:
+    return (
+        _contains_any(text, ("domicilio", "domi", "envio", "envío", "llevar", "lleva", "aca", "acá"))
+        and _contains_any(text, ("vale", "cuesta", "costo", "precio", "cuanto", "cuánto", "ocho mil", "ochomil", "8k", "8000"))
+        and bool(_extract_confirmed_order_delivery_price_neighborhood(text))
+    )
+
+
+def _extract_confirmed_order_delivery_price_neighborhood(text: str) -> str:
+    normalized = normalize_text(text)
+    if _contains_any(normalized, ("lagos dos", "lagos 2", "lagos ii", "lagos ll", "lagos")):
+        return "Lagos 2"
+    neighborhood = _extract_delivery_neighborhood(normalized)
+    return _normalize_neighborhood_value(neighborhood) or neighborhood
 
 
 def _looks_like_confirmed_order_pointer_reply(raw_text: str, normalized_text: str) -> bool:

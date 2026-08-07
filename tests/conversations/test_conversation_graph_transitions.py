@@ -4020,6 +4020,48 @@ async def test_broaster_order_with_bucarica_sector_and_payment_keeps_barrio_and_
 
 
 @pytest.mark.asyncio
+async def test_delivery_checkout_with_con_datafono_lagos_dos_does_not_invent_name_or_overcharge() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text="Buenos días para que por favor me envían una pierna asada y un pollo a la broster",
+        )
+    )
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Cuanto vale con el domicilo"))
+    partial = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Con datáfono, calle 45No 6-78lagos dos")
+    )
+    name_after_partial = services.session.customer_name
+    address_after_partial = services.session.customer_address
+    neighborhood_after_partial = services.session.customer_neighborhood
+    payment_after_partial = services.session.payment_method
+    phone = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3185531074"))
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Rosalba Mendoza"))
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="si"))
+    delivery_question = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Acá a lagos ochomil?"))
+
+    assert "nombre completo" in partial["response_text"].lower()
+    assert "telefono" in partial["response_text"].lower()
+    assert name_after_partial is None
+    assert address_after_partial == "calle 45No 6-78"
+    assert neighborhood_after_partial == "Lagos 2"
+    assert payment_after_partial == "Datafono"
+    assert "nombre completo" in phone["response_text"].lower()
+    assert phone["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "👤 Cliente: Rosalba Mendoza" in review["response_text"]
+    assert "📍 Direccion: calle 45No 6-78" in review["response_text"]
+    assert "🏘️ Barrio: Lagos 2" in review["response_text"]
+    assert "Domicilio: $2000" in review["response_text"]
+    assert "Domicilio: $8000" not in review["response_text"]
+    assert "domicilio para lagos 2 cuesta $2000" in delivery_question["response_text"].lower()
+    assert "pierna o pechuga" not in delivery_question["response_text"].lower()
+
+
+@pytest.mark.asyncio
 async def test_pending_quarter_order_preserves_customer_data_from_initial_multiline_message() -> None:
     services = FakeConversationServices()
     services.products["PAPA_FRANCESA"] = Product(
@@ -4543,7 +4585,7 @@ async def test_comma_separated_checkout_keeps_name_phone_address_and_payment() -
     assert "Cliente: Rosalba Mendoza" in result["response_text"]
     assert "Telefono: 3185531074" in result["response_text"]
     assert "Direccion: calle 45 No 6-78" in result["response_text"]
-    assert "Barrio: lagos dos" in result["response_text"]
+    assert "Barrio: Lagos 2" in result["response_text"]
     assert "Pago: Efectivo" in result["response_text"]
 
 
