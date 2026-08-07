@@ -3300,6 +3300,31 @@ async def test_post_add_pickup_request_asks_for_pickup_customer_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_add_pickup_name_time_then_phone_reaches_review_without_address() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="Medio broster"))
+    pickup = await graph.ainvoke(
+        ConversationGraphState(chat_id=123, raw_text="Paso a recoger a nombre de César mantilla en 15 minutos")
+    )
+    review = await graph.ainvoke(ConversationGraphState(chat_id=123, raw_text="3174121205"))
+
+    assert pickup["current_step"] == ConversationState.ASK_CUSTOMER_DATA
+    assert pickup["fulfillment_type"] == "PICKUP"
+    assert services.session.customer_name == "César mantilla"
+    assert services.session.customer_address == "Recoge en local"
+    assert services.session.customer_neighborhood == "No aplica"
+    assert services.session.payment_method == "No aplica"
+    assert "telefono" in pickup["response_text"].lower()
+    assert review["current_step"] == ConversationState.CHECKOUT_REVIEW
+    assert "📍 Entrega: Recoge en local" in review["response_text"]
+    assert "📝 Nota: Recoge en 15 minutos" in review["response_text"]
+    assert "direccion" not in review["response_text"].lower()
+    assert "1/2 Broasted" in review["response_text"]
+
+
+@pytest.mark.asyncio
 async def test_pickup_whole_roasted_after_availability_saves_time_name_and_only_asks_phone() -> None:
     services = FakeConversationServices()
     _add_asado_entero_to_fake_catalog(services)

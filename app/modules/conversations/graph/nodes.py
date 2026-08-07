@@ -1640,6 +1640,9 @@ async def extract_customer_data(
 ) -> ConversationGraphState:
     # Copy nested Pydantic state before mutating it. LangGraph can reuse state
     # objects between nodes, so direct nested mutation is easy to lose or leak.
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    if session.fulfillment_type == "PICKUP":
+        state.fulfillment_type = "PICKUP"
     customer = state.customer.model_copy(deep=True)
     _clear_invalid_checkout_cached_fields(customer)
     inline_name = _extract_inline_customer_name(state.raw_text)
@@ -1748,6 +1751,8 @@ async def validate_customer_data(
     state: ConversationGraphState,
     services: ConversationGraphServices,
 ) -> ConversationGraphState:
+    session = await services.load_or_create_session(ChatId(state.chat_id))
+    _copy_checkout_session_to_state(session, state)
     missing: list[str] = []
     if not state.customer.name:
         missing.append("nombre completo")
@@ -1762,11 +1767,20 @@ async def validate_customer_data(
     if state.fulfillment_type == "PICKUP" and missing:
         state.errors = missing
         state.current_step = ConversationState.ASK_CUSTOMER_DATA
-        session = await services.load_or_create_session(ChatId(state.chat_id))
         _copy_checkout_state_to_session(state, session)
         session.move_to(ConversationState.ASK_CUSTOMER_DATA)
         await services.persist_session(session)
         state.response_text = BotMessageFactory.missing_customer_data(missing)
+        return state
+    if state.fulfillment_type == "PICKUP":
+        state.customer.observations = _remove_duplicate_customer_name_observation(
+            state.customer.observations,
+            state.customer.name,
+        )
+        state.current_step = ConversationState.CHECKOUT_REVIEW
+        _copy_checkout_state_to_session(state, session)
+        session.move_to(ConversationState.CHECKOUT_REVIEW)
+        await services.persist_session(session)
         return state
     had_non_exact_address = bool(
         state.customer.address
@@ -1791,7 +1805,6 @@ async def validate_customer_data(
     if missing:
         state.errors = missing
         state.current_step = ConversationState.ASK_CUSTOMER_DATA
-        session = await services.load_or_create_session(ChatId(state.chat_id))
         _copy_checkout_state_to_session(state, session)
         session.move_to(ConversationState.ASK_CUSTOMER_DATA)
         await services.persist_session(session)
@@ -1802,7 +1815,6 @@ async def validate_customer_data(
             state.customer.name,
         )
         state.current_step = ConversationState.CHECKOUT_REVIEW
-        session = await services.load_or_create_session(ChatId(state.chat_id))
         _copy_checkout_state_to_session(state, session)
         session.move_to(ConversationState.CHECKOUT_REVIEW)
         await services.persist_session(session)
@@ -2098,6 +2110,13 @@ def _format_pickup_time_note(text: str) -> str:
     )
     if time_first_match:
         return f"Recoger a la {time_first_match.group(1).strip()}"
+    relative_match = re.search(
+        r"\ben\s+\d+\s*(?:min|minutos|hora|horas)\b",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if relative_match:
+        return f"Recoge {relative_match.group(0).strip()}"
     if normalize_text(cleaned).startswith(("recoger ", "recoge ", "recojo ")):
         return cleaned
     return f"Recoge {cleaned}"
@@ -2137,7 +2156,7 @@ def _clear_generic_pickup_observation(observations: str | None) -> str | None:
 
 def _extract_inline_customer_name(text: str) -> str | None:
     name_match = re.search(
-        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+yo\s+paso|\s+ya\s+paso|\s+ya\s+pasó|\s+paso\s+por|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
+        r"\ba nombre de\s+(.+?)(?:\s+para\s+pedir|\s+para\s+ordenar|\s+para\s+solicitar|\s+con\s+|\s+yo\s+paso|\s+ya\s+paso|\s+ya\s+pasó|\s+paso\s+por|\s+en\s+\d+\s+minutos?|\s+a\s+la\s+\d|\s+a\s+las\s+\d|\s+para\s+la\s+\d|\s+para\s+las\s+\d|$)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
@@ -2396,7 +2415,7 @@ def _split_name_address_line(line: str) -> list[str] | None:
 def _clean_customer_name(value: str) -> str:
     value = re.sub(r"^\s*(?:a\s+)?nombre\s+de\s+", "", value.strip(), flags=re.IGNORECASE)
     value = re.split(
-        r"\b(?:yo\s+paso|ya\s+paso|ya\s+pasó|paso\s+por|para\s+recoger|a\s+recoger)\b",
+        r"\b(?:yo\s+paso|ya\s+paso|ya\s+pasó|paso\s+por|para\s+recoger|a\s+recoger|en\s+\d+\s+minutos?)\b",
         value,
         maxsplit=1,
         flags=re.IGNORECASE,
@@ -3318,8 +3337,12 @@ def _copy_checkout_session_to_state(
     customer.payment_method = customer.payment_method or session.payment_method
     customer.observations = customer.observations or session.observations
     customer.observations = _sanitize_observations_for_cart(customer.observations, state.cart)
-    state.customer = customer
     state.fulfillment_type = session.fulfillment_type or state.fulfillment_type or "DELIVERY"
+    if state.fulfillment_type == "PICKUP":
+        customer.address = customer.address or "Recoge en local"
+        customer.neighborhood = customer.neighborhood or "No aplica"
+        customer.payment_method = customer.payment_method or "No aplica"
+    state.customer = customer
 
 
 def _sanitize_observations_for_cart(
