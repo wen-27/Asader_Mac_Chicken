@@ -67,6 +67,7 @@ BROASTER_TERMS = (
     "broasted",
     "brouster",
     "broster",
+    "brostr",
     "brosterr",
     "brostter",
     "brostee",
@@ -184,7 +185,7 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
             "azadito",
             "azaditos",
         ),
-        ("entero", "completo", "uno", "un"),
+        ("entero", "completo", "uno", "un", "1"),
         BROASTER_TERMS + ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
     NaturalProductRule(
@@ -206,7 +207,7 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     NaturalProductRule(
         "BROASTER_ENTERO",
         BROASTER_TERMS + ("broasteres",),
-        ("entero", "completo", "uno", "un"),
+        ("entero", "completo", "uno", "un", "1"),
         ("medio", "cuarto", "3/4", "1/2", "1/4"),
     ),
     NaturalProductRule(
@@ -245,7 +246,20 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
     ),
     NaturalProductRule(
         "PERSONAL_400",
-        ("personal", "personl", "perzonal", "400", "400ml", "400 ml", "coca personal", "coca cola personal"),
+        (
+            "personal",
+            "personl",
+            "persona",
+            "perzonal",
+            "400",
+            "400ml",
+            "400 ml",
+            "coca personal",
+            "coca cola personal",
+            "coca colq personal",
+            "coca col personal",
+            "coca-cola personal",
+        ),
         ("coca", "cocacola", "coca cola", "gaseosa", "gaseoza"),
     ),
     NaturalProductRule(
@@ -253,6 +267,12 @@ PRODUCT_RULES: tuple[NaturalProductRule, ...] = (
         (
             "jugo hit personal",
             "hit personal",
+            "jugo hoy personal",
+            "jugo hoy persona",
+            "jugo hit persona",
+            "hit persona",
+            "jugo hi personal",
+            "jugo jit personal",
             "jugo tropical",
             "hit tropical",
             "jugo de tropical",
@@ -1144,6 +1164,8 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
     product_position = min(positions) if positions else 0
     segment_start = _segment_start_for_position(text, product_position)
     prefix = text[segment_start:product_position].strip()
+    if _looks_like_drink_menu_option_prefix(prefix, rule.code):
+        return 1
     tokens = prefix.split()
     if not tokens:
         return 1
@@ -1160,10 +1182,37 @@ def _quantity_before_product(text: str, rule: NaturalProductRule) -> int:
     return 1
 
 
+def _looks_like_drink_menu_option_prefix(prefix: str, code: str) -> bool:
+    option_by_code = {
+        "GASEOSA_25": "1",
+        "JUGO_HIT_PERSONAL": "2",
+        "JUGO_HIT_LITRO": "3",
+        "COCA_COLA_15": "4",
+        "QUATRO_15": "5",
+        "PERSONAL_400": "6",
+        "AGUA_BOTELLA": "7",
+    }
+    expected = option_by_code.get(code)
+    if expected is None:
+        return False
+    tokens = prefix.split()
+    return expected in tokens
+
+
 def _rule_positions(text: str, rule: NaturalProductRule) -> list[int]:
     positions: list[int] = []
     for segment, offset in _order_segments_with_offsets(text):
         if any(_contains_term(segment, exclusion) for exclusion in rule.exclusions):
+            continue
+        if not any(_contains_term(segment, term) for term in rule.product_terms):
+            continue
+        if (
+            rule.size_terms
+            and not any(_contains_term(segment, term) for term in rule.size_terms)
+            and not (rule.code == "ASADO_ENTERO" and _looks_like_whole_roasted_chicken(segment))
+            and not (rule.code == "BROASTER_ENTERO" and _looks_like_whole_broaster_chicken(segment))
+            and not (rule.code == "GASEOSA_25" and _looks_like_25_liter_soda_flavor(segment))
+        ):
             continue
         for term in rule.product_terms + rule.size_terms:
             normalized_term = _normalize_for_matching(term)
