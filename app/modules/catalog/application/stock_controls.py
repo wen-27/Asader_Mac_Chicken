@@ -201,6 +201,8 @@ class OperationalAvailabilityService:
         return is_colombian_public_holiday(value) or value.isoformat() in configured_dates
 
     def _is_allowed_by_calendar(self, code: str, business_date: date | None) -> bool:
+        if code in {"LASAGNA_MIXTA", "MADURO_QUESO"}:
+            return True
         if code not in {"LASAGNA_MIXTA", "MADURO_QUESO"}:
             return True
         value = business_date or date.today()

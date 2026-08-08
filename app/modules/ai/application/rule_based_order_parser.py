@@ -44,6 +44,8 @@ ASADO_STYLE_TERMS = (
     "asados",
     "asada",
     "asadas",
+    "asdo",
+    "asdos",
     "asao",
     "asaos",
     "azado",

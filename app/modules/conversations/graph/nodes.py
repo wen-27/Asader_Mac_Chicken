@@ -85,6 +85,8 @@ BROASTER_TEXT_TERMS = (
 ASADO_TEXT_TERMS = (
     "asado",
     "asados",
+    "asdo",
+    "asdos",
     "asadito",
     "asaditos",
     "asao",
@@ -232,6 +234,17 @@ async def detect_intent(
     text = state.normalized_text
     parsed_rules = parse_natural_order_rules(state.raw_text)
     session = await services.load_or_create_session(ChatId(state.chat_id))
+    advisor_fragment = _advisor_handoff_fragment_result(session.pending_order_json, text)
+    if advisor_fragment == "complete" or _looks_like_advisor_handoff_request(text):
+        session.clear_pending_order()
+        await services.persist_session(session)
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "advisor_handoff"
+        state.query_value = text
+        return state
+    if advisor_fragment:
+        session.pending_order_json = {"kind": "advisor_handoff_fragment", "text": advisor_fragment}
+        await services.persist_session(session)
     if _apply_last_confirmed_order_followup_intent(state, session, text):
         return state
     direct_half_code = _direct_half_chicken_code(text)
@@ -664,6 +677,18 @@ async def detect_intent(
         state.intent = ConversationIntent.MOSTRAR_CARRITO
         return state
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA and state.cart:
+        if _looks_like_confirmed_order_delivery_price_question(text):
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = "delivery"
+            state.query_value = _extract_confirmed_order_delivery_price_neighborhood(text)
+            return state
+        if _looks_like_checkout_restatement_while_collecting_data(text, parsed_rules):
+            if _looks_like_delivery_request(text):
+                session.fulfillment_type = "DELIVERY"
+                state.fulfillment_type = "DELIVERY"
+                await services.persist_session(session)
+            state.intent = ConversationIntent.LENGUAJE_NATURAL
+            return state
         if state.fulfillment_type == "PICKUP" and _looks_like_standalone_pickup_time_note(text):
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
@@ -1487,19 +1512,32 @@ async def add_to_cart(
         session.move_to(ConversationState.ASK_CUSTOMER_DATA)
         await services.persist_session(session)
         state.current_step = ConversationState.ASK_CUSTOMER_DATA
+        _copy_checkout_session_to_state(session, state)
+        missing_checkout_fields = _missing_checkout_fields(state)
+        if not missing_checkout_fields:
+            state = await calculate_delivery(state, services)
+            if not state.errors:
+                return await create_order(state, services)
         state.response_text = BotMessageFactory.natural_order_added(
             [line],
             state.subtotal_cop,
-            _missing_checkout_fields(state),
+            missing_checkout_fields,
             fulfillment_type="PICKUP",
         )
         return state
     state.current_step = ConversationState.POST_ADD
     _copy_checkout_session_to_state(session, state)
+    missing_checkout_fields = _missing_checkout_fields(state)
+    if not missing_checkout_fields:
+        session.clear_pending_order()
+        await services.persist_session(session)
+        state = await calculate_delivery(state, services)
+        if not state.errors:
+            return await create_order(state, services)
     state.response_text = BotMessageFactory.natural_order_added(
         [line],
         state.subtotal_cop,
-        _missing_checkout_fields(state),
+        missing_checkout_fields,
         fulfillment_type=state.fulfillment_type,
     )
     return state
@@ -1857,10 +1895,7 @@ async def validate_customer_data(
         state.customer.address = None
     incomplete_address = had_non_exact_address or _looks_like_incomplete_delivery_address(state.normalized_text)
     if not state.customer.address:
-        if incomplete_address:
-            missing.append("direccion completa con calle/carrera, numero y barrio")
-        else:
-            missing.append("direccion")
+        missing.append("direccion completa con calle/carrera, numero y barrio")
     if not state.customer.neighborhood and not incomplete_address:
         missing.append("barrio")
     if not state.customer.payment_method:
@@ -1936,7 +1971,7 @@ def _extract_customer_data_from_free_lines(
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
             continue
-        if customer.neighborhood and normalized == normalize_text(customer.neighborhood):
+        if customer.neighborhood and _normalize_neighborhood_value(line) == _normalize_neighborhood_value(customer.neighborhood):
             continue
         if _looks_like_chicken_part_allocation_line(normalized):
             continue
@@ -1969,7 +2004,10 @@ def _extract_customer_data_from_free_lines(
                 remaining.append(line)
             continue
         if _looks_like_non_exact_delivery_reference(normalized):
-            customer.neighborhood = line
+            note, neighborhood = _split_non_exact_reference_note_and_neighborhood(line)
+            if neighborhood:
+                customer.neighborhood = customer.neighborhood or neighborhood
+            customer.observations = _append_observation(customer.observations, note)
         elif _looks_like_address(normalized):
             address, neighborhood, note = _split_rich_address_line(line)
             if not neighborhood:
@@ -2071,7 +2109,15 @@ def _has_multitoken_customer_name_candidate(lines: list[str]) -> bool:
 
 def _clean_checkout_note(note: str) -> str:
     cleaned = re.sub(r",\s*por favor,?\s*", ". ", note.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"^\s*(?:direccion|dirección)\s+y(?:\s+barrio)?\s*:?\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if normalize_text(cleaned) in {"direccion", "direccion y", "direccion y barrio", "barrio", "sector"}:
+        return ""
     return cleaned
 
 
@@ -2866,6 +2912,12 @@ def _split_rich_address_line(text: str) -> tuple[str, str | None, str | None]:
 
 
 def _trim_address_leading_context(text: str) -> str:
+    text = re.sub(
+        r"^\s*(?:la\s+)?(?:direccion|dirección)\s+es\s+",
+        "",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
     normalized = normalize_text(text)
     if normalized.startswith(
         (
@@ -3093,6 +3145,7 @@ def _split_non_exact_reference_note_and_neighborhood(value: str) -> tuple[str, s
         if not re.search(rf"\b{re.escape(neighborhood)}\b", normalized, flags=re.IGNORECASE):
             continue
         note = re.sub(rf"\b{re.escape(neighborhood)}\b", " ", note, flags=re.IGNORECASE)
+        note = re.sub(r"\b(?:de|del|en|para)\s*$", " ", note, flags=re.IGNORECASE)
         note = re.sub(r"\s+", " ", note).strip(" ,.-")
         return note or value.strip(), neighborhood
     return note, None
@@ -3340,6 +3393,8 @@ def _looks_like_payment_residue_line(normalized: str) -> bool:
 def _looks_like_delivery_price_complaint_only(normalized: str) -> bool:
     if _looks_like_address(normalized) or _looks_like_payment_method(normalized) or _looks_like_phone(normalized):
         return False
+    if _looks_like_confirmed_order_delivery_price_question(normalized):
+        return True
     return _contains_any(normalized, ("domicilio", "domi")) and (
         _looks_like_question(normalized)
         or bool(re.search(r"\b\d+\s*k\b", normalized))
@@ -3667,10 +3722,7 @@ def _missing_checkout_fields(state: ConversationGraphState) -> list[str]:
             missing.append("pickup_time")
         return missing
     if not state.customer.address:
-        if _looks_like_non_exact_delivery_reference(normalize_text(state.customer.observations)):
-            missing.append("direccion completa con calle/carrera, numero y barrio")
-        else:
-            missing.append("direccion")
+        missing.append("direccion completa con calle/carrera, numero y barrio")
     if not state.customer.neighborhood:
         missing.append("barrio")
     if not state.customer.payment_method:
@@ -5775,6 +5827,8 @@ def _looks_like_probable_customer_name(text: str) -> bool:
     normalized = normalize_text(text)
     if not normalized or any(char.isdigit() for char in normalized):
         return False
+    if _looks_like_confirmed_order_delivery_price_question(normalized):
+        return False
     if _contains_any(
         normalized,
         (
@@ -6422,6 +6476,8 @@ def _needs_included_side_clarification(text: str) -> bool:
 
 
 def _append_observation(current: str | None, addition: str) -> str:
+    if not addition:
+        return current or ""
     if not current or _looks_like_empty_note(normalize_text(current)):
         return addition
     if addition in current:
@@ -7674,7 +7730,7 @@ def _extract_chicken_part(text: str) -> str | None:
     for token in tokens:
         if token in {"pena", "peña"}:
             continue
-        if _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
+        if token in {"pernil", "perniles"} or _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
             return "Pierna"
         if _is_close_word(token, "pechuga") or _is_close_word(token, "pechga"):
             return "Pechuga"
@@ -7702,7 +7758,7 @@ def _extract_chicken_part_allocations(text: str, remaining: int) -> list[dict[st
             compact_quantity = int(compact_match.group(1))
             token = compact_match.group(2)
         part: str | None = None
-        if _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
+        if token in {"pernil", "perniles"} or _is_close_word(token, "pierna") or _is_close_word(token, "muslo"):
             part = "Pierna"
         elif _is_close_word(token, "pechuga") or _is_close_word(token, "pechga"):
             part = "Pechuga"
@@ -7867,6 +7923,8 @@ def _business_today() -> date:
 def _looks_like_pickup_request(text: str) -> bool:
     text = normalize_text(text)
     if _contains_any(text, ("domicilio lo recoge", "domicilio lo recoje", "pedido lo recoge", "orden lo recoge")):
+        return False
+    if "para llevar" in text and _looks_like_address(text):
         return False
     return _contains_any(
         text,
@@ -8739,6 +8797,35 @@ def _looks_like_advisor_handoff_request(text: str) -> bool:
     return False
 
 
+def _advisor_handoff_fragment_result(
+    pending_order_json: dict[str, object] | None,
+    text: str,
+) -> str | None:
+    cleaned = text.strip(" ¿?.,!¡")
+    previous = ""
+    if (pending_order_json or {}).get("kind") == "advisor_handoff_fragment":
+        previous = str((pending_order_json or {}).get("text") or "")
+    if cleaned not in {"puedo", "puede", "podria", "podría", "hablar", "con", "fabio"} and not _contains_any(
+        cleaned,
+        ("hablar", "fabio", "asesor", "asesora"),
+    ):
+        return None
+    if cleaned == "fabio":
+        return "complete"
+    combined = " ".join(part for part in (previous, cleaned) if part).strip()
+    if _contains_any(combined, ("hablar", "asesor", "asesora")) and _contains_any(combined, ("fabio", "asesor", "asesora")):
+        return "complete"
+    return combined
+
+
+def _looks_like_checkout_restatement_while_collecting_data(text: str, parsed_rules) -> bool:
+    if _restatement_add_text(text) is not None:
+        return True
+    if parsed_rules.items and _looks_like_delivery_request(text):
+        return True
+    return bool(parsed_rules.items and _contains_any(text, ("perdon", "perdón", "me equivoque", "me equivoqué")))
+
+
 def _looks_like_combination_question(text: str) -> bool:
     if not _contains_any(
         text,
@@ -9366,7 +9453,7 @@ def _incomplete_destination_note(text: str) -> str | None:
 def _looks_like_quarter_part_without_style(text: str) -> bool:
     return (
         _contains_any(text, ("cuarto", "cuartos", "1/4"))
-        and _contains_any(text, ("pechuga", "pierna"))
+        and _contains_any(text, ("pechuga", "pierna", "pernil", "perniles"))
         and not _contains_any(text, ASADO_TEXT_TERMS + BROASTER_TEXT_TERMS)
     )
 

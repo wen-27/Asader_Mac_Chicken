@@ -23,7 +23,8 @@ class ProductAvailabilitySpecification:
     def is_satisfied_by(self, product: Product, business_date: date) -> bool:
         if not product.is_active or not product.is_available:
             return False
+        if product.code.value in {"LASAGNA_MIXTA", "MADURO_QUESO"}:
+            return True
         if product.restricted_to == ProductRestriction.WEEKEND_OR_HOLIDAY:
             return business_date.weekday() in (5, 6) or self.is_holiday(business_date)
         return True
-
