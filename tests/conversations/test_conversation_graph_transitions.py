@@ -3973,6 +3973,40 @@ async def test_labeled_address_extracts_embedded_barrio_and_payment_prefix_is_no
 
 
 @pytest.mark.asyncio
+async def test_multiline_broaster_order_keeps_greeting_out_of_name_and_cooking_notes() -> None:
+    services = FakeConversationServices()
+    graph = build_conversation_graph(services)
+
+    result = await graph.ainvoke(
+        ConversationGraphState(
+            chat_id=123,
+            raw_text=(
+                "Hola feliz día cómo están\n\n"
+                "Porfa me vendes\n"
+                "1/2 a la broaster\n\n"
+                "Que esté bn frito x fa\n"
+                "Esque quedias me salió algo crudo x dentro\n\n"
+                "Para que esté acá a las 12 x fa\n\n"
+                "Calle 46 N 4-37\n"
+                "Lagos 2"
+            ),
+        )
+    )
+
+    assert result["current_step"] == ConversationState.POST_ADD
+    assert "- 1 x 1/2 Broasted: $25500" in result["response_text"]
+    assert "telefono" in result["response_text"].lower()
+    assert "metodo de pago" in result["response_text"].lower()
+    assert "nombre completo" in result["response_text"].lower()
+    assert services.session.customer_name is None
+    assert services.session.customer_address == "Calle 46 N 4-37"
+    assert services.session.customer_neighborhood == "Lagos 2"
+    assert "Que esté bn frito x fa" in (services.session.observations or "")
+    assert "Esque quedias me salió algo crudo x dentro" in (services.session.observations or "")
+    assert "Para que esté acá a las 12 x fa" in (services.session.observations or "")
+
+
+@pytest.mark.asyncio
 async def test_real_delivery_time_question_after_cart_is_saved_as_note() -> None:
     services = FakeConversationServices()
     services.session.add_cart_item(cart_item_from_product(services.products["BROASTER_CUARTO"], 1))
