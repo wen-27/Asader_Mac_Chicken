@@ -711,6 +711,14 @@ class BotMessageFactory:
         return "Sí señora, queda anotado en tu orden."
 
     @classmethod
+    def confirmed_order_waiting_ack(cls) -> str:
+        return "Claro, quedamos atentos."
+
+    @classmethod
+    def confirmed_whole_chicken_answer(cls) -> str:
+        return "Sí señora, el pollo viene entero. No tienes que escoger pierna o pechuga; tu orden sigue igual."
+
+    @classmethod
     def order_confirmation_failed(cls) -> str:
         return (
             "No pude registrar tu orden en este momento. No perdi tu orden ni tus datos. "
@@ -949,6 +957,29 @@ class BotMessageFactory:
     @classmethod
     def delivery_price_answer(cls, neighborhood: str, price_cop: int) -> str:
         return f"El domicilio para {neighborhood} cuesta ${price_cop}."
+
+    @classmethod
+    def delivery_neighborhood_needed_answer(cls) -> str:
+        return "Claro, no identifico el barrio del domicilio. ¿Para que barrio seria?"
+
+    @classmethod
+    def ambiguous_lagos_delivery_neighborhood_answer(cls) -> str:
+        return "Claro, no identifico si es Lagos 1, Lagos 2 o Lagos 3. ¿Para cual de esos barrios seria el domicilio?"
+
+    @classmethod
+    def soda_25_size_answer(cls) -> str:
+        return (
+            "Si, la gaseosa 2.5 L es la presentacion mas grande que manejamos. "
+            "Tenemos Kola, Pepsi, Piña, Colombiana y Manzana."
+        )
+
+    @classmethod
+    def coca_cola_25_unavailable_answer(cls) -> str:
+        return (
+            "Coca-Cola 2.5 no manejamos. Tenemos Coca-Cola 1.5 L o gaseosa 2.5 L "
+            "en sabores Kola, Pepsi, Piña, Colombiana y Manzana.\n\n"
+            "Puedes responder, por ejemplo: Coca-Cola 1.5 o Gaseosa Colombiana 2.5."
+        )
 
     @classmethod
     def product_available_offer(cls, product: Product) -> str:

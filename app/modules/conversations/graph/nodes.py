@@ -190,6 +190,16 @@ def _apply_last_confirmed_order_followup_intent(
 ) -> bool:
     if (session.pending_order_json or {}).get("kind") != "last_confirmed_order":
         return False
+    if _looks_like_confirmed_whole_chicken_question(text, session.pending_order_json):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "confirmed_whole_chicken"
+        state.query_value = text
+        return True
+    if _looks_like_confirmed_order_waiting_ack(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "confirmed_order_waiting_ack"
+        state.query_value = text
+        return True
     if _looks_like_delivery_dispatch_followup(text) or _looks_like_confirmed_order_pointer_reply(state.raw_text, text):
         state.intent = ConversationIntent.RESPONDER_CONSULTA
         state.query_type = "dispatch_effort"
@@ -277,6 +287,11 @@ async def detect_intent(
         state.query_type = "delivery_urgency"
         state.query_value = text
         return state
+    if _looks_like_soda_25_size_question(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "soda_25_size"
+        state.query_value = text
+        return state
     if (session.pending_order_json or {}).get("kind") == "included_soup_availability_context":
         if _looks_like_included_soup_need_followup(text):
             state.intent = ConversationIntent.RESPONDER_CONSULTA
@@ -299,6 +314,19 @@ async def detect_intent(
             state.intent = ConversationIntent.PROCESAR_DATOS_CLIENTE
             return state
     if (session.pending_order_json or {}).get("kind") == "coca_cola_options":
+        if _has_checkout_data_signal(state.raw_text):
+            await extract_customer_data(state, services)
+            _copy_checkout_state_to_session(state, session)
+            await services.persist_session(session)
+        gaseosa_variant = _extract_gaseosa_25_variant_request(text)
+        if gaseosa_variant:
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.selected_product_code = "GASEOSA_25"
+            state.selected_chicken_part = gaseosa_variant
+            state.quantity = 1
+            state.intent = ConversationIntent.AGREGAR_PRODUCTO
+            return state
         selected_code = _extract_coca_cola_option(text)
         if selected_code:
             session.clear_pending_order()
@@ -315,6 +343,20 @@ async def detect_intent(
         state.response_text = BotMessageFactory.coca_cola_clarification()
         state.intent = ConversationIntent.PRODUCTO_INEXISTENTE
         return state
+    if (session.pending_order_json or {}).get("kind") in {
+        "delivery_neighborhood_needed",
+        "ambiguous_lagos_delivery_neighborhood",
+    }:
+        if _looks_like_neighborhood_only(text):
+            session.clear_pending_order()
+            await services.persist_session(session)
+            state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
+            return state
+        if _looks_like_delivery_price_question(text) or text in {"q vale", "que vale", "cuanto", "cuánto"}:
+            state.intent = ConversationIntent.RESPONDER_CONSULTA
+            state.query_type = str((session.pending_order_json or {}).get("kind") or "delivery_neighborhood_needed")
+            state.query_value = text
+            return state
     if (session.pending_order_json or {}).get("kind") == "manzana_25_offer":
         if _is_manzana_25_offer_acceptance(text):
             session.clear_pending_order()
@@ -824,6 +866,18 @@ async def detect_intent(
     ):
         state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
         return state
+    if not state.cart and not parsed_rules.items and _looks_like_ambiguous_delivery_neighborhood_request(text):
+        state.intent = ConversationIntent.RESPONDER_CONSULTA
+        state.query_type = "ambiguous_lagos_delivery_neighborhood"
+        state.query_value = text
+        return state
+    if (
+        not state.cart
+        and not parsed_rules.items
+        and (_looks_like_neighborhood_only(text) or _looks_like_delivery_note_request(text))
+    ):
+        state.intent = ConversationIntent.GUARDAR_DATOS_SIN_PRODUCTO
+        return state
     if (
         not state.cart
         and state.fulfillment_type == "PICKUP"
@@ -865,6 +919,8 @@ async def detect_intent(
     elif _looks_like_delivery_request(text):
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.fulfillment_type = "DELIVERY"
+        if _looks_like_neighborhood_only(text):
+            session.customer_neighborhood = _normalize_neighborhood_value(text) or text
         state.fulfillment_type = "DELIVERY"
         await services.persist_session(session)
     if state.current_step == ConversationState.ASK_CUSTOMER_DATA:
@@ -1956,6 +2012,8 @@ def _extract_customer_data_from_free_lines(
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
             continue
+        if _looks_like_coca_cola_25_request(normalized):
+            continue
         if _looks_like_chicken_part_allocation_line(normalized):
             continue
         if _looks_like_order_line_without_checkout_data(line) and not _looks_like_checkout_note(normalized):
@@ -1970,6 +2028,8 @@ def _extract_customer_data_from_free_lines(
         line = _strip_leading_chicken_part_allocation(line)
         normalized = normalize_text(line)
         if _is_ignorable_checkout_line(normalized):
+            continue
+        if _looks_like_coca_cola_25_request(normalized):
             continue
         if customer.neighborhood and _normalize_neighborhood_value(line) == _normalize_neighborhood_value(customer.neighborhood):
             continue
@@ -2003,7 +2063,10 @@ def _extract_customer_data_from_free_lines(
             else:
                 remaining.append(line)
             continue
-        if _looks_like_non_exact_delivery_reference(normalized):
+        if _looks_like_delivery_note_request(normalized):
+            note = _clean_checkout_note(line) if clean_notes else line
+            customer.observations = _append_observation(customer.observations, note)
+        elif _looks_like_non_exact_delivery_reference(normalized):
             note, neighborhood = _split_non_exact_reference_note_and_neighborhood(line)
             if neighborhood:
                 customer.neighborhood = customer.neighborhood or neighborhood
@@ -2116,7 +2179,17 @@ def _clean_checkout_note(note: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if normalize_text(cleaned) in {"direccion", "direccion y", "direccion y barrio", "barrio", "sector"}:
+    if normalize_text(cleaned) in {
+        "direccion",
+        "direccion y",
+        "direccion y barrio",
+        "barrio",
+        "sector",
+        "cel",
+        "celular",
+        "telefono",
+        "tel",
+    }:
         return ""
     return cleaned
 
@@ -3269,9 +3342,13 @@ def _remove_duplicate_customer_name_observation(
     normalized_name = normalize_text(customer_name).strip(". ")
     if normalized_observations == normalized_name:
         return None
+    if re.fullmatch(rf"{re.escape(normalized_name)}\s+(?:cel|celular|telefono|tel)", normalized_observations):
+        return None
     prefix = f"{customer_name.strip()}."
     if observations.strip().lower().startswith(prefix.lower()):
         cleaned = observations.strip()[len(prefix) :].strip()
+        if normalize_text(cleaned) in {"cel", "celular", "telefono", "tel"}:
+            return None
         return cleaned or None
     return observations
 
@@ -3336,6 +3413,8 @@ def _is_checkout_filler_line(normalized: str) -> bool:
 def _is_ignorable_checkout_line(normalized: str) -> bool:
     cleaned = re.sub(r"[^\w\s]", " ", normalized)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if _looks_like_delivery_note_request(cleaned):
+        return False
     return (
         _is_checkout_filler_line(normalized)
         or _looks_like_order_intent_only_line(cleaned)
@@ -3507,6 +3586,10 @@ def _copy_checkout_state_to_session(
     session,
 ) -> None:
     state.customer.observations = _sanitize_observations_for_cart(state.customer.observations, state.cart)
+    state.customer.observations = _remove_duplicate_customer_name_observation(
+        state.customer.observations,
+        state.customer.name,
+    )
     state.customer.neighborhood = _normalize_neighborhood_value(state.customer.neighborhood)
     session.customer_name = state.customer.name
     session.customer_phone = state.customer.phone
@@ -3850,14 +3933,21 @@ async def fallback_natural_language(
             contents_answer = await _contents_answer_for_added_order_question(state, services, added_lines)
             if contents_answer:
                 state.response_text = join_outbound_messages([state.response_text, contents_answer])
+            waiting_for_drink_clarification = False
             ambiguous_drink_quantity = _ambiguous_drink_quantity(state.normalized_text)
             if ambiguous_drink_quantity:
                 if _contains_any(state.normalized_text, ("coca", "cocacola", "coca cola")):
                     await _remember_coca_cola_options(state, services)
+                    waiting_for_drink_clarification = True
+                drink_prompt = (
+                    BotMessageFactory.coca_cola_25_unavailable_answer()
+                    if _looks_like_coca_cola_25_request(state.normalized_text)
+                    else BotMessageFactory.ambiguous_drink_clarification(ambiguous_drink_quantity)
+                )
                 state.response_text = "\n\n".join(
                     [
                         state.response_text,
-                        BotMessageFactory.ambiguous_drink_clarification(ambiguous_drink_quantity),
+                        drink_prompt,
                     ]
                 )
             manzana_notice = await _manzana_25_only_notice(state.normalized_text, services)
@@ -3872,13 +3962,14 @@ async def fallback_natural_language(
                 state.response_text = "\n\n".join(
                     [state.response_text, BotMessageFactory.included_side_clarification()]
                 )
-            checkout_state = await _maybe_create_checkout_from_current_message(state, services)
-            if checkout_state:
-                if should_prepend_new_order_welcome:
-                    checkout_state.response_text = join_outbound_messages(
-                        [BotMessageFactory.main_menu(), checkout_state.response_text]
-                    )
-                return checkout_state
+            if not waiting_for_drink_clarification:
+                checkout_state = await _maybe_create_checkout_from_current_message(state, services)
+                if checkout_state:
+                    if should_prepend_new_order_welcome:
+                        checkout_state.response_text = join_outbound_messages(
+                            [BotMessageFactory.main_menu(), checkout_state.response_text]
+                        )
+                    return checkout_state
             if should_prepend_new_order_welcome:
                 state.response_text = join_outbound_messages([BotMessageFactory.main_menu(), state.response_text])
             return state
@@ -3981,6 +4072,21 @@ async def answer_query(
     if state.query_type == "delivery_unavailable":
         state.response_text = BotMessageFactory.delivery_unavailable_answer()
         return state
+    if state.query_type == "delivery_neighborhood_needed":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.pending_order_json = {"kind": "delivery_neighborhood_needed"}
+        await services.persist_session(session)
+        state.response_text = BotMessageFactory.delivery_neighborhood_needed_answer()
+        return state
+    if state.query_type == "ambiguous_lagos_delivery_neighborhood":
+        session = await services.load_or_create_session(ChatId(state.chat_id))
+        session.pending_order_json = {"kind": "ambiguous_lagos_delivery_neighborhood"}
+        await services.persist_session(session)
+        state.response_text = BotMessageFactory.ambiguous_lagos_delivery_neighborhood_answer()
+        return state
+    if state.query_type == "soda_25_size":
+        state.response_text = BotMessageFactory.soda_25_size_answer()
+        return state
     if state.query_type == "missing_customer_data":
         state.response_text = BotMessageFactory.missing_customer_data(_missing_checkout_fields(state))
         return state
@@ -4017,8 +4123,35 @@ async def answer_query(
         session = await services.load_or_create_session(ChatId(state.chat_id))
         session.observations = _append_observation(session.observations, state.query_value or "")
         await services.persist_session(session)
-        state.customer.observations = session.observations
-        state.response_text = BotMessageFactory.cart_note_added()
+        _copy_checkout_session_to_state(session, state)
+        state.cart = [
+            CartLineState(
+                product_code=item.product_code.value,
+                product_name=item.product_name.value,
+                unit_price_cop=item.unit_price.amount,
+                quantity=item.quantity,
+                subtotal_cop=item.subtotal.amount,
+            )
+            for item in session.cart
+        ]
+        state.subtotal_cop = sum(line.subtotal_cop for line in state.cart)
+        if state.fulfillment_type == "PICKUP":
+            state.delivery_price_cop = 0
+            state.total_cop = state.subtotal_cop
+        elif state.customer.address and state.customer.neighborhood:
+            state = await calculate_delivery(state, services)
+        state.current_step = ConversationState.CHECKOUT_REVIEW
+        session.move_to(ConversationState.CHECKOUT_REVIEW)
+        await services.persist_session(session)
+        state.response_text = join_outbound_messages(
+            [BotMessageFactory.cart_note_added(), BotMessageFactory.order_created(state)]
+        )
+        return state
+    if state.query_type == "confirmed_order_waiting_ack":
+        state.response_text = BotMessageFactory.confirmed_order_waiting_ack()
+        return state
+    if state.query_type == "confirmed_whole_chicken":
+        state.response_text = BotMessageFactory.confirmed_whole_chicken_answer()
         return state
     if state.query_type == "refund":
         state.response_text = BotMessageFactory.refund_followup_answer()
@@ -4230,6 +4363,7 @@ async def answer_query(
     if state.query_type == "delivery":
         neighborhood = state.query_value or _extract_delivery_neighborhood(state.normalized_text)
         if neighborhood:
+            neighborhood = _normalize_neighborhood_value(neighborhood) or neighborhood
             result = await services.calculate_delivery(address="", neighborhood=neighborhood)
             state.response_text = BotMessageFactory.delivery_price_answer(
                 neighborhood,
@@ -5924,6 +6058,23 @@ def _ambiguous_drink_quantity(text: str) -> int | None:
     }.get(match.group(0).split()[0], 1)
 
 
+def _looks_like_coca_cola_25_request(text: str) -> bool:
+    return _contains_any(text, ("coca", "cocacola", "coca cola")) and _contains_any(
+        text,
+        ("2.5", "2 5", "2,5", "dos litros y medio", "2 litros y medio"),
+    )
+
+
+def _extract_gaseosa_25_variant_request(text: str) -> str | None:
+    normalized = normalize_text(text)
+    if not _contains_any(
+        normalized,
+        ("gaseosa", "gaseoza", "2.5", "2 5", "2,5", "dos litros y medio", "2 litros y medio"),
+    ):
+        return None
+    return _extract_product_variant("GASEOSA_25", normalized)
+
+
 async def _manzana_25_only_notice(text: str, services: ConversationGraphServices) -> str | None:
     if not _looks_like_manzana_unavailable_size(text):
         return None
@@ -6115,6 +6266,13 @@ def _classify_ambiguous_drink_request(text: str) -> tuple[str, int | None] | Non
     ):
         return ("drinks", _ambiguous_drink_quantity(text))
     return None
+
+
+def _looks_like_soda_25_size_question(text: str) -> bool:
+    return _contains_any(text, ("2.5", "2 5", "2,5", "dos litros y medio", "2 litros y medio")) and _contains_any(
+        text,
+        ("grande", "mas grande", "más grande", "la mayor", "presentacion grande", "presentación grande"),
+    )
 
 
 def _extract_coca_cola_option(text: str) -> str | None:
@@ -6453,6 +6611,9 @@ def _extract_followup_included_chicken_side_note(text: str, cart: list[CartLineS
         return None
 
     notes: list[str] = []
+    if has_asado and _looks_like_less_potato_more_yuca_note(text):
+        notes.append("Menos papa, mas yuca.")
+        return " ".join(notes)
     side_note = None
     if has_asado:
         side_note = _extract_included_chicken_side_note(f"pollo asado {text}")
@@ -6465,6 +6626,13 @@ def _extract_followup_included_chicken_side_note(text: str, cart: list[CartLineS
     if not notes:
         return None
     return " ".join(notes)
+
+
+def _looks_like_less_potato_more_yuca_note(text: str) -> bool:
+    return _contains_any(text, ("menos papa", "menos papas", "poquita papa", "poca papa")) and _contains_any(
+        text,
+        ("mas yuca", "más yuca", "mas yucas", "más yucas", "bastante yuca"),
+    )
 
 
 def _needs_included_side_clarification(text: str) -> bool:
@@ -6707,6 +6875,42 @@ def _looks_like_delivery_cost_question(text: str) -> bool:
     return _contains_any(text, ("domicilio", "domi", "envio", "envío", "llevar", "lleva"))
 
 
+def _looks_like_delivery_price_question(text: str) -> bool:
+    if _looks_like_delivery_note_request(text):
+        return False
+    return _looks_like_delivery_cost_question(text) and _contains_any(
+        text,
+        ("vale", "valor", "precio", "cuanto", "cuánto", "cuesta", "costaria", "costaría"),
+    )
+
+
+def _looks_like_delivery_note_request(text: str) -> bool:
+    return _contains_any(
+        text,
+        (
+            "llamar",
+            "llamen",
+            "llamada",
+            "cuando salga",
+            "cuando lleguen",
+            "cuando llegue",
+            "no escuche",
+            "no escucho",
+            "musica",
+            "música",
+        ),
+    )
+
+
+def _looks_like_ambiguous_delivery_neighborhood_request(text: str) -> bool:
+    if not _looks_like_delivery_request(text):
+        return False
+    neighborhood = _extract_delivery_neighborhood(text)
+    if neighborhood and not _is_generic_delivery_neighborhood(neighborhood):
+        return False
+    return _contains_any(text, ("lagos", "barrio", "sector", "aca", "acá", "aqui", "aquí"))
+
+
 def _looks_like_fulfillment_choice_question(text: str) -> bool:
     pickup_terms = (
         "voy por",
@@ -6892,6 +7096,14 @@ def _looks_like_checkout_note(text: str) -> bool:
             "pongan problema",
             "poner problema",
             "abuelita",
+            "llamar",
+            "llamen",
+            "cuando salga",
+            "cuando lleguen",
+            "cuando llegue",
+            "no escuche",
+            "musica",
+            "música",
         ),
     ) or (
         re.search(r"\b(?:a la|a las|para la|para las)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", normalized)
@@ -8222,9 +8434,13 @@ def _classify_business_query(text: str) -> tuple[str, str] | None:
     if not _looks_like_question(text):
         return None
     if any(word in text for word in ["domicilio", "domi", "envio", "envío", "llevar", "lleva"]):
+        if _looks_like_delivery_note_request(text):
+            return None
         neighborhood = _extract_delivery_neighborhood(text)
         if neighborhood and not _is_generic_delivery_neighborhood(neighborhood):
             return ("delivery", neighborhood)
+        if _looks_like_delivery_price_question(text):
+            return ("delivery_neighborhood_needed", text)
         return ("service", text)
     if any(word in text for word in ["vale", "valor", "precio", "cuanto cuesta", "cuánto cuesta"]):
         if any(word in text for word in ["gaseosa", "gaseosas", "bebida", "bebidas", "coca"]):
@@ -8697,8 +8913,54 @@ def _last_confirmed_order_has_chicken(pending_order_json: dict[str, object] | No
     return False
 
 
+def _last_confirmed_order_has_whole_chicken(pending_order_json: dict[str, object] | None) -> bool:
+    if (pending_order_json or {}).get("kind") != "last_confirmed_order":
+        return False
+    items = pending_order_json.get("items") if pending_order_json else None
+    if not isinstance(items, list):
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "")
+        if code in {"ASADO_ENTERO", "BROASTER_ENTERO"}:
+            return True
+    return False
+
+
 def _cart_has_chicken(cart: list[CartLineState]) -> bool:
     return any(line.product_code.startswith(("ASADO_", "BROASTER_")) for line in cart)
+
+
+def _looks_like_confirmed_order_waiting_ack(text: str) -> bool:
+    normalized = text.strip(" ¿?.,!¡")
+    return normalized in {
+        "un momento",
+        "un momentico",
+        "un momentito",
+        "ya le envio",
+        "ya le envío",
+        "ya envio",
+        "ya envío",
+        "ahorita envio",
+        "ahorita envío",
+        "espere",
+        "espereme",
+        "espéreme",
+    }
+
+
+def _looks_like_confirmed_whole_chicken_question(
+    text: str,
+    pending_order_json: dict[str, object] | None,
+) -> bool:
+    if not _last_confirmed_order_has_whole_chicken(pending_order_json):
+        return False
+    if not _looks_like_question(text):
+        return False
+    if not _contains_any(text, ("pollo", "polo", "poyo")):
+        return False
+    return _contains_any(text, ("entero", "completo", "no viene entero", "viene entero"))
 
 
 def _looks_like_ambiguous_soup_followup(text: str) -> bool:
@@ -9586,6 +9848,9 @@ def _extract_delivery_neighborhood(text: str) -> str:
         if match:
             value = match.group(1).strip(" ?.,")
             value = re.sub(r"\b(cuanto|cuánto|vale|cuesta|es|el|la|un|una)\b", "", value).strip()
+            value = re.sub(r"^(?:aqui|aquí|aca|acá)\s+", "", value, flags=re.IGNORECASE).strip()
+            value = re.sub(r"^(?:en|para|por)\s+", "", value, flags=re.IGNORECASE).strip()
+            value = _normalize_neighborhood_value(value) or value
             if value and not _is_generic_delivery_neighborhood(value):
                 return value
     return ""
@@ -9608,6 +9873,13 @@ def _is_generic_delivery_neighborhood(value: str) -> bool:
         "servicio",
         "servicio domicilio",
         "domicilios",
+        "acs en lagos",
+        "aca en lagos",
+        "acá en lagos",
+        "aqui en lagos",
+        "aquí en lagos",
+        "en lagos",
+        "lagos",
     }
 
 
